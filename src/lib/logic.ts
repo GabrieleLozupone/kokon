@@ -441,10 +441,10 @@ export function planPipeline(plan: Plan): string {
 }
 
 export function formatDuration(s: number): string {
-  if (s < 60) return `${Math.max(1, Math.round(s))}s`;
-  const m = Math.floor(s / 60);
-  const r = Math.round(s % 60);
-  return r ? `${m}m ${r}s` : `${m}m`;
+  const t = Math.round(s);
+  if (t < 60) return `${Math.max(1, t)}s`;
+  const m = Math.floor(t / 60);
+  return t % 60 ? `${m}m ${t % 60}s` : `${m}m`;
 }
 
 /** Undo target for version `key`: the version it was made from (`from` is that image's

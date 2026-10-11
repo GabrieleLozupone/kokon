@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   activeOverrides, buildRequest, compareBase, diffPixels, emptyComposer, expansionPixels, expansionPreset, jobFraction, jobLabel, moveRef, needsPrompt, normalizeQuality, persistentAdvanced, pipelineSummary,
   planPipeline, remainingSeconds, sizeForWidth, timeAgo, upscaleRequest, upscaleTargets, versionLabels, type Ref,
-  neighbourAfterRemoval, previewIndex, formatBytes, installItemShort, installItemText, installProgress, installStep, installTimeLeft, timelineLinks, undoTarget, aspectLabel, parseRatio, sizeForRatio, expandToRatio, expandToSize, arcLayout,
+  neighbourAfterRemoval, previewIndex, formatBytes, formatDuration, installItemShort, installItemText, installProgress, installStep, installTimeLeft, timelineLinks, undoTarget, aspectLabel, parseRatio, sizeForRatio, expandToRatio, expandToSize, arcLayout,
 } from "./logic";
 import type { GenerationRecord, InstallItem, JobView, Plan } from "./types";
 
@@ -387,5 +387,16 @@ describe("gallery preview", () => {
     expect(neighbourAfterRemoval(["a", "b", "c"], "c")).toBe("b");
     expect(neighbourAfterRemoval(["a"], "a")).toBeNull();
     expect(neighbourAfterRemoval(["a"], "x")).toBeNull();
+  });
+});
+
+describe("formatDuration", () => {
+  it("rounds to whole seconds before splitting minutes", () => {
+    expect(formatDuration(0.2)).toBe("1s");
+    expect(formatDuration(59.4)).toBe("59s");
+    expect(formatDuration(59.6)).toBe("1m");
+    expect(formatDuration(119.6)).toBe("2m");
+    expect(formatDuration(125)).toBe("2m 5s");
+    expect(formatDuration(3900)).toBe("65m");
   });
 });
