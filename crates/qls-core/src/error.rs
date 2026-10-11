@@ -4,6 +4,8 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use crate::config::AppConfig;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
@@ -156,7 +158,10 @@ pub fn translate_startup_failure(log_tail: &str) -> AppError {
     }
     if lc.contains("address already in use") || lc.contains("bind") && lc.contains("fail") {
         return AppError::new(ErrorCode::ServerStartFailed, "The inference server port is already in use.")
-            .suggest("Choose another port in Settings.")
+            .suggest(format!(
+                "Close the program using this port, or change \"serverPort\" in {}.",
+                AppConfig::path().display()
+            ))
             .detail(log_tail.to_string());
     }
     if lc.contains("cuda") && (lc.contains("no cuda") || lc.contains("cuda error") || lc.contains("no devices")) {
@@ -205,5 +210,49 @@ mod tests {
     fn statuses() {
         assert_eq!(AppError::invalid("x").http_status(), 400);
         assert_eq!(AppError::new(ErrorCode::NotFound, "x").http_status(), 404);
+    }
+
+    #[test]
+    fn port_in_use_points_at_config_json() {
+        let e = translate_startup_failure("sd-server: bind failed: address already in use");
+        assert_eq!(e.code, ErrorCode::ServerStartFailed);
+        let s = e.suggestion.expect("a suggestion");
+        assert!(s.contains("serverPort"), "names the config key: {s}");
+        assert!(s.contains("config.json"), "names the file: {s}");
+        assert!(
+            s.contains(&crate::config::AppConfig::path().display().to_string()),
+            "includes the real config path: {s}"
+        );
+        assert!(
+            !s.contains("Settings"),
+            "must not point at a Settings field the UI does not have: {s}"
+        );
+    }
+
+    #[test]
+    fn cuda_unavailable_is_translated() {
+        let e = translate_startup_failure("CUDA error: no device detected");
+        assert_eq!(e.code, ErrorCode::ServerStartFailed);
+        assert!(e.message.to_lowercase().contains("cuda"), "{}", e.message);
+    }
+
+    #[test]
+    fn mmproj_missing_is_translated() {
+        let e = translate_generation_failure("edit failed", "requires qwen3-vl vision weights", (1024, 1024), None);
+        assert_eq!(e.code, ErrorCode::InvalidConfig);
+        assert!(e.message.contains("vision projector"), "{}", e.message);
+    }
+
+    #[test]
+    fn image_size_not_multiple_of_32_is_translated() {
+        let e = translate_generation_failure("bad size", "width and height must be multiples of 32", (1000, 1000), None);
+        assert_eq!(e.code, ErrorCode::MalformedRequest);
+    }
+
+    #[test]
+    fn http_status_for_queue_unsupported_unavailable() {
+        assert_eq!(AppError::new(ErrorCode::QueueFull, "x").http_status(), 429);
+        assert_eq!(AppError::new(ErrorCode::Unsupported, "x").http_status(), 422);
+        assert_eq!(AppError::new(ErrorCode::ServerUnavailable, "x").http_status(), 503);
     }
 }

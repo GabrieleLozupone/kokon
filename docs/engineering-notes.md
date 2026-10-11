@@ -177,7 +177,8 @@ path so it can be fetched by hand.
 
 ## Settings not shown in the UI
 
-In `%APPDATA%\Kokon\config.json`: `hardwarePreset` (`12gb|16gb|24gb|32gb`, written by the
+In `%APPDATA%\Kokon\config.json`: `serverPort` (default 39150; the port the inference
+server binds — change it if that port is taken), `hardwarePreset` (`12gb|16gb|24gb|32gb`, written by the
 setup screen), `vramOverrideMib` (plan sizes as if the GPU had this much VRAM; 0 = detect;
 for testing), `upscalersDir` (null = default folder), `upscalerModel` (`4x-UltraSharp`; configs on the old
 `RealESRGAN_x4plus` default move to it), `upscaleTileSize` (0 = backend default 128),
