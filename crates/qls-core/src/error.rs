@@ -4,6 +4,8 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use crate::config::AppConfig;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
@@ -156,7 +158,7 @@ pub fn translate_startup_failure(log_tail: &str) -> AppError {
     }
     if lc.contains("address already in use") || lc.contains("bind") && lc.contains("fail") {
         return AppError::new(ErrorCode::ServerStartFailed, "The inference server port is already in use.")
-            .suggest("Choose another port in Settings.")
+            .suggest(&format!("Close the program using the port, or change \"serverPort\" in {}.", AppConfig::path().display()))
             .detail(log_tail.to_string());
     }
     if lc.contains("cuda") && (lc.contains("no cuda") || lc.contains("cuda error") || lc.contains("no devices")) {
@@ -199,6 +201,15 @@ mod tests {
         assert_eq!(translate_startup_failure("ggml_backend_cuda_buffer_type_alloc_buffer: allocating").code, ErrorCode::OutOfMemory);
         assert_eq!(translate_startup_failure("error: unknown argument: --foo").code, ErrorCode::InvalidConfig);
         assert_eq!(translate_startup_failure("weird").code, ErrorCode::ServerStartFailed);
+    }
+
+    #[test]
+    fn port_in_use_points_at_the_config_file() {
+        let e = translate_startup_failure("bind() to 127.0.0.1:39150 failed: address already in use");
+        assert_eq!(e.code, ErrorCode::ServerStartFailed);
+        let s = e.suggestion.unwrap();
+        assert!(s.contains("serverPort"), "{}", s);
+        assert!(s.contains("config.json"), "{}", s);
     }
 
     #[test]

@@ -231,7 +231,7 @@ In `%APPDATA%\Kokon\config.json`: `hardwarePreset` (`12gb|16gb|24gb|32gb`, writt
 setup screen), `vramOverrideMib` (plan sizes as if the GPU had this much VRAM; 0 = detect;
 for testing), `upscaleTileSize` (0 = automatic, see the upscaler section; schema 8 reset it),
 `ui.engineUpdateSkipped` (engine release whose update was skipped in Setup),
-`prefixCacheType`, `eagerLoad`, `sageAttention`.
+`prefixCacheType`, `eagerLoad`, `sageAttention`, `serverPort` (39150 = default).
 
 ## Testing smaller cards on a bigger one
 
