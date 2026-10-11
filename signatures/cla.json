@@ -1,3 +1,12 @@
 {
-   "signedContributors": []
+  "signedContributors": [
+    {
+      "name": "peda-cos",
+      "id": 83892026,
+      "comment_id": 6105661190,
+      "created_at": "2026-10-11T05:02:39Z",
+      "repoId": 1410924984,
+      "pullRequestNo": 12
+    }
+  ]
 }
