@@ -1,5 +1,5 @@
 import {
-  Brush, ClipboardPaste, Combine, Copy, Download, Ellipsis, Expand, FolderOpen, Heart, ImageUpscale, Info, Loader2, MousePointerClick, Pencil, RefreshCw, RotateCcw, SlidersHorizontal, Square, TextCursorInput, Trash2, Wand2, X,
+  Brush, ClipboardPaste, Combine, Copy, Download, Ellipsis, Expand, FolderOpen, Heart, ImageUpscale, Info, Loader2, MousePointerClick, Pencil, RefreshCw, RotateCcw, SlidersHorizontal, Square, TextCursorInput, Trash2, Wand2, X, ZoomIn,
 } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, urls } from "../lib/api";
@@ -15,6 +15,7 @@ import type { GenerationRecord, JobView, Mode, Size } from "../lib/types";
 import { CompareFrame, CompareFullscreen } from "./Compare";
 import { IconButton, Popover, useFit } from "./ui";
 import { Fullscreen, FullscreenButton, isTyping, ZoomImage, type ViewerNav } from "./Viewer";
+import { ZoomPan } from "./ZoomPan";
 import { fileManager, shortcut } from "../lib/platform";
 
 export const MODE_ICON: Record<Mode, React.ReactNode> = {
@@ -375,17 +376,59 @@ function InputActions({ item }: { item: SessionItem }) {
   );
 }
 
-/** A result or input fitted to the stage (never enlarged past its own size), with the
- * full-screen button in its top-right corner. */
-function PlainFrame({ src, alt, w, h, onFullscreen }: { src: string; alt: string; w: number; h: number; onFullscreen: () => void }) {
-  const { ref, box } = useFit(w / h);
-  const bw = Math.min(box.w, w);
+/** A result or input fitted to the stage (with zoom and pan support), with controls
+ * (toggle zoom controls, full-screen button) in its top-right corner. */
+function PlainFrame({
+  src,
+  alt,
+  w,
+  h,
+  onFullscreen,
+  showControls = true,
+  onToggleControls,
+}: {
+  src: string;
+  alt: string;
+  w: number;
+  h: number;
+  onFullscreen: () => void;
+  showControls?: boolean;
+  onToggleControls?: () => void;
+}) {
+  const contentSize = w > 0 && h > 0 ? { width: w, height: h } : null;
   return (
-    <div className="stage-frame" ref={ref}>
-      <div className="image-box" style={{ width: bw, height: bw * (h / w) }}>
-        <img className="stage-img fill" src={src} alt={alt} draggable={false} />
-        <FullscreenButton onOpen={onFullscreen} />
-      </div>
+    <div className="stage-frame">
+      <ZoomPan
+        src={src}
+        alt={alt}
+        contentSize={contentSize}
+        showControls={showControls}
+        overlay={
+          <div
+            className="stage-overlay-btns"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+          >
+            {onToggleControls && (
+              <button
+                className={`stage-overlay-btn ${showControls ? "active" : ""}`}
+                title={showControls ? "Hide zoom controls" : "Show zoom controls"}
+                aria-label="Toggle zoom controls"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleControls();
+                }}
+                onDoubleClick={(e) => e.stopPropagation()}
+              >
+                <ZoomIn size={15} />
+              </button>
+            )}
+            <FullscreenButton onOpen={onFullscreen} />
+          </div>
+        }
+      />
     </div>
   );
 }
@@ -456,7 +499,7 @@ function linkText(link: TimelineLink | undefined, labels: Record<string, string>
 /** The project's versions in order. A version continues the line of the one it was made from;
  * a new image starts a new line; versions made from earlier ones (or from several) are joined
  * to them by arcs. The image the prompt edits carries a pencil. */
-function Timeline({ labels }: { labels: Record<string, string> }) {
+function Timeline({ labels, onSelect }: { labels: Record<string, string>; onSelect?: () => void }) {
   const session = useStore((s) => s.session);
   const selected = useStore((s) => s.selected);
   const jobs = useStore((s) => s.jobs);
@@ -571,7 +614,10 @@ function Timeline({ labels }: { labels: Record<string, string> }) {
                 onMouseEnter={() => setHovered(it.key)}
                 onClick={() => {
                   if (dragged.current) dragged.current = false;
-                  else selectItem(it.key);
+                  else {
+                    selectItem(it.key);
+                    onSelect?.();
+                  }
                 }}
                 onPointerDown={(e) => {
                   if (e.button === 0 && src) drag.current = { key: it.key, src, x0: e.clientX, y0: e.clientY, moved: false };
@@ -668,7 +714,7 @@ function StageFullscreen({ item, session, showOriginal, onClose }: { item: Sessi
   const base = g ? compareBase(g) : null;
   const from = g?.pipeline?.original_path ? g.pipeline.enlarged_from : null;
   let content: React.ReactNode;
-  let hint = "Click to zoom to 100 %";
+  let hint = "Scroll or click to zoom · Drag to pan";
   if (g && from && showOriginal) content = <ZoomImage key={`original-${g.id}`} src={urls.genOriginal(g.id)} alt={`${g.prompt} (before upscaling)`} />;
   else if (g && base) {
     content = <CompareFullscreen key={g.id} g={g} base={base} />;
@@ -692,6 +738,8 @@ export function Stage() {
   // The result whose pre-upscale original is on screen instead of it.
   const [originalOf, setOriginalOf] = useState<string | null>(null);
   const [full, setFull] = useState(false);
+  const [showZoomControls, setShowZoomControls] = useState(true);
+  const [resetSignal, setResetSignal] = useState(0);
   const canFull = !!item && viewable(item);
 
   // F opens full screen on the selected version (Esc or F again closes it).
@@ -746,11 +794,36 @@ export function Stage() {
     view = (
       <>
         {g && from && showOriginal ? (
-          <PlainFrame key={`original-${g.id}`} src={urls.genOriginal(g.id)} alt={`${g.prompt} (before upscaling)`} w={from.width} h={from.height} onFullscreen={openFull} />
+          <PlainFrame
+            key={`original-${g.id}-${resetSignal}`}
+            src={urls.genOriginal(g.id)}
+            alt={`${g.prompt} (before upscaling)`}
+            w={from.width}
+            h={from.height}
+            onFullscreen={openFull}
+            showControls={showZoomControls}
+            onToggleControls={() => setShowZoomControls((v) => !v)}
+          />
         ) : item.gen && base ? (
-          <CompareFrame key={`compare-${item.gen.id}`} g={item.gen} base={base} onFullscreen={openFull} />
+          <CompareFrame
+            key={`compare-${item.gen.id}-${resetSignal}`}
+            g={item.gen}
+            base={base}
+            onFullscreen={openFull}
+            showControls={showZoomControls}
+            onToggleControls={() => setShowZoomControls((v) => !v)}
+          />
         ) : (
-          <PlainFrame key={src} src={src} alt={item.gen?.prompt ?? item.input?.original_name ?? ""} w={w} h={h} onFullscreen={openFull} />
+          <PlainFrame
+            key={`${item.key}-${resetSignal}`}
+            src={src}
+            alt={item.gen?.prompt ?? item.input?.original_name ?? ""}
+            w={w}
+            h={h}
+            onFullscreen={openFull}
+            showControls={showZoomControls}
+            onToggleControls={() => setShowZoomControls((v) => !v)}
+          />
         )}
         <StageBar item={item} label={labels[item.key]} showOriginal={showOriginal} setShowOriginal={(on) => setOriginalOf(on && g ? g.id : null)} />
       </>
@@ -760,7 +833,7 @@ export function Stage() {
   return (
     <div className="stage">
       {view}
-      <Timeline labels={labels} />
+      <Timeline labels={labels} onSelect={() => setResetSignal((s) => s + 1)} />
       {fullscreen}
     </div>
   );

@@ -2,7 +2,7 @@
 // (the live before/after comparison, or a zoomable image).
 
 import { ChevronLeft, ChevronRight, Maximize2, X } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { native } from "../lib/native";
 
@@ -177,59 +177,10 @@ function FullscreenShell({ children, hint, onClose, nav }: { children: ReactNode
     </div>
   );
 }
+import { ZoomPan } from "./ZoomPan";
+export { ZoomPan } from "./ZoomPan";
 
-/** Fit to screen; click for 100 % at that point, drag to pan, click again to fit. */
+/** Fit to screen; wheel to zoom, drag to pan, click to toggle 100%, + / - / 0 / 1 shortcuts. */
 export function ZoomImage({ src, alt }: { src: string; alt: string }) {
-  const scroller = useRef<HTMLDivElement>(null);
-  const [zoom, setZoom] = useState<{ fx: number; fy: number } | null>(null);
-  const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
-  const drag = useRef<{ x: number; y: number; sl: number; st: number; moved: boolean } | null>(null);
-
-  useLayoutEffect(() => {
-    const el = scroller.current;
-    if (!el || !zoom || !natural) return;
-    el.scrollLeft = zoom.fx * natural.w - el.clientWidth / 2;
-    el.scrollTop = zoom.fy * natural.h - el.clientHeight / 2;
-  }, [zoom, natural]);
-
-  const el = scroller.current;
-  const canZoom = !natural || !el || natural.w > el.clientWidth || natural.h > el.clientHeight;
-
-  return (
-    <div
-      ref={scroller}
-      className={`viewer-scroll ${zoom ? "zoomed" : ""}`}
-      onPointerDown={(e) => {
-        if (!zoom || e.button !== 0) return;
-        drag.current = { x: e.clientX, y: e.clientY, sl: e.currentTarget.scrollLeft, st: e.currentTarget.scrollTop, moved: false };
-        e.currentTarget.setPointerCapture(e.pointerId);
-      }}
-      onPointerMove={(e) => {
-        const d = drag.current;
-        if (!d) return;
-        if (Math.abs(e.clientX - d.x) + Math.abs(e.clientY - d.y) > 4) d.moved = true;
-        e.currentTarget.scrollLeft = d.sl - (e.clientX - d.x);
-        e.currentTarget.scrollTop = d.st - (e.clientY - d.y);
-      }}
-      onPointerUp={() => {
-        const d = drag.current;
-        drag.current = null;
-        if (zoom && d && !d.moved) setZoom(null);
-      }}
-    >
-      <img
-        className="viewer-img"
-        src={src}
-        alt={alt}
-        draggable={false}
-        style={zoom && natural ? { width: natural.w, height: natural.h, maxWidth: "none", maxHeight: "none", cursor: "inherit" } : { cursor: canZoom ? "zoom-in" : "default" }}
-        onLoad={(e) => setNatural({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
-        onClick={(e) => {
-          if (zoom || !canZoom) return;
-          const r = e.currentTarget.getBoundingClientRect();
-          setZoom({ fx: (e.clientX - r.left) / r.width, fy: (e.clientY - r.top) / r.height });
-        }}
-      />
-    </div>
-  );
+  return <ZoomPan src={src} alt={alt} showControls />;
 }

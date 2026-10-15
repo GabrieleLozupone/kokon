@@ -1,12 +1,15 @@
 // Before / after views for results made from another image (edit, inpaint, expand, upscale).
 
-import { useEffect, useRef, useState } from "react";
+import { ZoomIn } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { urls } from "../lib/api";
 import { diffPixels, type CompareBase, type CompareMode } from "../lib/logic";
 import { setState, useStore } from "../lib/store";
 import type { GenerationRecord } from "../lib/types";
-import { Seg, useFit } from "./ui";
+import { calculateSplitFraction } from "../lib/zoomMath";
+import { Seg } from "./ui";
 import { FullscreenButton } from "./Viewer";
+import { ZoomPan } from "./ZoomPan";
 
 const MODES: { value: CompareMode; label: string }[] = [
   { value: "off", label: "Result" },
@@ -24,17 +27,57 @@ const DIFF_SIDE = 1024;
 
 const isTyping = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
 
-/** The result with the selected comparison view, sized to fit the stage (or the screen). */
-export function CompareFrame({ g, base, fullscreen = false, onFullscreen }: { g: GenerationRecord; base: CompareBase; fullscreen?: boolean; onFullscreen?: () => void }) {
+export interface CompareFrameProps {
+  g: GenerationRecord;
+  base: CompareBase;
+  fullscreen?: boolean;
+  onFullscreen?: () => void;
+  showControls?: boolean;
+  onToggleControls?: () => void;
+  beforeSrc?: string;
+  afterSrc?: string;
+  onChange?: (transform: import("../lib/zoomMath").ZoomTransform) => void;
+}
+
+/** The result with the selected comparison view, wrapped in ZoomPan for lockstep inspection. */
+export function CompareFrame({
+  g,
+  base,
+  fullscreen = false,
+  onFullscreen,
+  showControls = true,
+  onToggleControls,
+  beforeSrc,
+  afterSrc,
+  onChange,
+}: CompareFrameProps) {
   const mode = useStore((s) => s.compare);
   const flickerMs = useStore((s) => s.flickerMs);
-  const { ref, box } = useFit(g.width / g.height);
   const [split, setSplit] = useState(0.5);
   const [holding, setHolding] = useState(false);
   const [phase, setPhase] = useState<"before" | "after">("after");
-  const dragging = useRef(false);
-  const after = urls.gen(g.id);
-  const before = urls.input(base.inputId);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const draggingSlider = useRef(false);
+  const after = afterSrc ?? urls.gen(g.id);
+  const before = beforeSrc ?? urls.input(base.inputId);
+  const contentSize = useMemo(() => ({ width: g.width, height: g.height }), [g.width, g.height]);
+
+  useEffect(() => {
+    draggingSlider.current = false;
+    setHolding(false);
+  }, [mode, g.id]);
+
+  useEffect(() => {
+    const handleUp = () => {
+      draggingSlider.current = false;
+    };
+    window.addEventListener("pointerup", handleUp);
+    window.addEventListener("pointercancel", handleUp);
+    return () => {
+      window.removeEventListener("pointerup", handleUp);
+      window.removeEventListener("pointercancel", handleUp);
+    };
+  }, []);
 
   useEffect(() => {
     if (mode !== "flicker") return;
@@ -60,10 +103,12 @@ export function CompareFrame({ g, base, fullscreen = false, onFullscreen }: { g:
     };
   }, []);
 
-  const setFromPointer = (e: React.PointerEvent<HTMLDivElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    setSplit(Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)));
-  };
+  const updateFromPointer = useCallback((clientX: number) => {
+    const box = boxRef.current;
+    if (!box) return;
+    const r = box.getBoundingClientRect();
+    setSplit(calculateSplitFraction(clientX, r));
+  }, []);
 
   const showBefore = holding || (mode === "flicker" && phase === "before");
   const label = holding || mode === "flicker" ? (showBefore ? "Before" : "After") : null;
@@ -71,61 +116,205 @@ export function CompareFrame({ g, base, fullscreen = false, onFullscreen }: { g:
   const { x, y, w, h } = base.rect;
 
   return (
-    <div className={fullscreen ? "viewer-frame" : "stage-frame"} ref={ref}>
-      <div
-        className={`compare-box ${mode === "slider" ? "slider" : ""}`}
-        style={{ width: box.w, height: box.h }}
-        onPointerDown={(e) => {
-          if (e.button !== 0) return;
-          e.currentTarget.setPointerCapture(e.pointerId);
-          if (mode === "slider") {
-            dragging.current = true;
-            setFromPointer(e);
-          } else if (mode === "off") setHolding(true);
-        }}
-        onPointerMove={(e) => dragging.current && setFromPointer(e)}
-        onPointerUp={() => {
-          dragging.current = false;
-          if (mode === "off") setHolding(false);
-        }}
-        onPointerCancel={() => {
-          dragging.current = false;
-          setHolding(false);
-        }}
-        onDoubleClick={() => setState({ overlay: null })}
-        title={mode === "off" ? "Press and hold (or hold B) to see the original" : undefined}
+    <div className={fullscreen ? "viewer-frame" : "stage-frame"}>
+      <ZoomPan
+        contentSize={contentSize}
+        resetKey={g.id}
+        showControls={showControls}
+        enableToggleZoom={false}
+        onChange={onChange}
+        className={fullscreen ? "compare-fullscreen" : "compare-stage"}
+        overlay={
+          !fullscreen && (
+            <>
+              <div
+                className="stage-overlay-btns"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+              >
+                {onToggleControls && (
+                  <button
+                    className={`stage-overlay-btn ${showControls ? "active" : ""}`}
+                    title={showControls ? "Hide zoom controls" : "Show zoom controls"}
+                    aria-label="Toggle zoom controls"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleControls();
+                    }}
+                    onDoubleClick={(e) => e.stopPropagation()}
+                  >
+                    <ZoomIn size={15} />
+                  </button>
+                )}
+                <FullscreenButton hint="Hold B for the original" onOpen={onFullscreen} content={<CompareFullscreen g={g} base={base} />} />
+              </div>
+              <div
+                className="compare-overlay"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+              >
+                <CompareBar />
+              </div>
+            </>
+          )
+        }
       >
-        <img className="compare-img" src={after} alt={g.prompt} draggable={false} />
-        {mode === "diff" && !holding && <DiffCanvas after={after} before={before} rect={base.rect} />}
-        {/* The original stays mounted (hidden) so switching is instant. */}
-        <div
-          className="compare-before"
-          style={{
-            visibility: showBefore || mode === "slider" ? "visible" : "hidden",
-            clipPath: mode === "slider" && !holding ? `inset(0 ${pct(1 - split)} 0 0)` : undefined,
-          }}
-        >
-          <img src={before} alt="Original" draggable={false} style={{ left: pct(x), top: pct(y), width: pct(w), height: pct(h) }} />
-        </div>
-        {mode === "slider" && !holding && (
-          <>
-            <div className="compare-handle" style={{ left: pct(split) }}>
-              <span />
+        {({ transform, isZoomed }) => {
+          const counterScale = Math.min(3, Math.max(0.25, 1 / transform.scale));
+          const lineWidth = Math.min(10, Math.max(1, 2 / transform.scale));
+          const lineMargin = -lineWidth / 2;
+
+          return (
+            <div
+              ref={boxRef}
+              className={`compare-box ${mode === "slider" ? "slider" : ""} ${isZoomed ? "zoomed" : ""}`}
+              style={{ width: g.width, height: g.height }}
+              onPointerDown={(e) => {
+                if (e.button !== 0) return;
+                if (mode === "slider") {
+                  if (!isZoomed) {
+                    e.stopPropagation();
+                    try {
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                    } catch {}
+                    draggingSlider.current = true;
+                    updateFromPointer(e.clientX);
+                  }
+                } else if (mode === "off") {
+                  if (!isZoomed) {
+                    e.stopPropagation();
+                    try {
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                    } catch {}
+                    setHolding(true);
+                  }
+                }
+              }}
+              onPointerMove={(e) => {
+                if (draggingSlider.current) {
+                  e.stopPropagation();
+                  updateFromPointer(e.clientX);
+                }
+              }}
+              onPointerUp={(e) => {
+                if (draggingSlider.current) {
+                  e.stopPropagation();
+                  draggingSlider.current = false;
+                  try {
+                    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                      e.currentTarget.releasePointerCapture(e.pointerId);
+                    }
+                  } catch {}
+                }
+                if (mode === "off") {
+                  e.stopPropagation();
+                  setHolding(false);
+                  try {
+                    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                      e.currentTarget.releasePointerCapture(e.pointerId);
+                    }
+                  } catch {}
+                }
+              }}
+              onPointerCancel={(e) => {
+                if (draggingSlider.current) {
+                  draggingSlider.current = false;
+                  try {
+                    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                      e.currentTarget.releasePointerCapture(e.pointerId);
+                    }
+                  } catch {}
+                }
+                if (mode === "off") {
+                  setHolding(false);
+                  try {
+                    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                      e.currentTarget.releasePointerCapture(e.pointerId);
+                    }
+                  } catch {}
+                }
+              }}
+              onDoubleClick={() => setState({ overlay: null })}
+              title={mode === "off" ? "Press and hold (or hold B) to see the original" : undefined}
+            >
+              <img className="compare-img" src={after} alt={g.prompt} draggable={false} />
+              {mode === "diff" && !holding && <DiffCanvas after={after} before={before} rect={base.rect} transformScale={transform.scale} />}
+              {/* The original stays mounted (hidden) so switching is instant. */}
+              <div
+                className="compare-before"
+                style={{
+                  visibility: showBefore || mode === "slider" ? "visible" : "hidden",
+                  clipPath: mode === "slider" && !holding ? `inset(0 ${pct(1 - split)} 0 0)` : undefined,
+                }}
+              >
+                <img src={before} alt="Original" draggable={false} style={{ left: pct(x), top: pct(y), width: pct(w), height: pct(h) }} />
+              </div>
+              {mode === "slider" && !holding && (
+                <>
+                  <div
+                    className="compare-handle"
+                    style={{
+                      left: pct(split),
+                      width: `${lineWidth}px`,
+                      marginLeft: `${lineMargin}px`,
+                    }}
+                    onPointerDown={(e) => {
+                      if (e.button !== 0) return;
+                      e.stopPropagation();
+                      try {
+                        e.currentTarget.setPointerCapture(e.pointerId);
+                      } catch {}
+                      draggingSlider.current = true;
+                      updateFromPointer(e.clientX);
+                    }}
+                    onPointerMove={(e) => {
+                      if (draggingSlider.current) {
+                        e.stopPropagation();
+                        updateFromPointer(e.clientX);
+                      }
+                    }}
+                    onPointerUp={(e) => {
+                      if (draggingSlider.current) {
+                        e.stopPropagation();
+                        draggingSlider.current = false;
+                        try {
+                          if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                            e.currentTarget.releasePointerCapture(e.pointerId);
+                          }
+                        } catch {}
+                      }
+                    }}
+                    onPointerCancel={(e) => {
+                      draggingSlider.current = false;
+                      try {
+                        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                          e.currentTarget.releasePointerCapture(e.pointerId);
+                        }
+                      } catch {}
+                    }}
+                  >
+                    <span style={{ transform: `scale(${counterScale})` }} />
+                  </div>
+                  <span className="compare-tag left" style={{ transform: `scale(${counterScale})`, transformOrigin: "top left" }}>
+                    Before
+                  </span>
+                  <span className="compare-tag right" style={{ transform: `scale(${counterScale})`, transformOrigin: "top right" }}>
+                    After
+                  </span>
+                </>
+              )}
+              {label && (
+                <span className="compare-tag left" style={{ transform: `scale(${counterScale})`, transformOrigin: "top left" }}>
+                  {label}
+                </span>
+              )}
             </div>
-            <span className="compare-tag left">Before</span>
-            <span className="compare-tag right">After</span>
-          </>
-        )}
-        {label && <span className="compare-tag left">{label}</span>}
-        {!fullscreen && (
-          <div className="compare-overlay" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
-            <CompareBar />
-          </div>
-        )}
-        {!fullscreen && (
-          <FullscreenButton hint="Hold B for the original" onOpen={onFullscreen} content={<CompareFullscreen g={g} base={base} />} />
-        )}
-      </div>
+          );
+        }}
+      </ZoomPan>
     </div>
   );
 }
@@ -134,7 +323,7 @@ export function CompareFrame({ g, base, fullscreen = false, onFullscreen }: { g:
 export function CompareFullscreen({ g, base }: { g: GenerationRecord; base: CompareBase }) {
   return (
     <>
-      <CompareFrame g={g} base={base} fullscreen />
+      <CompareFrame g={g} base={base} fullscreen showControls={true} />
       <div className="viewer-compare-bar">
         <CompareBar />
       </div>
@@ -143,10 +332,21 @@ export function CompareFullscreen({ g, base }: { g: GenerationRecord; base: Comp
 }
 
 /** Highlights what changed: dimmed result, changed pixels in red. */
-function DiffCanvas({ after, before, rect }: { after: string; before: string; rect: CompareBase["rect"] }) {
+function DiffCanvas({
+  after,
+  before,
+  rect,
+  transformScale = 1,
+}: {
+  after: string;
+  before: string;
+  rect: CompareBase["rect"];
+  transformScale?: number;
+}) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [share, setShare] = useState<number | null>(null);
   const [error, setError] = useState(false);
+  const counterScale = Math.min(3, Math.max(0.25, 1 / transformScale));
 
   useEffect(() => {
     let alive = true;
@@ -155,12 +355,24 @@ function DiffCanvas({ after, before, rect }: { after: string; before: string; re
     const load = (src: string) =>
       new Promise<HTMLImageElement>((ok, fail) => {
         const im = new Image();
-        im.crossOrigin = "anonymous";
+        const isCrossOrigin = src.startsWith("http://") || src.startsWith("https://") || src.startsWith("//");
+        if (isCrossOrigin) {
+          im.crossOrigin = "anonymous";
+          im.src = src.includes("?") ? `${src}&cors=1` : `${src}?cors=1`;
+        } else {
+          im.src = src;
+        }
         im.onload = () => ok(im);
-        im.onerror = fail;
-        // A separate URL: the displayed <img> loads without CORS, and reusing that cached
-        // response for a CORS request would fail.
-        im.src = `${src}&cors=1`;
+        im.onerror = () => {
+          if (im.crossOrigin) {
+            const retry = new Image();
+            retry.onload = () => ok(retry);
+            retry.onerror = fail;
+            retry.src = src;
+          } else {
+            fail(new Error("Failed to load image: " + src));
+          }
+        };
       });
     Promise.all([load(after), load(before)])
       .then(([a, b]) => {
@@ -171,8 +383,11 @@ function DiffCanvas({ after, before, rect }: { after: string; before: string; re
         const H = Math.max(1, Math.round(a.naturalHeight * k));
         cv.width = W;
         cv.height = H;
-        const ctx = cv.getContext("2d", { willReadFrequently: true })!;
-        ctx.imageSmoothingQuality = "high";
+        const ctx = cv.getContext("2d", { willReadFrequently: true });
+        if (!ctx) {
+          if (alive) setError(true);
+          return;
+        }
         ctx.drawImage(a, 0, 0, W, H);
         const A = ctx.getImageData(0, 0, W, H);
         ctx.clearRect(0, 0, W, H);
@@ -192,7 +407,7 @@ function DiffCanvas({ after, before, rect }: { after: string; before: string; re
   return (
     <>
       <canvas ref={ref} className="compare-diff" />
-      <span className="compare-tag left">
+      <span className="compare-tag left" style={{ transform: `scale(${counterScale})`, transformOrigin: "top left" }}>
         {error ? "Could not compare the images" : share === null ? "Comparing…" : share < 0.001 ? "No visible change" : `≈${share < 0.01 ? "<1" : Math.round(share * 100)}% of the image changed`}
       </span>
     </>
