@@ -201,8 +201,12 @@ export function Settings() {
                 <span>Theme</span>
                 <select
                   className="select"
-                  value={getState().theme}
-                  onChange={(e) => setTheme(e.target.value as "system" | "light" | "dark")}
+                  value={(cfg.ui?.theme as string) || getState().theme || "system"}
+                  onChange={(e) => {
+                    const t = e.target.value as "system" | "light" | "dark";
+                    setTheme(t);
+                    set({ ui: { ...cfg.ui, theme: t } });
+                  }}
                 >
                   <option value="system">System</option>
                   <option value="light">Light</option>

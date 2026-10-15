@@ -8,6 +8,7 @@
 import { useSyncExternalStore } from "react";
 import { api, ApiError, setPrivateInputs, subscribe } from "./api";
 import { buildRequest, emptyComposer, needsPrompt, newKey, persistentAdvanced, refFromGen, refFromInput, timelineLinks, undoTarget, versionLabels, type CompareMode, type Composer, type Ref } from "./logic";
+import { applyTheme } from "./platform";
 import type { AppErrorBody, GenerationRecord, GenerationRequest, InputRecord, JobView, ServerState, StatusResponse } from "./types";
 
 export type Overlay = null | "gallery" | "settings" | "inpaint" | "expand" | "welcome" | "whats-new" | "prompt-tips";
@@ -488,8 +489,8 @@ export async function setPrivateMode(on: boolean, confirmDiscard: () => Promise<
 /** Sets the UI theme and persists it. */
 export function setTheme(theme: Theme) {
   saveTheme(theme);
+  applyTheme(theme);
   setState({ theme });
-  // The actual DOM class is applied in platform.ts via applyTheme()
 }
 
 let switching = 0;
