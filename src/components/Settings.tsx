@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { api } from "../lib/api";
 import { native } from "../lib/native";
-import { getState, refreshStatus, setState, startTour, toastError, toastInfo } from "../lib/store";
+import { getState, refreshStatus, setState, setTheme, startTour, toastError, toastInfo } from "../lib/store";
 import { formatBytes } from "../lib/logic";
 import { UpscalerControls } from "./Upscalers";
 import { WHATS_NEW_VERSION } from "./WhatsNew";
@@ -197,6 +197,21 @@ export function Settings() {
           {tab === "general" && (
             <>
               <PathField label="Save images to" value={cfg.outputDir} folder onChange={(v) => set({ outputDir: v })} />
+              <div className="field-row">
+                <span>Theme</span>
+                <select
+                  className="select"
+                  value={getState().theme}
+                  onChange={(e) => setTheme(e.target.value as "system" | "light" | "dark")}
+                >
+                  <option value="system">System</option>
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                </select>
+              </div>
+              <span className="muted" style={{ marginTop: -10 }}>
+                System follows your OS setting. Light/Dark override it.
+              </span>
               <div className="field-row">
                 <span>Keep inference server running after closing the app</span>
                 <Switch on={cfg.keepServerRunning} onChange={(v) => set({ keepServerRunning: v })} />

@@ -12,6 +12,8 @@ import type { AppErrorBody, GenerationRecord, GenerationRequest, InputRecord, Jo
 
 export type Overlay = null | "gallery" | "settings" | "inpaint" | "expand" | "welcome" | "whats-new" | "prompt-tips";
 
+export type Theme = "system" | "light" | "dark";
+
 export interface SessionItem {
   key: string;
   kind: "gen" | "input" | "job";
@@ -83,11 +85,14 @@ export interface State {
   redo: string[];
   /** Step of the first-run tour on screen (components/Tour.tsx), or null. */
   tour: number | null;
+  /** UI theme: "system" (follows OS), "light", or "dark". Persisted in localStorage. */
+  theme: Theme;
 }
 
 const PREFS_KEY = "qls.prefs.v1";
 const PROJECTS_KEY = "qls.projects.v1";
 const SIDEBAR_KEY = "qls.sidebar.v1";
+const THEME_KEY = "qls.theme.v1";
 
 function loadPrefs(): Partial<Composer> {
   try {
@@ -104,6 +109,24 @@ function savePrefs(c: Composer) {
     const { quality, resolution, aspect, customWidth, customHeight } = c;
     const advanced = persistentAdvanced(c.advanced);
     localStorage.setItem(PREFS_KEY, JSON.stringify({ quality, resolution, aspect, customWidth, customHeight, advanced }));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+function loadTheme(): Theme {
+  try {
+    const t = localStorage.getItem(THEME_KEY);
+    if (t === "light" || t === "dark" || t === "system") return t;
+  } catch {
+    /* storage unavailable */
+  }
+  return "system";
+}
+
+function saveTheme(theme: Theme) {
+  try {
+    localStorage.setItem(THEME_KEY, theme);
   } catch {
     /* storage unavailable */
   }
@@ -286,6 +309,7 @@ let state: State = {
   privateMode: false,
   redo: [],
   tour: null,
+  theme: loadTheme(),
 };
 
 const listeners = new Set<() => void>();
@@ -459,6 +483,13 @@ export async function setPrivateMode(on: boolean, confirmDiscard: () => Promise<
   setState((st) => ({ privateMode: on, projectId: newKey(), session: [], selected: null, overlay: null, redo: [], composer: emptyComposer(st.composer) }));
   if (on) toastInfo("Private mode: images are not saved, and are deleted when you turn it off or close the app.");
   focusPrompt();
+}
+
+/** Sets the UI theme and persists it. */
+export function setTheme(theme: Theme) {
+  saveTheme(theme);
+  setState({ theme });
+  // The actual DOM class is applied in platform.ts via applyTheme()
 }
 
 let switching = 0;
