@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [react()],
   clearScreen: false,
   // warmup: compile the app as soon as the dev server starts, not when the window asks for it.
-  server: { port: 1420, strictPort: true, host: "127.0.0.1", warmup: { clientFiles: ["./src/main.tsx"] } },
+  server: { port: 1420, strictPort: true, host: "127.0.0.1", cors: true, warmup: { clientFiles: ["./src/main.tsx"] } },
   build: { target: "es2022", sourcemap: false, chunkSizeWarningLimit: 1500 },
-  test: { environment: "jsdom" },
+  test: { environment: "jsdom", include: ["src/**/*.{test,spec}.?(c|m)[jt]s?(x)"] },
 });

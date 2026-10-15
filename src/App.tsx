@@ -22,7 +22,9 @@ import { WhatsNew, whatsNewDue } from "./components/WhatsNew";
 import { UpscalerCompare } from "./components/Upscalers";
 import { KokonMark, Welcome } from "./components/Welcome";
 import { autoCheckForUpdate, installUpdate } from "./lib/updates";
+import type { GenerationRecord } from "./lib/types";
 
+const isTauri = typeof window !== "undefined" && ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
 const IMAGE_EXT = /\.(png|jpe?g|webp|bmp|gif|tiff?|heic|heif)$/i;
 
 function StatusIndicator() {
@@ -197,6 +199,111 @@ export default function App() {
     let cancelled = false;
     (async () => {
       try {
+        if (!isTauri) {
+          // Running in browser dev mode outside Tauri shell:
+          // Initialize interactive preview session with sample images so the full UI is visible & testable
+          const sampleBase: GenerationRecord = {
+            id: "/examples/cabin.jpg",
+            prompt: "A cozy wooden cabin in the mountains",
+            negative_prompt: "",
+            model: "Qwen-Image-2.1-Turbo",
+            sampler: "euler",
+            scheduler: "turbo",
+            steps: 8,
+            cfg: 1.0,
+            strength: null,
+            seed: 41,
+            width: 1600,
+            height: 893,
+            working_width: 1600,
+            working_height: 893,
+            file_path: "/examples/cabin.jpg",
+            mode: "generate",
+            favorite: false,
+            notes: [],
+            duration_ms: 1100,
+            created_at: new Date().toISOString(),
+            quality: "fast",
+            resolution: "auto",
+            mask_input_id: null,
+            outpaint: null,
+            extra_paths: [],
+            parent_id: null,
+            request: null,
+            pipeline: null,
+            references: [],
+          };
+
+          const sampleGen: GenerationRecord = {
+            id: "/examples/cabin-winter.jpg",
+            prompt: "A cozy wooden cabin during a serene winter snowfall",
+            negative_prompt: "",
+            model: "Qwen-Image-2.1-Turbo",
+            sampler: "euler",
+            scheduler: "turbo",
+            steps: 8,
+            cfg: 1.0,
+            strength: null,
+            seed: 42,
+            width: 1600,
+            height: 893,
+            working_width: 1600,
+            working_height: 893,
+            file_path: "/examples/cabin-winter.jpg",
+            mode: "edit",
+            favorite: false,
+            notes: [],
+            duration_ms: 1250,
+            created_at: new Date().toISOString(),
+            quality: "fast",
+            resolution: "auto",
+            mask_input_id: null,
+            outpaint: null,
+            extra_paths: [],
+            parent_id: null,
+            request: null,
+            pipeline: null,
+            references: [
+              {
+                index: 0,
+                input_id: "/examples/cabin.jpg",
+                original_path: "/examples/cabin.jpg",
+                width: 1600,
+                height: 893,
+              },
+            ],
+          };
+
+          setState({
+            needsSetup: false,
+            projects: [
+              {
+                id: "p-cabin",
+                title: "Cabin in Snow",
+                named: true,
+                updatedAt: Date.now(),
+                cover: "/examples/cabin-winter.jpg",
+                count: 2,
+              },
+            ],
+            session: [
+              { key: "base", kind: "gen", gen: sampleBase },
+              { key: "edit", kind: "gen", gen: sampleGen },
+            ],
+            selected: "edit",
+            compare: "slider",
+            overlay: null,
+            connected: true,
+            server: {
+              state: "ready",
+              owned: true,
+              error: null,
+            },
+          });
+          setBoot("ok");
+          return;
+        }
+
         const conn = await native.connect();
         if (cancelled) return;
         configure(conn.baseUrl, conn.token);
@@ -232,20 +339,26 @@ export default function App() {
   // Native file drops (paths) — efficient: the service reads the files itself.
   useEffect(() => {
     let un: (() => void) | undefined;
-    getCurrentWebview()
-      .onDragDropEvent((ev) => {
-        const p = ev.payload;
-        if (p.type === "enter" || p.type === "over") setDragging(true);
-        else if (p.type === "leave") setDragging(false);
-        else if (p.type === "drop") {
-          setDragging(false);
-          const paths = p.paths.filter((x) => IMAGE_EXT.test(x));
-          if (paths.length) importPaths(paths);
-          else if (p.paths.length) toastInfo("Only image files can be added.");
-        }
-      })
-      .then((u) => (un = u))
-      .catch(() => {});
+    if (isTauri) {
+      try {
+        getCurrentWebview()
+          .onDragDropEvent((ev) => {
+            const p = ev.payload;
+            if (p.type === "enter" || p.type === "over") setDragging(true);
+            else if (p.type === "leave") setDragging(false);
+            else if (p.type === "drop") {
+              setDragging(false);
+              const paths = p.paths.filter((x) => IMAGE_EXT.test(x));
+              if (paths.length) importPaths(paths);
+              else if (p.paths.length) toastInfo("Only image files can be added.");
+            }
+          })
+          .then((u) => (un = u))
+          .catch(() => {});
+      } catch {
+        /* running outside Tauri */
+      }
+    }
     return () => un?.();
   }, []);
 

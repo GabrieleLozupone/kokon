@@ -100,15 +100,15 @@ export const api = {
 };
 
 export const urls = {
-  input: (id: string) => `${base}/inputs/${id}/image?token=${token}`,
-  inputThumb: (id: string) => `${base}/inputs/${id}/thumb?token=${token}`,
-  gen: (id: string) => `${base}/gallery/${id}/image?token=${token}`,
-  genThumb: (id: string) => `${base}/gallery/${id}/thumb?token=${token}`,
+  input: (id: string) => (id.startsWith("/") ? id : `${base}/inputs/${id}/image?token=${token}`),
+  inputThumb: (id: string) => (id.startsWith("/") ? id : `${base}/inputs/${id}/thumb?token=${token}`),
+  gen: (id: string) => (id.startsWith("/") ? id : `${base}/gallery/${id}/image?token=${token}`),
+  genThumb: (id: string) => (id.startsWith("/") ? id : `${base}/gallery/${id}/thumb?token=${token}`),
   /** The result before the upscaler enlarged it (`pipeline.original_path`). */
-  genOriginal: (id: string) => `${base}/gallery/${id}/original?token=${token}`,
+  genOriginal: (id: string) => (id.startsWith("/") ? id : `${base}/gallery/${id}/original?token=${token}`),
   /** Full image for a "gen:<id>" / "input:<id>" source. */
-  source: (s: string) => (s.startsWith("gen:") ? urls.gen(s.slice(4)) : urls.input(s.slice(6))),
-  sourceThumb: (s: string) => (s.startsWith("gen:") ? urls.genThumb(s.slice(4)) : urls.inputThumb(s.slice(6))),
+  source: (s: string) => (s.startsWith("/") ? s : s.startsWith("gen:") ? urls.gen(s.slice(4)) : urls.input(s.slice(6))),
+  sourceThumb: (s: string) => (s.startsWith("/") ? s : s.startsWith("gen:") ? urls.genThumb(s.slice(4)) : urls.inputThumb(s.slice(6))),
 };
 
 /** Server-sent events with automatic reconnect. Returns an unsubscribe function. */

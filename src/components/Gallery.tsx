@@ -284,7 +284,7 @@ function Preview(props: {
         </button>
       </div>
       {full && (
-        <Fullscreen hint="Click to zoom to 100 %" onClose={() => setFull(false)} nav={nav}>
+        <Fullscreen hint="Scroll or click to zoom · Drag to pan" onClose={() => setFull(false)} nav={nav}>
           <ZoomImage key={g.id} src={urls.gen(g.id)} alt={g.prompt} />
         </Fullscreen>
       )}
