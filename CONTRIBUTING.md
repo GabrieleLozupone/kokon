@@ -50,6 +50,12 @@ cd mcp && npm test             # MCP server, including a stdio protocol test
 
 The MCP server has its own `package.json`: run `npm install` in `mcp/` once before its tests.
 
+GitHub Actions runs the UI and MCP TypeScript checks and unit tests on pull requests and pushes
+to `master`, using Node 22. To run the MCP unit tests without the protocol test, use
+`cd mcp && npm test -- test/paths.test.ts test/tools.test.ts`. The protocol test is excluded
+from CI for now: it requires a built `kokon-service` (`cargo build -p qls-service`) and the
+MCP bundle (`cd mcp && npm run build`).
+
 ## Where things live
 
 - `crates/qls-core`: all the logic (geometry, imaging, planner, inference adapter, job queue,
