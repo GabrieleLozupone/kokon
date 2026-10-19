@@ -124,6 +124,13 @@ export function AdvancedPanel({ plan }: { plan: Plan | null }) {
         <Switch on={a.vae_tiling ?? plan?.vae_tiling ?? false} onChange={(v) => setA({ vae_tiling: v })} label="VAE tiling" />
       </div>
 
+      <div className="field-row">
+        <span title="Skips sampling steps that would barely change the image (EasyCache), about 25 % faster sampling. Turn off to run every step.">
+          Step cache
+        </span>
+        <Switch on={a.step_cache ?? true} onChange={(v) => setA({ step_cache: v ? null : false })} label="Step cache" />
+      </div>
+
       <button className="btn" onClick={() => updateComposer({ advanced: {}, seed: null })}>
         <RotateCcw size={14} /> Reset to automatic
       </button>

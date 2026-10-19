@@ -193,8 +193,8 @@ pub fn prepare(plan: &Plan, prompt: &str, seed: i64, images: &[LoadedImage], mas
         },
         vae_tiling_params: vae_tiling_params(plan.vae_tiling, opts.server_vae_tile_size, plan.vae_tile),
         hires: None,
-        cache_mode: None,
-        cache_option: None,
+        cache_mode: plan.step_cache.then(|| crate::planner::STEP_CACHE_MODE.into()),
+        cache_option: plan.step_cache.then(|| crate::planner::STEP_CACHE_OPTION.into()),
         lora: Vec::new(),
         output_format: "png".into(),
         embed_image_metadata: false,
@@ -612,11 +612,15 @@ mod tests {
         let v = serde_json::to_value(&j.request).unwrap();
         assert_eq!((v["width"].as_u64(), v["height"].as_u64()), (Some(p.working.width as u64), Some(p.working.height as u64)));
         assert!(v.get("hires").map(|h| h.is_null()).unwrap_or(true), "no second pass");
-        assert!(v.get("cache_mode").map(|c| c.is_null()).unwrap_or(true));
+        assert_eq!((v["cache_mode"].as_str(), v["cache_option"].as_str()), (Some("easycache"), Some("threshold=0.4,end=0.6")), "step cache on by default");
         assert_eq!(v["sample_params"]["sample_steps"], 8);
         assert_eq!(v["sample_params"]["custom_sigmas"].as_array().unwrap().len(), 9, "Turbo's schedule");
         assert_eq!(v["sample_params"]["guidance"]["txt_cfg"], 1.0, "official: no CFG");
         assert!(p.working.area() > 2_500_000, "Quality renders toward native 2K: {:?}", p.working);
+        r.advanced.step_cache = Some(false);
+        let p = plan(&r, &env(vec![]), &RecommendedSettings::default()).unwrap();
+        let v = serde_json::to_value(&prepare(&p, &r.prompt, 42, &[], None, &esrgan_opts()).unwrap().request).unwrap();
+        assert!(v.get("cache_mode").is_none() && v.get("cache_option").is_none(), "turned off: server defaults");
     }
 
     #[test]

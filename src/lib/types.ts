@@ -33,6 +33,8 @@ export interface Advanced {
   hdr?: boolean | null;
   /** Size of edit/combine sources given to the model; null = standard (1 MP). */
   reference_detail?: ReferenceDetail | null;
+  /** Skip sampling steps that barely change the image (EasyCache); null = on. */
+  step_cache?: boolean | null;
 }
 
 /** "standard": sources at most 1 MP, so the output renders larger; "full": up to the output's size. */
@@ -98,6 +100,8 @@ export interface Plan {
   upscale: { method: UpscaleMethod; source: Size } | null;
   /** Edits and combines only (absent in older records). */
   reference_detail?: ReferenceDetail | null;
+  /** Absent in plans of older versions. */
+  step_cache?: boolean;
 }
 
 export interface AppErrorBody { code: string; message: string; suggestion?: string; detail?: string }

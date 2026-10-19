@@ -202,6 +202,8 @@ pub struct AdvancedOptions {
     pub hdr: Option<bool>,
     /// How large edit/combine sources are given to the model; None = standard (1 MP).
     pub reference_detail: Option<ReferenceDetail>,
+    /// Reuse the model output on steps that barely change it (sd.cpp's EasyCache); None = on.
+    pub step_cache: Option<bool>,
 }
 
 /// Size of the source images the model sees in edits and combines. They share the token
@@ -355,7 +357,18 @@ pub struct Plan {
     /// Decode tile (width, height in pixels) sent with the job; None = the server's own.
     #[serde(default)]
     pub vae_tile: Option<(u32, u32)>,
+    /// Sampling runs with [`STEP_CACHE_MODE`] (false in records of older versions).
+    #[serde(default)]
+    pub step_cache: bool,
 }
+
+/// sd.cpp's step cache: a step whose input barely changed reuses the previous step's output
+/// change instead of running the DiT. Skips are limited to the first 60 % of sampling: Turbo
+/// draws fine texture (skin, fur, skies) in its last steps, and skipping there left
+/// crosshatch artifacts (threshold 0.2 over the default 15–95 % window). This setting skips
+/// 2 of the 8 steps on an RTX 5090 (1 MP sampling 2.74 → 2.09 s).
+pub const STEP_CACHE_MODE: &str = "easycache";
+pub const STEP_CACHE_OPTION: &str = "threshold=0.4,end=0.6";
 
 /// Facts about inputs and the environment, measured before planning.
 #[derive(Debug, Clone, Default)]
@@ -1189,6 +1202,7 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
         custom_sigmas: if quick_upscale { Vec::new() } else { TURBO_SIGMAS.to_vec() },
         vae_tile,
         reference_detail: matches!(mode, ResolvedMode::Edit | ResolvedMode::MultiReference | ResolvedMode::Inpaint).then(|| adv.reference_detail.unwrap_or_default()),
+        step_cache: !quick_upscale && adv.step_cache.unwrap_or(true),
     })
 }
 
