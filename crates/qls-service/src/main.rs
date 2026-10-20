@@ -109,9 +109,60 @@ fn init_logging(dir: &std::path::Path) -> tracing_appender::non_blocking::Worker
     guard
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
-async fn main() {
+const HELP: &str = "\
+kokon-service — headless engine for Kokon (generation, job queue, gallery)
+
+Usage: kokon-service [--port <n>] [--persistent]
+
+Options:
+  --port <n>    Port of the local API (default: the configured service_port, 39151)
+  --persistent  Keep sd-server running after the last client disconnects
+  -h, --help    Print this help and exit
+  --version     Print the version and exit
+
+Environment:
+  QLS_DATA_DIR    Data folder: gallery, logs, models (default: the OS local app data folder)
+  QLS_CONFIG_DIR  Config folder (default: the OS config folder)
+  QLS_LOG         Log filter, e.g. info or debug (default: info)";
+
+/// `--version` and `--help` answer before the data folder, the log or the port are touched,
+/// so they work while a service is already running.
+fn cli_meta(args: &[String]) -> Option<String> {
+    if args.iter().any(|a| a == "--version") {
+        Some(format!("kokon-service {APP_VERSION}"))
+    } else if args.iter().any(|a| a == "--help" || a == "-h") {
+        Some(HELP.to_string())
+    } else {
+        None
+    }
+}
+
+/// A release build on Windows is a GUI-subsystem binary with no console of its own, so the
+/// output of `--version` would go nowhere: attach to the console that launched it (cmd,
+/// PowerShell) first. A debug build, macOS and Linux print directly.
+fn print_meta(text: &str) {
+    #[cfg(all(windows, not(debug_assertions)))]
+    unsafe {
+        unsafe extern "system" {
+            fn AttachConsole(process_id: u32) -> i32;
+        }
+        const ATTACH_PARENT_PROCESS: u32 = u32::MAX;
+        let _ = AttachConsole(ATTACH_PARENT_PROCESS);
+    }
+    println!("{text}");
+}
+
+fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if let Some(text) = cli_meta(&args) {
+        print_meta(&text);
+        return;
+    }
+    run(args)
+}
+
+#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
+async fn run(args: Vec<String>) {
     let persistent = args.iter().any(|a| a == "--persistent");
     let dir = data_dir();
     let _ = std::fs::create_dir_all(&dir);
@@ -317,5 +368,26 @@ async fn server_watch(state: Arc<AppState>) {
             ));
             state.engine.emit_server();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{cli_meta, APP_VERSION};
+
+    fn args(s: &str) -> Vec<String> {
+        s.split_whitespace().map(String::from).collect()
+    }
+
+    #[test]
+    fn version_and_help_answer_without_starting() {
+        assert_eq!(cli_meta(&args("--version")).unwrap(), format!("kokon-service {APP_VERSION}"));
+        for flag in ["--help", "-h"] {
+            let help = cli_meta(&args(flag)).unwrap();
+            for needle in ["--port", "--persistent", "QLS_DATA_DIR", "QLS_CONFIG_DIR", "QLS_LOG"] {
+                assert!(help.contains(needle), "{flag} does not mention {needle}");
+            }
+        }
+        assert!(cli_meta(&args("--persistent --port 1234")).is_none());
     }
 }
