@@ -302,6 +302,10 @@ pub struct AppConfig {
     /// Untiled 2K decodes need ~18 GB, OOM and retry with 256px tiles (~22 s); 768px
     /// tiles decode 2K in ~4 s on a 16 GB card.
     pub vae_tile_size: u32,
+    /// Reuse the previous step's output change when a sampling step barely changes the image
+    /// (sd.cpp's EasyCache, `cache_mode=easycache`). Skips 2 of Turbo's 8 steps on a
+    /// 1 MP render at an RTX 5090 (~25 % faster sampling).
+    pub step_cache: bool,
     /// Storage type of the Qwen 2.1 prefix cache (text + reference K/V reused across steps,
     /// `--model-args qwen_image_2_1_prefix_cache_type=...`). "auto" picks FP32 whenever
     /// SageAttention is on: ~8 GiB for a 2 MP reference, which never fits on 16 GB, so every
@@ -364,6 +368,7 @@ impl Default for AppConfig {
             sage_attention: true,
             sage_unsupported: false,
             vae_tile_size: 768,
+            step_cache: true,
             prefix_cache_type: "q8_0".into(),
             eager_load: true,
             upscaler_model: DEFAULT_UPSCALER.into(),
@@ -1167,6 +1172,7 @@ mod tests {
         // Older config files without the new fields keep loading with defaults.
         let old: AppConfig = serde_json::from_str(r#"{"serverPort": 41000, "vaeTileSize": 512}"#).unwrap();
         assert_eq!(old.profile().recommended_settings.area_quality, 2048 * 2048);
+        assert!(old.step_cache, "step cache on for settings written before it existed");
     }
 
     #[test]

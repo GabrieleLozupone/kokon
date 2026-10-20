@@ -559,6 +559,12 @@ export function Settings() {
                 <span>Flash attention</span>
                 <Switch on={cfg.flashAttention} onChange={(v) => set({ flashAttention: v })} />
               </div>
+              <div className="field-row">
+                <span title="Skips sampling steps that would barely change the image (EasyCache), about 25 % faster sampling. Turn off to run every step.">
+                  Step cache
+                </span>
+                <Switch on={cfg.stepCache} onChange={(v) => set({ stepCache: v })} />
+              </div>
               {cfg.gpuBackend === "cuda" && (
                 <>
                   <div className="field-row">

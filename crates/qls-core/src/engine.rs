@@ -172,6 +172,7 @@ pub fn plan_inputs(cfg: &AppConfig, image_sizes: Vec<Size>, mask: Option<(Size, 
         upscaler: cfg.upscaler().map(|u| u.0),
         metal: cfg.gpu_backend == crate::config::GpuBackend::Metal,
         server_vae_tiling: cfg.vae_tile_size > 0,
+        step_cache: cfg.step_cache,
         sage_attention: cfg.uses_sage_attention(),
         speed_factor: None,
         hide_uncalibrated: !crate::speed::trust_uncalibrated(cfg),
@@ -1957,15 +1958,18 @@ mod tests {
         let i = plan_inputs(&cfg, vec![], None, Some(16303));
         assert_eq!(i.upscaler, None, "no model file -> Lanczos");
         assert!(i.server_vae_tiling && i.sage_attention && !i.metal);
+        assert!(i.step_cache, "step cache on by default");
         assert_eq!(i.upscale_tile, 128, "the ESRGAN default's tile");
         std::fs::create_dir_all(cfg.upscalers_dir()).unwrap();
         std::fs::File::create(crate::catalog::UPSCALER.path(dir.path())).unwrap().set_len(crate::catalog::UPSCALER.size).unwrap();
         cfg.vae_tile_size = 0;
         cfg.gpu_backend = crate::config::GpuBackend::Metal;
+        cfg.step_cache = false;
         let i = plan_inputs(&cfg, vec![], None, Some(12_000));
         assert_eq!(i.upscaler.as_deref(), Some("4xNomos2_hq_mosr"));
         assert_eq!(i.upscale_tile, 256, "smaller tiles under 14 GB");
         assert!(!i.server_vae_tiling && i.metal);
+        assert!(!i.step_cache, "the Settings switch reaches the plan");
     }
 
     #[test]

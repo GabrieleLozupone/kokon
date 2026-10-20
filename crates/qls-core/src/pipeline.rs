@@ -569,7 +569,7 @@ mod tests {
     use crate::sdcpp::b64_decode;
 
     fn env(sizes: Vec<Size>) -> PlanInputs {
-        PlanInputs { image_sizes: sizes, vram_total_mib: Some(16303), upscaler: Some("4xNomos2_hq_mosr".into()), ..Default::default() }
+        PlanInputs { image_sizes: sizes, vram_total_mib: Some(16303), upscaler: Some("4xNomos2_hq_mosr".into()), step_cache: true, ..Default::default() }
     }
     fn esrgan_opts() -> BackendOptions {
         BackendOptions { server_vae_tile_size: 768 }
@@ -617,8 +617,8 @@ mod tests {
         assert_eq!(v["sample_params"]["custom_sigmas"].as_array().unwrap().len(), 9, "Turbo's schedule");
         assert_eq!(v["sample_params"]["guidance"]["txt_cfg"], 1.0, "official: no CFG");
         assert!(p.working.area() > 2_500_000, "Quality renders toward native 2K: {:?}", p.working);
-        r.advanced.step_cache = Some(false);
-        let p = plan(&r, &env(vec![]), &RecommendedSettings::default()).unwrap();
+        let off = PlanInputs { step_cache: false, ..env(vec![]) };
+        let p = plan(&r, &off, &RecommendedSettings::default()).unwrap();
         let v = serde_json::to_value(&prepare(&p, &r.prompt, 42, &[], None, &esrgan_opts()).unwrap().request).unwrap();
         assert!(v.get("cache_mode").is_none() && v.get("cache_option").is_none(), "turned off: server defaults");
     }

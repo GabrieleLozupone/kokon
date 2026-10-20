@@ -33,8 +33,6 @@ export interface Advanced {
   hdr?: boolean | null;
   /** Size of edit/combine sources given to the model; null = standard (1 MP). */
   reference_detail?: ReferenceDetail | null;
-  /** Skip sampling steps that barely change the image (EasyCache); null = on. */
-  step_cache?: boolean | null;
 }
 
 /** "standard": sources at most 1 MP, so the output renders larger; "full": up to the output's size. */
@@ -287,6 +285,8 @@ export interface AppConfig {
   /** The card is too old for SageAttention (before RTX 30 / compute capability 8.0); detected, read-only. */
   sageUnsupported?: boolean;
   vaeTileSize: number;
+  /** Reuse the previous step's output when a sampling step barely changes the image (EasyCache). */
+  stepCache: boolean;
   prefixCacheType: string;
   eagerLoad: boolean;
   /** Upscaler model (file stem); the bundled MoSR runs when its file is missing. */

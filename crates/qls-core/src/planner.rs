@@ -202,8 +202,6 @@ pub struct AdvancedOptions {
     pub hdr: Option<bool>,
     /// How large edit/combine sources are given to the model; None = standard (1 MP).
     pub reference_detail: Option<ReferenceDetail>,
-    /// Reuse the model output on steps that barely change it (sd.cpp's EasyCache); None = on.
-    pub step_cache: Option<bool>,
 }
 
 /// Size of the source images the model sees in edits and combines. They share the token
@@ -385,6 +383,8 @@ pub struct PlanInputs {
     pub metal: bool,
     /// The server was launched with `--vae-tiling` (tiles every decode by default).
     pub server_vae_tiling: bool,
+    /// Run the sampler's step cache (`AppConfig::step_cache`).
+    pub step_cache: bool,
     /// SageAttention is enabled (faster steps; used for estimates only).
     pub sage_attention: bool,
     /// Measured speed of this machine relative to the time model (`crate::speed`).
@@ -1202,7 +1202,7 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
         custom_sigmas: if quick_upscale { Vec::new() } else { TURBO_SIGMAS.to_vec() },
         vae_tile,
         reference_detail: matches!(mode, ResolvedMode::Edit | ResolvedMode::MultiReference | ResolvedMode::Inpaint).then(|| adv.reference_detail.unwrap_or_default()),
-        step_cache: !quick_upscale && adv.step_cache.unwrap_or(true),
+        step_cache: !quick_upscale && inputs.step_cache,
     })
 }
 
