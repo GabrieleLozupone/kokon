@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>An Offline Alternative to Nano Banana: Edit Photos with a Sentence on Your Own PC | Kokon</title>
+<meta name="description" content="Like Nano Banana (Gemini) or ChatGPT image editing, but on your own computer: Kokon edits photos from a sentence on your GPU. Free, private, no daily limits. What's the same, what's different, and when the cloud is still better.">
+<meta name="author" content="Gabriele Lozupone">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#0a0a0a">
+<link rel="canonical" href="https://kokon.app/offline-alternative-to-nano-banana/">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="../assets/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<meta property="og:site_name" content="Kokon">
+<meta property="og:type" content="article">
+<meta property="og:title" content="A local, offline alternative to Nano Banana">
+<meta property="og:description" content="Like Nano Banana (Gemini) or ChatGPT image editing, but on your own computer: Kokon edits photos from a sentence on your GPU. Free, private, no daily limits. What's the same, what's different, and when the cloud is still better.">
+<meta property="og:url" content="https://kokon.app/offline-alternative-to-nano-banana/">
+<meta property="og:image" content="https://kokon.app/assets/img/street-cat.webp">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/style.css?v=8">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "TechArticle",
+      "headline": "An Offline Alternative to Nano Banana: Edit Photos with a Sentence on Your Own PC | Kokon",
+      "description": "Like Nano Banana (Gemini) or ChatGPT image editing, but on your own computer: Kokon edits photos from a sentence on your GPU. Free, private, no daily limits. What's the same, what's different, and when the cloud is still better.",
+      "image": "https://kokon.app/assets/img/street-cat.webp",
+      "datePublished": "2026-10-21",
+      "dateModified": "2026-10-21",
+      "author": {
+        "@type": "Person",
+        "name": "Gabriele Lozupone",
+        "url": "https://gabrielelozupone.github.io/"
+      },
+      "about": [
+        {
+          "@type": "SoftwareApplication",
+          "name": "Kokon",
+          "url": "https://kokon.app/"
+        }
+      ],
+      "mainEntityOfPage": "https://kokon.app/offline-alternative-to-nano-banana/"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Kokon",
+          "item": "https://kokon.app/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Offline alternative to Nano Banana",
+          "item": "https://kokon.app/offline-alternative-to-nano-banana/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Can I run Nano Banana locally?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Nano Banana (Gemini's image model) only runs on Google's servers. Kokon is a free app that does the same kind of edit, from a sentence, with an open model on your own GPU."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is the quality the same as Nano Banana?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "It's close on everyday edits like removing objects, relighting, changing text and restyling, and it can differ on complex edits. Kokon uses Qwen-Image 2.1, the open model that leads the open-weights image-editing rankings."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does it have limits like the free Gemini or ChatGPT plans?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Kokon runs on your own graphics card, so there are no credits, queues or daily limits."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I use the images commercially?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Not with the default model: Qwen-Image 2.1 is under the Qwen Research License, which doesn't allow commercial use. The app itself is open source (AGPL-3.0)."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="mark" viewBox="0 0 1024 1024"><path d="M0.00 242.81 C0.00 112.17 70.23 25.08 175.59 25.08 C280.94 25.08 351.17 112.17 351.17 242.81 L351.17 781.19 C351.17 911.83 280.94 998.92 175.59 998.92 C70.23 998.92 0.00 911.83 0.00 781.19 Z M389.53 548.95 C389.53 250.35 662.35 25.08 1024.00 25.08 C1024.00 323.68 751.18 548.95 389.53 548.95 Z M389.53 587.31 C389.53 821.93 618.71 998.92 922.49 998.92 C922.49 764.30 693.31 587.31 389.53 587.31 Z" fill="currentColor"/></symbol>
+    <symbol id="win" viewBox="0 0 24 24"><path d="M0 0h11.3v11.3H0zM12.7 0H24v11.3H12.7zM0 12.7h11.3V24H0zM12.7 12.7H24V24H12.7z"/></symbol>
+    <symbol id="apple" viewBox="0 0 24 24"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></symbol>
+    <symbol id="linux" viewBox="0 0 24 24"><path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.132 1.884 1.071.771-.06 1.592-.536 2.257-1.306.631-.765 1.683-1.084 2.378-1.503.348-.199.629-.469.649-.853.023-.4-.2-.811-.714-1.376v-.097l-.003-.003c-.17-.2-.25-.535-.338-.926-.085-.401-.182-.786-.492-1.046h-.003c-.059-.054-.123-.067-.188-.135a.357.357 0 00-.19-.064c.431-1.278.264-2.55-.173-3.694-.533-1.41-1.465-2.638-2.175-3.483-.796-1.005-1.576-1.957-1.56-3.368.026-2.152.236-6.133-3.544-6.139zm.529 3.405h.013c.213 0 .396.062.584.198.19.135.33.332.438.533.105.259.158.459.166.724 0-.02.006-.04.006-.06v.105a.086.086 0 01-.004-.021l-.004-.024a1.807 1.807 0 01-.15.706.953.953 0 01-.213.335.71.71 0 00-.088-.042c-.104-.045-.198-.064-.284-.133a1.312 1.312 0 00-.22-.066c.05-.06.146-.133.183-.198.053-.128.082-.264.088-.402v-.02a1.21 1.21 0 00-.061-.4c-.045-.134-.101-.2-.183-.333-.084-.066-.167-.132-.267-.132h-.016c-.093 0-.176.03-.262.132a.8.8 0 00-.205.334 1.18 1.18 0 00-.09.4v.019c.002.089.008.179.02.267-.193-.067-.438-.135-.607-.202a1.635 1.635 0 01-.018-.2v-.02a1.772 1.772 0 01.15-.768c.082-.22.232-.406.43-.533a.985.985 0 01.594-.2zm-2.962.059h.036c.142 0 .27.048.399.135.146.129.264.288.344.465.09.199.14.4.153.667v.004c.007.134.006.2-.002.266v.08c-.03.007-.056.018-.083.024-.152.055-.274.135-.393.2.012-.09.013-.18.003-.267v-.015c-.012-.133-.04-.2-.082-.333a.613.613 0 00-.166-.267.248.248 0 00-.183-.064h-.021c-.071.006-.13.04-.186.132a.552.552 0 00-.12.27.944.944 0 00-.023.33v.015c.012.135.037.2.08.334.046.134.098.2.166.268.01.009.02.018.034.024-.07.057-.117.07-.176.136a.304.304 0 01-.131.068 2.62 2.62 0 01-.275-.402 1.772 1.772 0 01-.155-.667 1.759 1.759 0 01.08-.668 1.43 1.43 0 01.283-.535c.128-.133.26-.2.418-.2zm1.37 1.706c.332 0 .733.065 1.216.399.293.2.523.269 1.052.468h.003c.255.136.405.266.478.399v-.131a.571.571 0 01.016.47c-.123.31-.516.643-1.063.842v.002c-.268.135-.501.333-.775.465-.276.135-.588.292-1.012.267a1.139 1.139 0 01-.448-.067 3.566 3.566 0 01-.322-.198c-.195-.135-.363-.332-.612-.465v-.005h-.005c-.4-.246-.616-.512-.686-.71-.07-.268-.005-.47.193-.6.224-.135.38-.271.483-.336.104-.074.143-.102.176-.131h.002v-.003c.169-.202.436-.47.839-.601.139-.036.294-.065.466-.065zm2.8 2.142c.358 1.417 1.196 3.475 1.735 4.473.286.534.855 1.659 1.102 3.024.156-.005.33.018.513.064.646-1.671-.546-3.467-1.089-3.966-.22-.2-.232-.335-.123-.335.59.534 1.365 1.572 1.646 2.757.13.535.16 1.104.021 1.67.067.028.135.06.205.067 1.032.534 1.413.938 1.23 1.537v-.043c-.06-.003-.12 0-.18 0h-.016c.151-.467-.182-.825-1.065-1.224-.915-.4-1.646-.336-1.77.465-.008.043-.013.066-.018.135-.068.023-.139.053-.209.064-.43.268-.662.669-.793 1.187-.13.533-.17 1.156-.205 1.869v.003c-.02.334-.17.838-.319 1.35-1.5 1.072-3.58 1.538-5.348.334a2.645 2.645 0 00-.402-.533 1.45 1.45 0 00-.275-.333c.182 0 .338-.03.465-.067a.615.615 0 00.314-.334c.108-.267 0-.697-.345-1.163-.345-.467-.931-.995-1.788-1.521-.63-.4-.986-.87-1.15-1.396-.165-.534-.143-1.085-.015-1.645.245-1.07.873-2.11 1.274-2.763.107-.065.037.135-.408.974-.396.751-1.14 2.497-.122 3.854a8.123 8.123 0 01.647-2.876c.564-1.278 1.743-3.504 1.836-5.268.048.036.217.135.289.202.218.133.38.333.59.465.21.201.477.335.876.335.039.003.075.006.11.006.412 0 .73-.134.997-.268.29-.134.52-.334.74-.4h.005c.467-.135.835-.402 1.044-.7zm2.185 8.958c.037.6.343 1.245.882 1.377.588.134 1.434-.333 1.791-.765l.211-.01c.315-.007.577.01.847.268l.003.003c.208.199.305.53.391.876.085.4.154.78.409 1.066.486.527.645.906.636 1.14l.003-.007v.018l-.003-.012c-.015.262-.185.396-.498.595-.63.401-1.746.712-2.457 1.57-.618.737-1.37 1.14-2.036 1.191-.664.053-1.237-.2-1.574-.898l-.005-.003c-.21-.4-.12-1.025.056-1.69.176-.668.428-1.344.463-1.897.037-.714.076-1.335.195-1.814.12-.465.308-.797.641-.984l.045-.022zm-10.814.049h.01c.053 0 .105.005.157.014.376.055.706.333 1.023.752l.91 1.664.003.003c.243.533.754 1.064 1.189 1.637.434.598.77 1.131.729 1.57v.006c-.057.744-.48 1.148-1.125 1.294-.645.135-1.52.002-2.395-.464-.968-.536-2.118-.469-2.857-.602-.369-.066-.61-.2-.723-.4-.11-.2-.113-.602.123-1.23v-.004l.002-.003c.117-.334.03-.752-.027-1.118-.055-.401-.083-.71.043-.94.16-.334.396-.4.69-.533.294-.135.64-.202.915-.47h.002v-.002c.256-.268.445-.601.668-.838.19-.201.38-.336.663-.336zm7.159-9.074c-.435.201-.945.535-1.488.535-.542 0-.97-.267-1.28-.466-.154-.134-.28-.268-.373-.335-.164-.134-.144-.333-.074-.333.109.016.129.134.199.2.096.066.215.2.36.333.292.2.68.467 1.167.467.485 0 1.053-.267 1.398-.466.195-.135.445-.334.648-.467.156-.136.149-.267.279-.267.128.016.034.134-.147.332a8.097 8.097 0 01-.69.468zm-1.082-1.583V5.64c-.006-.02.013-.042.029-.05.074-.043.18-.027.26.004.063 0 .16.067.15.135-.006.049-.085.066-.135.066-.055 0-.092-.043-.141-.068-.052-.018-.146-.008-.163-.065zm-.551 0c-.02.058-.113.049-.166.066-.047.025-.086.068-.14.068-.05 0-.13-.02-.136-.068-.01-.066.088-.133.15-.133.08-.031.184-.047.259-.005.019.009.036.03.03.05v.02h.003z"/></symbol>
+    <symbol id="github" viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></symbol>
+  </defs>
+</svg>
+
+<header class="nav scrolled" id="nav">
+  <div class="wrap">
+    <a class="logo" href="../" aria-label="Kokon home"><svg><use href="#mark"/></svg>Kokon</a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="../#examples">Examples</a>
+      <a href="../#features">Features</a>
+      <a href="../#compare">Compare</a>
+      <a href="../prompt-guide/">Prompt guide</a>
+      <a href="../#faq">FAQ</a>
+    </nav>
+    <span class="spacer"></span>
+    <a class="btn primary small" href="https://github.com/GabrieleLozupone/kokon/releases/latest" rel="noopener" data-dl-auto>Download</a>
+  </div>
+</header>
+
+<main class="article">
+  <div class="wrap narrow">
+    <nav class="crumbs" aria-label="Breadcrumb"><a href="../">Kokon</a> <span>/</span> Offline alternative to Nano Banana</nav>
+    <h1>An offline alternative to Nano Banana</h1>
+    <p class="lede-left">Nano Banana made editing photos with a sentence feel normal. Kokon does the same kind of edit on your own computer: free, private and without daily limits. Here is what's the same, what's different, and when the cloud is still the better choice. Updated October 21, 2026.</p>
+
+    
+    <div class="pair">
+      <figure><img src="../assets/img/street-removed.webp" alt="A café street" loading="lazy"><figcaption>Before</figcaption></figure>
+      <figure><img src="../assets/img/street-cat.webp" alt="The same street with a ginger cat on the cobblestones" loading="lazy"><figcaption>After: “a ginger cat sitting on the cobblestones, looking at the camera”</figcaption></figure>
+    </div>
+
+    <h2>What Nano Banana is</h2>
+    <p>"Nano Banana" is the nickname of Google's Gemini image model. You give it a photo and an instruction in plain words, and it returns the edited photo. ChatGPT does something similar with OpenAI's image model. Both run in the cloud: the photo is uploaded, processed on Google's or OpenAI's servers, and sent back.</p>
+
+    <h2>What Kokon does the same way</h2>
+    <ul>
+      <li><strong>Edit with a sentence:</strong> "remove the people", "make it golden hour", "change the sign to say…".</li>
+      <li><strong>Combine photos:</strong> refer to them as image 1, image 2: "put the person from image 1 on the beach in image 2".</li>
+      <li><strong>Text in images</strong> that is spelled correctly.</li>
+      <li><strong>Create from text</strong> as well as edit.</li>
+      <li><strong>No settings to learn.</strong> You choose Fast, Balanced or Quality; Kokon chooses the rest.</li>
+    </ul>
+
+    <h2>What's different</h2>
+    <div class="table-wrap">
+      <table class="cmp-table">
+        <thead><tr><th></th><th class="us">Kokon</th><th>Nano Banana / ChatGPT</th></tr></thead>
+        <tbody>
+          <tr><td>Where it runs</td><td class="us">Your own GPU</td><td>Google's or OpenAI's servers</td></tr>
+          <tr><td>Your photos</td><td class="us">Never leave your computer</td><td>Uploaded</td></tr>
+          <tr><td>Limits</td><td class="us">None</td><td>Daily limits on free plans</td></tr>
+          <tr><td>Cost</td><td class="us">Free, open source</td><td>Free tier, then a subscription</td></tr>
+          <tr><td>Internet</td><td class="us">Only for setup and updates</td><td>Always</td></tr>
+          <tr><td>Paint the exact area to change</td><td class="us">Yes: Change, Remove, Replace, Add</td><td>Partly</td></tr>
+          <tr><td>Hardware</td><td class="us">12 GB GPU or Apple Silicon</td><td>Any device with a browser</td></tr>
+          <tr><td>Commercial use of the images</td><td class="us">No (model license)</td><td>Depends on the plan's terms</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>When the cloud is still better</h2>
+    <p>To be fair: cloud models run on data-center GPUs. If your computer has no dedicated graphics card, or you need many images per minute, a cloud tool will be faster. Some complex edits are also stronger on the largest cloud models. Kokon uses <strong>Qwen-Image 2.1</strong>, the open model that leads the open-weights image-editing rankings, and runs it on the computer you already have.</p>
+
+    <h2>Try the same prompts</h2>
+    <p>Prompts you'd write for Nano Banana work in Kokon too. A few that work well:</p>
+    <ul>
+      <li>"Remove all the people from the beach"</li>
+      <li>"Make it a snowy winter night, warm light glowing from the windows"</li>
+      <li>"Change the gold sign text to 'KOKON CAFÉ' in the same lettering"</li>
+      <li>"Turn it into a hand-painted watercolor illustration"</li>
+    </ul>
+    <p>Only have a few words? Turn on <strong>Prompt+</strong> and Kokon writes the detailed prompt for you, in any language, using the model it already loaded. More tips in the <a href="../prompt-guide/">prompt guide</a>.</p>
+
+    <h2>What you need</h2>
+    <div class="table-wrap">
+      <table class="cmp-table">
+        <thead><tr><th></th><th class="us">Works</th><th>Recommended</th></tr></thead>
+        <tbody>
+          <tr><td>Windows or Linux + NVIDIA</td><td class="us">12 GB of VRAM (8 GB in beta)</td><td>16 GB or more</td></tr>
+          <tr><td>Windows or Linux + AMD / Intel Arc</td><td class="us">12 GB of VRAM, Vulkan (beta)</td><td>16 GB or more</td></tr>
+          <tr><td>Mac</td><td class="us">Apple Silicon, 16 GB, macOS 15 (slow)</td><td>32 GB or more, Pro/Max/Ultra chip</td></tr>
+          <tr><td>Disk</td><td class="us">15 GB free</td><td>25 GB free</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Speed with the default model: on an RTX 5070 Ti, about 24 seconds for an edit at 1.5K and about 36 seconds for a new image at native 2K. 12 GB cards are a little slower, 8 GB cards take 1 to 2 minutes per edit, and an M2 Pro Mac takes about 4 minutes per image.</p>
+
+    <h2>Questions</h2>
+    <div class="faq">
+      <details><summary>Can I run Nano Banana locally?</summary><p>No. Nano Banana (Gemini's image model) only runs on Google's servers. Kokon is a free app that does the same kind of edit, from a sentence, with an open model on your own GPU.</p></details>
+      <details><summary>Is the quality the same as Nano Banana?</summary><p>It's close on everyday edits like removing objects, relighting, changing text and restyling, and it can differ on complex edits. Kokon uses Qwen-Image 2.1, the open model that leads the open-weights image-editing rankings.</p></details>
+      <details><summary>Does it have limits like the free Gemini or ChatGPT plans?</summary><p>No. Kokon runs on your own graphics card, so there are no credits, queues or daily limits.</p></details>
+      <details><summary>Can I use the images commercially?</summary><p>Not with the default model: Qwen-Image 2.1 is under the Qwen Research License, which doesn't allow commercial use. The app itself is open source (AGPL-3.0).</p></details>
+    </div>
+
+    <div class="cta-box">
+      <h2>Try Kokon</h2>
+      <p>Free and open source for Windows, macOS and Linux. One installer; Kokon sets up the model for your graphics card.</p>
+      <div class="ctas" style="justify-content:flex-start">
+        <a class="btn primary" href="https://github.com/GabrieleLozupone/kokon/releases/latest" rel="noopener" data-dl="windows"><svg fill="currentColor"><use href="#win"/></svg>Windows</a>
+        <a class="btn ghost" href="https://github.com/GabrieleLozupone/kokon/releases/latest" rel="noopener" data-dl="mac"><svg fill="currentColor"><use href="#apple"/></svg>macOS <span class="tag">BETA</span></a>
+        <a class="btn ghost" href="https://github.com/GabrieleLozupone/kokon/releases/latest" rel="noopener"><svg fill="currentColor"><use href="#linux"/></svg>Linux <span class="tag">BETA</span></a>
+        <a class="btn ghost" href="https://github.com/GabrieleLozupone/kokon" rel="noopener"><svg fill="currentColor"><use href="#github"/></svg>Star on GitHub</a>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <a class="logo" href="../"><svg><use href="#mark"/></svg>Kokon</a>
+    <span>Designed and built by <a class="me" href="https://gabrielelozupone.github.io/" rel="author">Gabriele Lozupone</a>, with the help of Claude Code.</span>
+    <nav aria-label="Links">
+      <a href="../">Home</a>
+      <a href="../local-ai-photo-editor/">Local AI photo editor</a>
+      <a href="../offline-alternative-to-nano-banana/">Offline Nano Banana alternative</a>
+      <a href="../comfyui-alternative/">Simple ComfyUI alternative</a>
+      <a href="../remove-objects-from-photos-offline/">Remove objects offline</a>
+      <a href="../qwen-image-2-1-local/">Run Qwen-Image locally</a>
+      <a href="../press/">Press kit</a>
+      <a href="https://github.com/GabrieleLozupone/kokon" rel="noopener">GitHub</a>
+    </nav>
+    <p class="legal">Nano Banana and Gemini are trademarks of Google; ChatGPT of OpenAI; Photoshop of Adobe; ComfyUI belongs to its authors. Qwen-Image is a model by the Qwen team at Alibaba. Kokon is an independent project and is not affiliated with any of them; the names are used only to compare.</p>
+  </div>
+</footer>
+<dialog class="star-ask" id="star-ask" aria-labelledby="star-ask-title">
+  <div>
+    <svg class="mark"><use href="#mark"/></svg>
+    <h2 id="star-ask-title">Your download has started</h2>
+    <p>Kokon is free and open source, made by one person. If you like it, a star on GitHub helps other people find it and keeps the project going.</p>
+    <form method="dialog" class="ctas">
+      <a class="btn primary" id="star-ask-go" href="https://github.com/GabrieleLozupone/kokon" target="_blank" rel="noopener"><svg fill="currentColor"><use href="#github"/></svg>Star on GitHub</a>
+      <button class="btn ghost">Maybe later</button>
+    </form>
+  </div>
+</dialog>
+<script src="/download.js" defer></script>
+</body>
+</html>

@@ -29,7 +29,9 @@ How to publish a version that installed copies update to, on Windows and macOS.
 
 1. **Bump the version** in `src-tauri/tauri.conf.json`, `Cargo.toml` (workspace) and
    `package.json`, all to the same value. The updater only offers versions *higher* than the
-   installed one.
+   installed one. Also bump the MCP server: `cd mcp && npm version <x.y.z> --no-git-tag-version`,
+   then both `"version"` fields in `mcp/server.json` (`npm test` in `mcp/` fails until all match;
+   `kokon-mcp --version` reads `mcp/package.json`).
 2. **Windows:** `powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1`
 3. **Mac:** `bash scripts/build-release-mac.sh`. Then copy `dist-release/` from the Mac to the
    PC (or the other way around) so that one folder holds both platforms' files.
@@ -52,6 +54,13 @@ How to publish a version that installed copies update to, on Windows and macOS.
    1. Copy its files and its `updater-<platform>.json` into the same `dist-release/`.
    2. Run the manifest step again.
    3. Upload with `gh release upload v0.9.1 <files> dist-release/latest.json --clobber`.
+7. **MCP server** (after the GitHub release is out): `cd mcp && npm publish` (runs the build and
+   tests first), then `mcp-publisher login github` and `mcp-publisher publish` from `mcp/` so the
+   MCP Registry lists the new version. Glama (https://glama.ai/mcp/servers/GabrieleLozupone/kokon):
+   Admin → Repository → **Sync Server**, then Admin → Dockerfile → **Build** (the saved spec:
+   build `cd mcp && npm ci && npm run build`, CMD `mcp-proxy -- node ./mcp/build/kokon-mcp.cjs`;
+   no Kokon app needed to list the tools), and on the passed test **Create Release** with the
+   new version. The release is what Glama grades the tools on.
 
 ## Testing an update
 

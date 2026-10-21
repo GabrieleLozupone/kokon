@@ -6,9 +6,10 @@
 // opened again.
 
 import { useSyncExternalStore } from "react";
+import { markFresh } from "../components/Cocoon";
 import { api, ApiError, setPrivateInputs, subscribe } from "./api";
-import { buildRequest, emptyComposer, needsPrompt, newKey, persistentAdvanced, refFromGen, refFromInput, timelineLinks, undoTarget, versionLabels, type CompareMode, type Composer, type Ref } from "./logic";
-import type { AppErrorBody, GenerationRecord, GenerationRequest, InputRecord, JobView, ServerState, StatusResponse } from "./types";
+import { activeLoras, buildRequest, emptyComposer, needsPrompt, newKey, persistentAdvanced, refFromGen, refFromInput, starPromptDue, timelineLinks, undoTarget, versionLabels, type CompareMode, type Composer, type Ref } from "./logic";
+import type { AppErrorBody, GenerationRecord, GenerationRequest, InputRecord, JobView, LoraItem, ServerState, StatusResponse } from "./types";
 
 export type Overlay = null | "gallery" | "settings" | "inpaint" | "expand" | "welcome" | "whats-new" | "prompt-tips" | "shortcuts";
 
@@ -85,6 +86,12 @@ export interface State {
   redo: string[];
   /** Step of the first-run tour on screen (components/Tour.tsx), or null. */
   tour: number | null;
+  /** The one-time "star on GitHub" card is on screen (App.tsx). */
+  starPrompt: boolean;
+  /** The user's LoRAs (Settings → LoRA). */
+  loras: LoraItem[];
+  /** Tab Settings opens on (then cleared). */
+  settingsTab: string | null;
 }
 
 const PREFS_KEY = "qls.prefs.v1";
@@ -103,9 +110,9 @@ function loadPrefs(): Partial<Composer> {
 
 function savePrefs(c: Composer) {
   try {
-    const { quality, resolution, aspect, customWidth, customHeight } = c;
+    const { quality, resolution, aspect, customWidth, customHeight, enhance } = c;
     const advanced = persistentAdvanced(c.advanced);
-    localStorage.setItem(PREFS_KEY, JSON.stringify({ quality, resolution, aspect, customWidth, customHeight, advanced }));
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ quality, resolution, aspect, customWidth, customHeight, advanced, enhance }));
   } catch {
     /* storage unavailable */
   }
@@ -128,6 +135,8 @@ interface ProjectData {
   meta: ProjectMeta;
   items: StoredItem[];
   selected: string | null;
+  /** LoRAs switched on in the project (absent = the ones on by default). */
+  loras?: string[];
 }
 
 const projects: Record<string, ProjectData> = (() => {
@@ -177,7 +186,7 @@ const toStored = (i: SessionItem): StoredItem => ({
 
 function titleOf(items: SessionItem[]): string | null {
   for (const i of items) {
-    const p = i.gen?.prompt || i.request?.prompt;
+    const p = i.gen?.original_prompt || i.gen?.prompt || i.request?.prompt;
     if (p) return p;
     if (i.input) return i.input.original_name ? safeDecode(i.input.original_name) : "Imported image";
   }
@@ -225,6 +234,7 @@ function syncProject(prev: State) {
     },
     items,
     selected: state.selected,
+    loras: state.composer.loras ?? undefined,
   };
   state = { ...state, projects: projectList() };
   persistProjects();
@@ -289,6 +299,9 @@ let state: State = {
   privateMode: false,
   redo: [],
   tour: null,
+  starPrompt: false,
+  loras: [],
+  settingsTab: null,
 };
 
 const listeners = new Set<() => void>();
@@ -366,6 +379,15 @@ let unsub: (() => void) | null = null;
 export async function refreshStatus() {
   try {
     const st = await api.status();
+    const tg = st.server.text_generation;
+    if (typeof tg === "boolean" && tg !== knownTextGeneration) {
+      knownTextGeneration = tg;
+      try {
+        localStorage.setItem(TEXT_GEN_KEY, tg ? "1" : "0");
+      } catch {
+        /* storage unavailable */
+      }
+    }
     setState({ status: st, server: { state: st.server.state, owned: st.server.owned, error: st.server.error } });
     return st;
   } catch {
@@ -373,12 +395,32 @@ export async function refreshStatus() {
   }
 }
 
+const TEXT_GEN_KEY = "kokon.textGeneration";
+let knownTextGeneration = (() => {
+  try {
+    return localStorage.getItem(TEXT_GEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+})();
+
+/** The engine can write prompts (prompt enhancer): as the loaded model reports, else as it did
+ * last time, so the switch is there before the model loads. */
+export function enhancerAvailable(s: State): boolean {
+  return s.status?.server.text_generation ?? knownTextGeneration;
+}
+
 export function startEvents() {
   unsub?.();
   unsub = subscribe(
     (ev) => {
       if (ev.type === "job") onJob(ev.job);
-      else if (ev.type === "server") setState({ server: { state: ev.state, owned: ev.owned, error: ev.error } });
+      else if (ev.type === "server") {
+        const loaded = ev.state === "ready" && getState().server.state !== "ready";
+        setState({ server: { state: ev.state, owned: ev.owned, error: ev.error } });
+        // What the newly loaded engine can do (the prompt enhancer).
+        if (loaded) refreshStatus();
+      }
       else if (ev.type === "gallery") setState((s) => ({ galleryVersion: s.galleryVersion + 1 }));
     },
     (ok) => {
@@ -399,6 +441,13 @@ function onJob(job: JobView) {
   if (job.status === "failed" && prev?.status !== "failed" && isMissingModel(job.error) && job.finished_at && Date.now() - Date.parse(job.finished_at) < 60_000) {
     openModelSetup();
   }
+  // Results replacing a version in progress of the open project hatch out of the cocoon when
+  // first shown (marked before the state change renders them).
+  if (job.status === "done" && prev?.status !== "done" && getState().session.some((i) => i.jobId === job.id && i.kind === "job")) {
+    markFresh(job.results.map((g) => g.id));
+  }
+  // Made with this app (it had a pending version), not by another client such as MCP.
+  let made = false;
   setState((s) => {
     const jobs = { ...s.jobs, [job.id]: job };
     if (job.status !== "done") return { jobs };
@@ -406,6 +455,7 @@ function onJob(job: JobView) {
     // Replace the pending version with one version per result.
     const idx = s.session.findIndex((i) => i.jobId === job.id && i.kind === "job");
     if (idx >= 0) {
+      made = true;
       const pending = s.session[idx];
       const session = [...s.session.slice(0, idx), ...results, ...s.session.slice(idx + 1)];
       const wasSelected = s.selected === pending.key;
@@ -421,6 +471,7 @@ function onJob(job: JobView) {
     for (const p of Object.values(projects)) {
       const k = p.items.findIndex((i) => i.jobId === job.id && i.kind === "job");
       if (k < 0) continue;
+      made = true;
       const stored = results.map(toStored);
       for (const g of job.results) genCache.set(g.id, g);
       const wasSelected = p.selected === p.items[k].key;
@@ -433,7 +484,45 @@ function onJob(job: JobView) {
     // A job from another client (e.g. MCP): track it but do not add it to a project.
     return { jobs };
   });
+  if (made && job.results.length) countImageMade();
   if (job.status === "failed" && job.error) toastError(new ApiError(job.error, 500));
+}
+
+// ---------------------------------------------------------------------------------------
+// Star prompt: once, after a few images made with the app, never again whatever the answer.
+// ---------------------------------------------------------------------------------------
+
+const MADE_KEY = "kokon.imagesMade";
+/** Config `ui.starPromptSeen`; true until read at start, so nothing shows before that. */
+let starSeen = true;
+
+export function initStarPrompt(ui: Record<string, unknown>) {
+  starSeen = !!ui.starPromptSeen;
+}
+
+function countImageMade() {
+  if (starSeen) return;
+  let made: number;
+  try {
+    made = (Number(localStorage.getItem(MADE_KEY)) || 0) + 1;
+    localStorage.setItem(MADE_KEY, String(made));
+  } catch {
+    return;
+  }
+  const s = getState();
+  if (!starPromptDue(made, s.overlay !== null || s.tour !== null || s.needsSetup)) return;
+  starSeen = true;
+  setState({ starPrompt: true });
+  api
+    .config()
+    .then((cfg) => api.saveConfig({ ...cfg, ui: { ...((cfg.ui ?? {}) as Record<string, unknown>), starPromptSeen: true } }))
+    .catch(() => {
+      /* only means it may show once more after a restart */
+    });
+}
+
+export function closeStarPrompt() {
+  setState({ starPrompt: false });
 }
 
 // ---------------------------------------------------------------------------------------
@@ -493,7 +582,32 @@ export async function switchProject(id: string, selectKey?: string) {
   if (token !== switching) return;
   const keep = (k: string | null | undefined) => (k && session.some((i) => i.key === k) ? k : null);
   const selected = keep(selectKey) ?? keep(data.selected) ?? session[session.length - 1]?.key ?? null;
-  setState((s) => ({ projectId: id, session, selected, overlay: null, redo: [], composer: composerFor(s.composer, session, selected) }));
+  setState((s) => ({ projectId: id, session, selected, overlay: null, redo: [], composer: { ...composerFor(s.composer, session, selected), loras: data.loras ?? null } }));
+}
+
+/** Switches the project's LoRAs (the composer's LoRA badge); new projects start with the ones
+ * on by default. */
+export function setProjectLoras(ids: string[]) {
+  setState((s) => ({ composer: { ...s.composer, loras: ids } }));
+  const p = projects[state.projectId];
+  if (p && !state.privateMode) {
+    p.loras = ids;
+    persistProjects();
+  }
+}
+
+/** Reloads the LoRA list from the service. */
+export async function refreshLoras() {
+  try {
+    setState({ loras: (await api.loras()).items });
+  } catch {
+    /* service not reachable: keep the last list */
+  }
+}
+
+/** Opens Settings on one of its tabs. */
+export function openSettings(tab: string) {
+  setState({ overlay: "settings", settingsTab: tab });
 }
 
 /** Adds the example projects that ship with Kokon (made by Kokon itself), except the ones
@@ -556,9 +670,14 @@ export function renameProject(id: string, name: string) {
 
 /** Removes a project from the list; its images stay in the gallery. */
 export function deleteProject(id: string) {
-  delete projects[id];
+  deleteProjects([id]);
+}
+
+/** Removes projects from the list (their images stay in All images); the open one closes. */
+export function deleteProjects(ids: string[]) {
+  for (const id of ids) delete projects[id];
   persistProjects();
-  if (id === state.projectId) setState((s) => ({ projectId: newKey(), session: [], selected: null, composer: emptyComposer(s.composer) }));
+  if (ids.includes(state.projectId)) setState((s) => ({ projectId: newKey(), session: [], selected: null, composer: emptyComposer(s.composer), projects: projectList() }));
   else setState({ projects: projectList() });
 }
 
@@ -704,6 +823,8 @@ export function reusePrompt(g: GenerationRecord) {
       composer: {
         ...c,
         prompt: g.prompt,
+        // The enhancer's text is a full prompt already: rewriting it again would drift.
+        enhance: g.original_prompt ? false : c.enhance,
         refs,
         mask,
         inpaintAction: mask ? g.request?.inpaint_action ?? "edit" : c.inpaintAction,
@@ -777,11 +898,22 @@ export async function submitRequest(req: GenerationRequest) {
   }
 }
 
+/** A version the service made right away (a LUT applied): added after the others and
+ * selected; editing carries on from it when the prompt was editing its source. */
+export function addResult(g: GenerationRecord) {
+  setState((s) => {
+    const item: SessionItem = { key: newKey(), kind: "gen", gen: g };
+    const src = g.request?.images?.[0];
+    const composer = src && s.composer.refs[0]?.source === src ? { ...s.composer, refs: [refFromGen(g), ...s.composer.refs.slice(1)], mask: null, outpaint: null } : s.composer;
+    return { session: [...s.session, item], selected: item.key, composer, redo: [] };
+  });
+}
+
 export async function submitComposer() {
   const s = getState();
   const target = s.composer.refs[0]?.source;
   const parent = target?.startsWith("gen:") ? target.slice(4) : null;
-  const req = buildRequest(s.composer, parent);
+  const req: GenerationRequest = { ...buildRequest(s.composer, parent), loras: activeLoras(s.composer, s.loras) };
   if (!req.prompt && needsPrompt(s.composer)) {
     toastInfo("Describe what to create or change.");
     return;

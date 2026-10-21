@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  activeOverrides, buildRequest, compareBase, diffPixels, emptyComposer, expansionPixels, expansionPreset, jobFraction, jobLabel, moveRef, needsPrompt, normalizeQuality, persistentAdvanced, pipelineSummary,
-  planPipeline, remainingSeconds, sizeForWidth, timeAgo, upscaleRequest, upscaleTargets, versionLabels, type Ref,
-  neighbourAfterRemoval, previewIndex, formatBytes, formatDuration, installItemShort, installItemText, installProgress, installStep, installTimeLeft, timelineLinks, undoTarget, aspectLabel, parseRatio, sizeForRatio, expandToRatio, expandToSize, arcLayout,
+  activeLoras, activeOverrides, buildRequest, toggleLora, MAX_LORAS, jobPercent, compareBase, composerFromRecord, enhancerApplies, diffPixels, emptyComposer, expansionPixels, expansionPreset, jobLabel, jobSecondsLeft, lutInfo, moveRef, needsPrompt, normalizeQuality, persistentAdvanced, pipelineSummary,
+  planPipeline, remainingSeconds, sizeForWidth, timeAgo, upscaleRequest, upscaleTargets, versionLabels, type JobClock, type Ref,
+  neighbourAfterRemoval, previewIndex, starPromptDue, STAR_PROMPT_AFTER, formatBytes, formatDuration, installItemShort, installItemText, installProgress, installStep, installTimeLeft, timelineLinks, undoTarget, aspectLabel, parseRatio, sizeForRatio, expandToRatio, expandToSize, arcLayout,
 } from "./logic";
-import type { GenerationRecord, InstallItem, JobView, Plan } from "./types";
+import type { GenerationRecord, InstallItem, JobView, LoraItem, Plan } from "./types";
 
 const ref = (n: number): Ref => ({ key: `k${n}`, source: `input:${n}`, width: 100, height: 100, name: `r${n}` });
 
@@ -96,6 +96,49 @@ describe("buildRequest", () => {
     const c = { ...emptyComposer(), prompt: "x", refs: [ref(1)], mode: "generate" as const };
     expect(buildRequest(c).images).toEqual([]);
   });
+  it("prompt enhancer: off by default, remembered, only for new images, edits and combines", () => {
+    expect(emptyComposer().enhance).toBe(false);
+    expect(emptyComposer({ enhance: true }).enhance).toBe(true);
+    const off = { ...emptyComposer(), prompt: "un gatto" };
+    expect("enhance" in buildRequest(off)).toBe(false);
+    const on = { ...off, enhance: true };
+    expect(buildRequest(on).enhance).toBe(true);
+    expect(buildRequest({ ...on, refs: [ref(1), ref(2)] }).enhance).toBe(true);
+    const masked = { ...on, refs: [ref(1)], mask: { inputId: "m", refKey: "k1" } };
+    expect(enhancerApplies(masked)).toBe(false);
+    expect("enhance" in buildRequest(masked)).toBe(false);
+    const expanded = { ...on, refs: [ref(1)], outpaint: { left: 10, right: 0, top: 0, bottom: 0, units: "percent" as const } };
+    expect("enhance" in buildRequest(expanded)).toBe(false);
+  });
+  it("reusing an enhanced result's settings gives the user's prompt with the enhancer on", () => {
+    const g = { prompt: "A tabby cat sleeping on a sunlit windowsill.", original_prompt: "un gatto", references: [], mask_input_id: null, outpaint: null, quality: "fast", request: null } as unknown as GenerationRecord;
+    const c = composerFromRecord(g, emptyComposer());
+    expect([c.prompt, c.enhance]).toEqual(["un gatto", true]);
+    const plain = composerFromRecord({ ...g, original_prompt: null }, { ...emptyComposer(), enhance: true });
+    expect([plain.prompt, plain.enhance]).toEqual(["A tabby cat sleeping on a sunlit windowsill.", false]);
+  });
+});
+
+describe("LoRA", () => {
+  const l = (id: string, onByDefault = false, available = true) => ({ id, name: id, onByDefault, available, weight: 1 }) as LoraItem;
+  const all = [l("film", true), l("angles"), l("gone", true, false), l("a"), l("b")];
+  it("a new project uses the ones on by default that are still there", () => {
+    expect(activeLoras({ loras: null }, all)).toEqual(["film"]);
+    expect(activeLoras({ loras: [] }, all)).toEqual([]);
+    expect(activeLoras({ loras: ["angles", "removed", "gone"] }, all)).toEqual(["angles"]);
+  });
+  it("switches one on or off, at most MAX_LORAS", () => {
+    expect(toggleLora({ loras: null }, all, "film")).toEqual([]);
+    expect(toggleLora({ loras: null }, all, "angles")).toEqual(["film", "angles"]);
+    const full = ["film", "angles", "a"];
+    expect(full.length).toBe(MAX_LORAS);
+    expect(toggleLora({ loras: full }, all, "b")).toEqual(full);
+  });
+  it("reusing settings brings back the LoRAs the image was made with", () => {
+    const g = { prompt: "x", references: [], mask_input_id: null, outpaint: null, quality: "fast", request: null, loras: [{ id: "film", name: "Film", weight: 0.7 }] } as unknown as GenerationRecord;
+    expect(composerFromRecord(g, emptyComposer()).loras).toEqual(["film"]);
+    expect(composerFromRecord({ ...g, loras: undefined }, { ...emptyComposer(), loras: ["a"] }).loras).toEqual([]);
+  });
 });
 
 describe("expansion", () => {
@@ -117,20 +160,73 @@ describe("job labels are truthful", () => {
     id: "j", status: "running", stage: "generating", step: [12, 30], image: null, seconds_per_step: 2, queue_position: 0, created_at: "",
     started_at: null, finished_at: null, prompt: "", plan: null, seed: 1, results: [], error: null, notes: [], detailed_progress: true,
   };
-  it("shows steps only when reported", () => {
+  it("shows steps and tiles only when reported", () => {
     expect(jobLabel(base)).toBe("Generating · 12/30");
-    expect(jobFraction(base)).toBeCloseTo(0.4);
-    const noDetail = { ...base, step: null };
-    expect(jobLabel(noDetail)).toBe("Generating");
-    expect(jobFraction(noDetail)).toBeNull();
+    expect(jobLabel({ ...base, step: null })).toBe("Generating");
     expect(jobLabel({ ...base, status: "queued", queue_position: 3 })).toBe("Queued · 3");
+    expect(jobLabel({ ...base, status: "enhancing_prompt", stage: null, step: null })).toBe("Writing the prompt");
+    expect(jobLabel({ ...base, stage: "upscaling", step: null })).toBe("Upscaling");
+    expect(jobLabel({ ...base, stage: "upscaling", step: [2, 6], image: [1, 2] })).toBe("Upscaling · 2/6 · 1/2");
+  });
+});
+
+describe("one percentage for the whole job", () => {
+  // 20 s planned: 15 s to generate, 5 s of upscaler; 8 steps at 1.5 s; the model loads in 10 s.
+  const plan = { mode: "generate", estimated_seconds: 20, upscale_share: 0.25, batch_count: 1 } as Plan;
+  const job = (o: Partial<JobView>): JobView => ({
+    id: "j", status: "running", stage: null, step: null, image: null, seconds_per_step: null, queue_position: 0, created_at: "",
+    started_at: null, finished_at: null, prompt: "", plan, seed: 1, results: [], error: null, notes: [], detailed_progress: true, ...o,
+  });
+  const clock = (o: Partial<JobClock>): JobClock => ({ elapsed: 0, inPhase: 0, inRunning: 0, sinceStep: 0, enhance: false, loadSeconds: 10, enhancerSecondsPerWord: 0.015, ...o });
+
+  it("counts every phase still to come", () => {
+    // Loading: the rest of the load, then generation, upscaler and saving.
+    expect(jobSecondsLeft(job({ status: "starting_backend" }), clock({ inPhase: 4 }))).toBeCloseTo(6 + 15 + 5 + 1);
+    // With the enhancer on, its time too.
+    expect(jobSecondsLeft(job({ status: "preparing" }), clock({ enhance: true }))).toBeCloseTo(0.5 + (0.5 + 110 * 0.015) + 21);
+    // Sampling: the steps left at the measured pace, decoding, upscaler, saving.
+    expect(jobSecondsLeft(job({ stage: "generating", step: [4, 8], seconds_per_step: 1.5 }), clock({}))).toBeCloseTo(4 * 1.5 + 1.5 + 5 + 1);
+    // Upscaling: the tiles left at the measured pace, then saving.
+    expect(jobSecondsLeft(job({ stage: "upscaling", step: [1, 3], seconds_per_step: 1.5 }), clock({}))).toBeCloseTo(2 * 1.5 + 1);
+    // The enhancer's own pace once it writes: 20 words in 1 s, ~110 asked.
+    const writing = job({ status: "enhancing_prompt", enhanced_prompt: Array(20).fill("word").join(" ") });
+    expect(jobSecondsLeft(writing, clock({ inPhase: 1, enhance: true }))).toBeCloseTo(90 / 20 + 21);
   });
 
-  it("one pass fills the bar; enlarging is indeterminate", () => {
-    expect(remainingSeconds({ ...base, step: [10, 20] as [number, number] })).toBeCloseTo(10 * 2);
-    expect(jobLabel({ ...base, stage: "upscaling", step: null })).toBe("Upscaling");
-    expect(jobFraction({ ...base, stage: "upscaling", step: null })).toBeNull();
-    expect(jobFraction({ ...base, stage: "decoding", step: null })).toBe(1);
+  it("moves with time, forms the logo only after the upscaler, and reaches 100 only when done", () => {
+    // Accurate estimates: the percentage is the share of the time spent.
+    const loading = jobPercent(job({ status: "starting_backend" }), clock({ elapsed: 5, inPhase: 5 }));
+    expect(loading).toBeCloseTo((100 * 5) / 31, 0);
+    const halfSteps = jobPercent(job({ stage: "generating", step: [4, 8], seconds_per_step: 1.5 }), clock({ elapsed: 10 + 7, inRunning: 7 }));
+    expect(halfSteps).toBeGreaterThan(loading);
+    // Generation done, upscaler not started: well short of the logo (92 %).
+    const decoded = jobPercent(job({ stage: "upscaling", step: [0, 3] }), clock({ elapsed: 25 }));
+    expect(decoded).toBeLessThan(85);
+    const lastTile = jobPercent(job({ stage: "upscaling", step: [3, 3], seconds_per_step: 1.6 }), clock({ elapsed: 30 }));
+    expect(lastTile).toBeGreaterThan(92);
+    expect(jobPercent(job({ status: "saving" }), clock({ elapsed: 31, inPhase: 9 }))).toBeLessThanOrEqual(99);
+    expect(jobPercent(job({ status: "done" }), clock({ elapsed: 31 }))).toBe(100);
+    expect(jobPercent(job({ status: "queued" }), clock({}))).toBe(0);
+  });
+
+  it("an overrun slows the bar instead of stopping it", () => {
+    const a = jobPercent(job({ status: "starting_backend" }), clock({ elapsed: 30, inPhase: 30 }));
+    const b = jobPercent(job({ status: "starting_backend" }), clock({ elapsed: 60, inPhase: 60 }));
+    expect(b).toBeGreaterThan(a);
+    expect(b).toBeLessThan(99);
+  });
+
+  it("an upscale is all upscaler, and an unmeasured machine still gets a curve", () => {
+    const quick = { mode: "upscale", estimated_seconds: 8, upscale_share: 0.8, batch_count: 1 } as Plan;
+    expect(jobSecondsLeft(job({ plan: quick, stage: "upscaling", step: [0, 4] }), clock({}))).toBeCloseTo(8 + 1);
+    const unknown = { ...plan, estimated_seconds: 0 };
+    expect(jobPercent(job({ plan: unknown, stage: "encoding_prompt" }), clock({ elapsed: 3, inRunning: 3 }))).toBeGreaterThan(0);
+  });
+
+  it("shows the time left only once the engine's pace is known", () => {
+    expect(remainingSeconds(job({ stage: "generating", step: [4, 8], seconds_per_step: 1.5 }), clock({}))).toBeCloseTo(4 * 1.5 + 1.5 + 5 + 1);
+    expect(remainingSeconds(job({ stage: "generating", step: [0, 8] }), clock({}))).toBeNull();
+    expect(remainingSeconds(job({ status: "starting_backend" }), clock({}))).toBeNull();
   });
 });
 
@@ -182,13 +278,19 @@ describe("before / after comparison", () => {
   const rec = (mode: string, extra: Partial<GenerationRecord> = {}) =>
     ({ mode, references: [{ index: 0, input_id: "in1", width: 1000, height: 500 }], outpaint: null, ...extra }) as unknown as GenerationRecord;
 
-  it("edits, inpaints and upscales compare against the whole source", () => {
-    for (const m of ["edit", "inpaint", "upscale"]) expect(compareBase(rec(m))).toEqual({ inputId: "in1", rect: { x: 0, y: 0, w: 1, h: 1 } });
+  it("edits, inpaints, upscales and LUT results compare against the whole source", () => {
+    for (const m of ["edit", "inpaint", "upscale", "lut"]) expect(compareBase(rec(m))).toEqual({ inputId: "in1", rect: { x: 0, y: 0, w: 1, h: 1 } });
   });
 
   it("an expanded image places the source inside the larger result", () => {
     const b = compareBase(rec("outpaint", { outpaint: { left: 500, right: 500, top: 0, bottom: 500 } }))!;
     expect(b.rect).toEqual({ x: 0.25, y: 0, w: 0.5, h: 0.5 });
+  });
+
+  it("a LUT result says which LUT and how strong", () => {
+    const lut = { name: "Warm Film", title: null, intensity: 0.8 };
+    expect(lutInfo(rec("lut", { request: { mode: "lut", images: ["gen:a"], lut } as unknown as GenerationRecord["request"] }))).toEqual(lut);
+    expect(lutInfo(rec("edit", { request: null }))).toBeNull();
   });
 
   it("new images and multi-reference results have no before", () => {
@@ -398,5 +500,14 @@ describe("formatDuration", () => {
     expect(formatDuration(119.6)).toBe("2m");
     expect(formatDuration(125)).toBe("2m 5s");
     expect(formatDuration(3900)).toBe("65m");
+  });
+});
+
+describe("star prompt", () => {
+  it("waits for enough images and a free screen", () => {
+    expect(starPromptDue(STAR_PROMPT_AFTER - 1, false)).toBe(false);
+    expect(starPromptDue(STAR_PROMPT_AFTER, true)).toBe(false);
+    expect(starPromptDue(STAR_PROMPT_AFTER, false)).toBe(true);
+    expect(starPromptDue(STAR_PROMPT_AFTER + 3, false)).toBe(true);
   });
 });

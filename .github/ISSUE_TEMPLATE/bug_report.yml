@@ -25,6 +25,10 @@ body:
         - Windows 11
         - Windows 10
         - macOS 26 (Apple Silicon)
+        - macOS 15 (Apple Silicon)
+        - Linux (Ubuntu / Debian / Mint)
+        - Linux (Fedora)
+        - Linux (other)
         - Other
     validations:
       required: true

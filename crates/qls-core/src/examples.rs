@@ -143,6 +143,8 @@ impl Engine {
                     created_at: format!("2026-10-10T09:{:02}:{:02}.000Z", pi * 5, si * 10),
                     mode,
                     prompt: s.prompt.into(),
+                    original_prompt: None,
+                    loras: vec![],
                     negative_prompt: String::new(),
                     seed: s.seed,
                     width: img.width(),

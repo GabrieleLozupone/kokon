@@ -679,14 +679,16 @@ pub fn space_needed(dir: &Path, downloads: &[Download]) -> (u64, u64) {
 }
 
 /// Folder of the model files shipped inside the app (Tauri resources): next to the
-/// executables on Windows, `Contents/Resources` on a Mac. `QLS_BUNDLE_DIR` overrides it.
+/// executables on Windows, `Contents/Resources` on a Mac, `/usr/lib/Kokon` for the Linux
+/// packages (executables in `/usr/bin`). `QLS_BUNDLE_DIR` overrides it.
 pub fn bundle_dir() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("QLS_BUNDLE_DIR") {
         return Some(PathBuf::from(p));
     }
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
-    [dir.join("bundled"), dir.join("..").join("Resources").join("bundled")].into_iter().find(|p| p.is_dir())
+    let lib = dir.join("..").join("lib");
+    [dir.join("bundled"), dir.join("..").join("Resources").join("bundled"), lib.join("Kokon").join("bundled"), lib.join("kokon").join("bundled")].into_iter().find(|p| p.is_dir())
 }
 
 /// Copies `d` from the app's bundle into the stable-diffusion.cpp folder when it is missing

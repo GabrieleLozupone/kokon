@@ -1,7 +1,8 @@
-// Where it runs (Windows: NVIDIA, AMD, Intel; macOS: Apple Silicon), then the end card.
+// Where it runs (Windows and Linux: NVIDIA, AMD, Intel; macOS: Apple Silicon), then the end card.
+// The facts match the website's requirements (site/index.html).
 import type { ReactNode } from "react";
 import { AbsoluteFill, useCurrentFrame } from "remotion";
-import { siAmd, siApple, siGithub, siIntel, siNvidia } from "simple-icons";
+import { siAmd, siApple, siDebian, siFedora, siGithub, siIntel, siLinux, siNvidia } from "simple-icons";
 import { Mark } from "../app/Mark";
 import { Backdrop, inOut, prog } from "../app/motion";
 import { Sfx } from "../app/sound";
@@ -32,11 +33,11 @@ function Row({ icon, title, sub, show }: { icon: ReactNode; title: string; sub: 
   const f = useCurrentFrame();
   const p = prog(f, show, 18);
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 20, padding: "18px 0", borderTop: "1px solid rgba(255,255,255,0.08)", opacity: p, transform: `translateX(${(1 - p) * 24}px)` }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 18, padding: "16px 0", borderTop: "1px solid rgba(255,255,255,0.08)", opacity: p, transform: `translateX(${(1 - p) * 24}px)` }}>
       <div style={{ width: 54, height: 54, borderRadius: 14, background: "rgba(255,255,255,0.06)", display: "grid", placeItems: "center", flex: "none" }}>{icon}</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <span style={{ fontSize: 28, fontWeight: 600, color: "#f2f2f2", letterSpacing: "-0.02em" }}>{title}</span>
-        <span style={{ fontSize: 20, color: "rgba(240,240,240,0.55)" }}>{sub}</span>
+        <span style={{ fontSize: 25, fontWeight: 600, color: "#f2f2f2", letterSpacing: "-0.02em" }}>{title}</span>
+        <span style={{ fontSize: 18, color: "rgba(240,240,240,0.55)" }}>{sub}</span>
       </div>
     </div>
   );
@@ -48,8 +49,8 @@ function Card({ icon, title, show, children }: { icon: ReactNode; title: string;
   return (
     <div
       style={{
-        width: 720,
-        padding: "34px 40px 22px",
+        width: 560,
+        padding: "30px 32px 18px",
         borderRadius: 28,
         background: "linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.025))",
         boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.09), 0 40px 100px rgba(0,0,0,0.5)",
@@ -59,7 +60,7 @@ function Card({ icon, title, show, children }: { icon: ReactNode; title: string;
     >
       <div style={{ display: "flex", alignItems: "center", gap: 18, marginBottom: 18 }}>
         {icon}
-        <span style={{ fontSize: 38, fontWeight: 650, color: PAPER, letterSpacing: "-0.03em" }}>{title}</span>
+        <span style={{ fontSize: 34, fontWeight: 650, color: PAPER, letterSpacing: "-0.03em" }}>{title}</span>
       </div>
       {children}
     </div>
@@ -72,23 +73,28 @@ export function Hardware() {
   const f = useCurrentFrame();
   const t = prog(f, 0, 22);
   const exit = prog(f, HARDWARE_FRAMES - 14, 14, inOut);
-  const chips = ["35 MB installer", "No Python", "Offline after setup", "Free and open source"];
+  const chips = ["Native installer", "No Python", "Offline after setup", "Free and open source"];
   return (
     <AbsoluteFill style={{ fontFamily: font, opacity: 1 - exit }}>
       <Backdrop glow={0.9} />
       <div style={{ position: "absolute", top: 110, left: 0, right: 0, textAlign: "center", fontSize: 76, fontWeight: 660, letterSpacing: "-0.045em", color: "#f4f4f2", opacity: t, transform: `translateY(${(1 - t) * 24}px)`, filter: `blur(${(1 - t) * 8}px)` }}>
         Runs on the computer you have.
       </div>
-      <div style={{ position: "absolute", top: 265, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 48 }}>
+      <div style={{ position: "absolute", top: 265, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 36 }}>
         <Card icon={<WindowsLogo />} title="Windows 10 and 11" show={14}>
-          <Row icon={<Brand path={siNvidia.path} color={`#${siNvidia.hex}`} />} title="NVIDIA · CUDA" sub="12 GB of VRAM or more" show={34} />
+          <Row icon={<Brand path={siNvidia.path} color={`#${siNvidia.hex}`} />} title="NVIDIA · CUDA" sub="12 GB of VRAM or more · 8 GB beta" show={34} />
           <Row icon={<Brand path={siAmd.path} color="#f2f2f2" />} title="AMD · Vulkan" sub="12 GB or more · beta" show={42} />
           <Row icon={<Brand path={siIntel.path} color="#f2f2f2" />} title="Intel Arc · Vulkan" sub="12 GB or more · beta" show={50} />
         </Card>
-        <Card icon={<Brand path={siApple.path} color={PAPER} size={38} />} title="macOS 26" show={24}>
-          <Row icon={<Brand path={siApple.path} color="#f2f2f2" />} title="Apple Silicon · Metal" sub="M1 or newer · beta" show={44} />
-          <Row icon={<span style={{ fontSize: 22, fontWeight: 700, color: "#f2f2f2" }}>32</span>} title="32 GB recommended" sub="16 GB works, more slowly" show={52} />
-          <Row icon={<span style={{ fontSize: 22, color: "#f2f2f2" }}>⌘</span>} title="Same app, same features" sub="One codebase for both systems" show={60} />
+        <Card icon={<Brand path={siApple.path} color={PAPER} size={36} />} title="macOS 15 or newer" show={20}>
+          <Row icon={<Brand path={siApple.path} color="#f2f2f2" />} title="Apple Silicon · Metal" sub="M1 or newer · beta" show={40} />
+          <Row icon={<span style={{ fontSize: 22, fontWeight: 700, color: "#f2f2f2" }}>32</span>} title="32 GB recommended" sub="16 GB works, more slowly" show={48} />
+          <Row icon={<span style={{ fontSize: 22, color: "#f2f2f2" }}>⌘</span>} title="Same app, same features" sub="One codebase for every system" show={56} />
+        </Card>
+        <Card icon={<Brand path={siLinux.path} color={PAPER} size={36} />} title="Linux · beta" show={26}>
+          <Row icon={<Brand path={siDebian.path} color="#f2f2f2" />} title=".deb · Ubuntu, Debian, Mint" sub="Ubuntu 22.04, Debian 12, Mint 21 or newer" show={46} />
+          <Row icon={<Brand path={siFedora.path} color="#f2f2f2" />} title=".rpm · Fedora" sub="Fedora 40 or newer" show={54} />
+          <Row icon={<Brand path={siNvidia.path} color={`#${siNvidia.hex}`} />} title="NVIDIA CUDA · AMD Vulkan" sub="12 GB or more · 8 GB beta · Intel Arc too" show={62} />
         </Card>
       </div>
       <div style={{ position: "absolute", top: 880, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 16 }}>
@@ -122,7 +128,7 @@ export function Outro() {
           <Mark size={120} color={PAPER} />
           <span style={{ fontSize: 128, fontWeight: 620, color: PAPER, letterSpacing: "-0.045em", lineHeight: 1 }}>Kokon</span>
         </div>
-        <div style={{ fontSize: 40, color: "rgba(247,246,242,0.8)", letterSpacing: "-0.02em", opacity: b, transform: `translateY(${(1 - b) * 14}px)` }}>Free and open source. For Windows and macOS.</div>
+        <div style={{ fontSize: 40, color: "rgba(247,246,242,0.8)", letterSpacing: "-0.02em", opacity: b, transform: `translateY(${(1 - b) * 14}px)` }}>Free and open source. For Windows, macOS and Linux.</div>
         <div style={{ marginTop: 18, padding: "18px 40px", borderRadius: 999, background: PAPER, color: "#0d0d0d", fontSize: 34, fontWeight: 650, letterSpacing: "-0.02em", opacity: c, transform: `translateY(${(1 - c) * 14}px)` }}>
           kokon.app
         </div>

@@ -1,6 +1,8 @@
 // Update manifest for the in-app updater (Tauri), built from releases made on two machines.
 //
-//   node scripts/release/updater.mjs fragment <windows-x86_64|darwin-aarch64> <signed bundle>
+//   node scripts/release/updater.mjs fragment <platform> <signed bundle>
+//       platform: windows-x86_64, darwin-aarch64, linux-x86_64-deb or linux-x86_64-rpm (the
+//       Linux updater picks the entry of the package type it was installed from).
 //       Copies the bundle into dist-release/ under a stable, versioned name and writes
 //       dist-release/updater-<platform>.json (file name + signature from <bundle>.sig).
 //   node scripts/release/updater.mjs manifest [--notes "What's new"]
@@ -19,10 +21,16 @@ fs.mkdirSync(out, { recursive: true });
 
 if (cmd === "fragment") {
   const [platform, bundle] = args;
-  if (!["windows-x86_64", "darwin-aarch64"].includes(platform) || !bundle) throw new Error("usage: fragment <windows-x86_64|darwin-aarch64> <bundle>");
+  const names = {
+    "windows-x86_64": `Kokon_${version}_x64-setup.exe`,
+    "darwin-aarch64": `Kokon_${version}_aarch64.app.tar.gz`,
+    "linux-x86_64-deb": `Kokon_${version}_amd64.deb`,
+    "linux-x86_64-rpm": `Kokon-${version}-1.x86_64.rpm`,
+  };
+  if (!names[platform] || !bundle) throw new Error(`usage: fragment <${Object.keys(names).join("|")}> <bundle>`);
   const sig = fs.readFileSync(`${bundle}.sig`, "utf8").trim();
   // GitHub turns spaces in asset names into dots: keep names space-free and versioned.
-  const name = platform === "darwin-aarch64" ? `Kokon_${version}_aarch64.app.tar.gz` : `Kokon_${version}_x64-setup.exe`;
+  const name = names[platform];
   fs.copyFileSync(bundle, path.join(out, name));
   fs.writeFileSync(path.join(out, `updater-${platform}.json`), JSON.stringify({ version, platform, file: name, signature: sig }, null, 2));
   console.log(`updater entry: ${platform} -> ${name}`);

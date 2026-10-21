@@ -8,19 +8,21 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use image::GrayImage;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::{Notify, broadcast};
 
-use crate::config::AppConfig;
+use crate::config::{AppConfig, LoraEntry};
 use crate::diagnostics::{GpuInfo, query_gpus};
+use crate::enhancer;
 use crate::error::{AppError, AppResult, ErrorCode, translate_generation_failure};
 use crate::geometry::Size;
 use crate::imaging::{self, LoadedImage};
+use crate::lora::{self, AppliedLora};
 use crate::paths;
 use crate::pipeline;
 use crate::planner::{self, GenerationRequest, Mode, OutputFormat, Plan, PlanInputs, ResolutionMode, ResolvedMode};
 use crate::process::{BackendProgress, BackendStage, ProgressParser, ServerManager, ServerState};
-use crate::sdcpp::{BackendJobStatus, CancelOutcome, SdcppClient, UpscaleRequest};
+use crate::sdcpp::{BackendJobStatus, CancelOutcome, Capabilities, SdcppClient, UpscaleRequest};
 use crate::store::{GenerationRecord, InputRecord, PipelineRecord, ReferenceRecord, Store, new_id, now_rfc3339};
 
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -31,6 +33,8 @@ pub enum JobStatus {
     Queued,
     StartingBackend,
     Preparing,
+    /// The prompt enhancer is writing the prompt (`JobView::enhanced_prompt` grows).
+    EnhancingPrompt,
     Running,
     Saving,
     Done,
@@ -42,6 +46,25 @@ impl JobStatus {
     pub fn is_terminal(&self) -> bool {
         matches!(self, Self::Done | Self::Failed | Self::Cancelled)
     }
+}
+
+/// A LoRA as the app lists it.
+#[derive(Debug, Clone, Serialize)]
+pub struct LoraView {
+    #[serde(flatten)]
+    pub entry: LoraEntry,
+    /// Kokon's copy is in the LoRA folder.
+    pub available: bool,
+}
+
+/// Settings of a LoRA to change; missing fields stay as they are.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct LoraPatch {
+    pub name: Option<String>,
+    pub weight: Option<f32>,
+    pub trigger_words: Option<String>,
+    pub on_by_default: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -58,6 +81,9 @@ pub struct JobView {
     pub started_at: Option<String>,
     pub finished_at: Option<String>,
     pub prompt: String,
+    /// The prompt enhancer's text: partial while `EnhancingPrompt`, then the prompt the image
+    /// is made from (`prompt` stays the user's). None when the enhancer did not run or failed.
+    pub enhanced_prompt: Option<String>,
     pub client: Option<String>,
     pub plan: Option<Plan>,
     pub seed: Option<i64>,
@@ -74,6 +100,8 @@ struct Job {
     cancel: bool,
     retried_oom: bool,
     workspace: Option<PathBuf>,
+    /// The prompt enhancer's finished text, kept for a retry (out of memory).
+    enhanced: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -93,6 +121,7 @@ pub struct Engine {
     pub private_store: Arc<Store>,
     /// Measured speed of this machine, for time estimates.
     speed: crate::speed::SpeedBook,
+    data_dir: PathBuf,
     private_dir: PathBuf,
     jobs: Mutex<HashMap<String, Job>>,
     order: Mutex<VecDeque<String>>,
@@ -167,6 +196,7 @@ impl Engine {
             store,
             private_store,
             speed: if cfg!(test) { crate::speed::SpeedBook::in_memory() } else { crate::speed::SpeedBook::open(data_dir) },
+            data_dir: data_dir.to_path_buf(),
             private_dir,
             jobs: Mutex::new(HashMap::new()),
             order: Mutex::new(VecDeque::new()),
@@ -182,16 +212,42 @@ impl Engine {
     }
 
     pub fn config(&self) -> AppConfig {
-        self.cfg.read().unwrap().clone()
+        let mut cfg = self.cfg.read().unwrap().clone();
+        cfg.sage_unsupported = self.lacks_sage_attention(&cfg);
+        cfg
+    }
+
+    /// The card `cfg` runs the CUDA engine on can't run SageAttention. Uses the cached card
+    /// list (queried once if empty) and engine devices, never `config()` or an engine probe.
+    fn lacks_sage_attention(&self, cfg: &AppConfig) -> bool {
+        if cfg.gpu_backend != crate::config::GpuBackend::Cuda {
+            return false;
+        }
+        let cached = {
+            let g = self.gpus.lock().unwrap();
+            g.0.is_some().then(|| g.1.clone())
+        };
+        let cards = cached.unwrap_or_else(|| self.gpus());
+        let i = if cards.len() < 2 {
+            0
+        } else {
+            let devices = self.devices.lock().unwrap().as_ref().map(|d| d.2.clone()).unwrap_or_default();
+            crate::diagnostics::card_for_device(&devices, &cards, &cfg.effective_device(), cfg.gpu_backend.device_prefix()).unwrap_or(0)
+        };
+        cards.get(i).is_some_and(GpuInfo::lacks_sage_attention)
     }
 
     /// Replaces the configuration. Returns true when the backend must restart.
     pub fn set_config(&self, mut new: AppConfig) -> AppResult<bool> {
+        // LoRAs change only through `set_loras` (a Settings save may carry an older list).
+        new.loras = self.cfg.read().unwrap().loras.clone();
         // The official profile follows the folder and preset; see `AppConfig::normalize`.
         new.normalize();
         new.validate()?;
         new.save()?;
+        new.sage_unsupported = self.lacks_sage_attention(&new);
         let mut g = self.cfg.write().unwrap();
+        g.sage_unsupported = self.lacks_sage_attention(&g);
         let restart = crate::process::build_server_args(&g, g.profile()) != crate::process::build_server_args(&new, new.profile())
             || g.sdcpp_dir != new.sdcpp_dir
             || g.gpu_backend != new.gpu_backend;
@@ -203,6 +259,80 @@ impl Engine {
         drop(g);
         self.place_bundled_upscaler();
         Ok(restart)
+    }
+
+    /// Replaces the LoRA list (callers hold `lora::LIBRARY`).
+    fn set_loras(&self, loras: Vec<LoraEntry>) -> AppResult<()> {
+        let mut new = self.config();
+        new.loras = loras;
+        new.save()?;
+        self.cfg.write().unwrap().loras = new.loras;
+        Ok(())
+    }
+
+    /// Loads a LoRA file the user picked (blocking: checks it and writes Kokon's copy). Loading
+    /// the same file again refreshes the copy and keeps its settings.
+    pub fn add_lora(&self, src: &Path) -> AppResult<LoraEntry> {
+        let _lock = lora::LIBRARY.lock().unwrap_or_else(|e| e.into_inner());
+        let cfg = self.config();
+        let existing = cfg.loras.iter().find(|l| l.source == src);
+        let entry = lora::import(&cfg, src, existing)?;
+        let mut list = cfg.loras.clone();
+        match list.iter_mut().find(|l| l.id == entry.id) {
+            Some(l) => *l = entry.clone(),
+            None => list.push(entry.clone()),
+        }
+        self.set_loras(list)?;
+        Ok(entry)
+    }
+
+    /// Changes a LoRA's settings (name, weight, trigger words, on by default).
+    pub fn update_lora(&self, id: &str, patch: LoraPatch) -> AppResult<LoraEntry> {
+        let _lock = lora::LIBRARY.lock().unwrap_or_else(|e| e.into_inner());
+        let mut list = self.config().loras;
+        let l = list.iter_mut().find(|l| l.id == id).ok_or_else(|| AppError::new(ErrorCode::NotFound, "This LoRA is no longer loaded."))?;
+        if let Some(n) = patch.name {
+            let n = n.trim();
+            if n.is_empty() {
+                return Err(AppError::invalid("Give the LoRA a name."));
+            }
+            l.name = n.chars().take(80).collect();
+        }
+        if let Some(w) = patch.weight {
+            if !w.is_finite() || !(-2.0..=2.0).contains(&w) {
+                return Err(AppError::invalid("A LoRA's strength goes from -2 to 2."));
+            }
+            l.weight = (w * 100.0).round() / 100.0;
+        }
+        if let Some(t) = patch.trigger_words {
+            l.trigger_words = t.trim().chars().take(500).collect();
+        }
+        if let Some(on) = patch.on_by_default {
+            l.on_by_default = on;
+        }
+        let out = l.clone();
+        self.set_loras(list)?;
+        Ok(out)
+    }
+
+    /// Removes a LoRA and Kokon's copy of it (the user's own file stays).
+    pub fn remove_lora(&self, id: &str) -> AppResult<()> {
+        let _lock = lora::LIBRARY.lock().unwrap_or_else(|e| e.into_inner());
+        let cfg = self.config();
+        let Some(l) = cfg.loras.iter().find(|l| l.id == id) else { return Ok(()) };
+        let path = lora::entry_path(&cfg, l);
+        match std::fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(AppError::io("delete", &path, e)),
+        }
+        self.set_loras(cfg.loras.iter().filter(|l| l.id != id).cloned().collect())
+    }
+
+    /// The loaded LoRAs, with whether Kokon's copy is still there.
+    pub fn loras(&self) -> Vec<LoraView> {
+        let cfg = self.config();
+        cfg.loras.iter().map(|l| LoraView { available: lora::entry_path(&cfg, l).is_file(), entry: l.clone() }).collect()
     }
 
     /// Copies the upscaler shipped with the app into the configured folder when it is missing
@@ -447,6 +577,7 @@ impl Engine {
             started_at: None,
             finished_at: None,
             prompt: if upscale && request.prompt.trim().is_empty() { "Upscale".into() } else { request.prompt.clone() },
+            enhanced_prompt: None,
             client: request.client.clone(),
             plan: None,
             seed: request.seed,
@@ -457,7 +588,7 @@ impl Engine {
         };
         {
             let mut jobs = self.jobs.lock().unwrap();
-            jobs.insert(id.clone(), Job { view, request, cancel: false, retried_oom: false, workspace });
+            jobs.insert(id.clone(), Job { view, request, cancel: false, retried_oom: false, workspace, enhanced: None });
             let mut order = self.order.lock().unwrap();
             order.push_back(id.clone());
             // Keep memory bounded: drop the oldest finished jobs.
@@ -553,7 +684,16 @@ impl Engine {
     /// Loads one image source: "input:<id>", "gen:<id>" or an absolute path. A private job
     /// keeps its copy of the input in the private store.
     pub fn resolve_source(&self, src: &str, workspace: Option<&Path>, private: bool) -> AppResult<(LoadedImage, InputRecord)> {
-        let (bytes, original_path, name) = if let Some(id) = src.strip_prefix("input:") {
+        let (bytes, original_path, name) = self.read_source(src, workspace)?;
+        let store = if private { &self.private_store } else { &self.store };
+        let rec = store.put_input(&bytes, name.as_deref(), original_path.as_deref())?;
+        let img = imaging::decode_image(&bytes)?;
+        Ok((img, rec))
+    }
+
+    /// The bytes of an image source, with its original path and file name.
+    fn read_source(&self, src: &str, workspace: Option<&Path>) -> AppResult<(Vec<u8>, Option<String>, Option<String>)> {
+        Ok(if let Some(id) = src.strip_prefix("input:") {
             let rec = self.input_store(id).get_input(id)?;
             let b = std::fs::read(&rec.path).map_err(|e| AppError::io("read the stored image", Path::new(&rec.path), e))?;
             (b, rec.original_path.clone(), rec.original_name.clone())
@@ -566,11 +706,119 @@ impl Engine {
             let p = paths::validate_input_image(src, workspace, &[])?;
             let b = std::fs::read(&p).map_err(|e| AppError::io("read the image", &p, e))?;
             (b, Some(p.to_string_lossy().into_owned()), p.file_name().map(|n| n.to_string_lossy().into_owned()))
+        })
+    }
+
+    /// The colour LUTs the user has opened (`<data>/luts`).
+    pub fn luts(&self) -> crate::lut::LutLibrary {
+        crate::lut::LutLibrary::new(self.data_dir.join("luts"))
+    }
+
+    /// A library LUT on a "gen:"/"input:" source at full strength, reduced to `max_side`, for
+    /// the live preview (the UI shows the intensity as its opacity over the image). JPEG, or
+    /// PNG when the image has transparency or a colour profile to keep. Returns the content type.
+    pub fn lut_preview(&self, src: &str, name: &str, max_side: u32) -> AppResult<(Vec<u8>, &'static str)> {
+        if !src.starts_with("gen:") && !src.starts_with("input:") {
+            return Err(AppError::new(ErrorCode::InvalidInput, "LUTs apply to results and imported images."));
+        }
+        let lut = self.luts().load(name)?;
+        let img = imaging::decode_image(&self.read_source(src, None)?.0)?;
+        let small = lut.apply(&imaging::thumbnail(&img.pixels, max_side.clamp(256, 4096)), 1.0);
+        if img.has_transparency || img.icc_profile.is_some() {
+            Ok((imaging::encode_png(&small, &[], img.icc_profile.as_deref(), true)?, "image/png"))
+        } else {
+            Ok((imaging::encode_jpeg(&small, 92)?, "image/jpeg"))
+        }
+    }
+
+    /// Applies a library LUT to a "gen:"/"input:" source at `intensity` (0-1) and saves the
+    /// result as a new version made from it (mode "lut"; the source stays as it is). Private
+    /// when asked or when the source itself is private. Same file format as a source result.
+    pub fn apply_lut(&self, src: &str, name: &str, intensity: f32, private: bool) -> AppResult<GenerationRecord> {
+        let started = Instant::now();
+        let library = self.luts();
+        let lut = library.load(name)?;
+        let parent = match src.strip_prefix("gen:") {
+            Some(id) => Some(self.gen_store(id).get_generation(id)?),
+            None if src.starts_with("input:") => None,
+            None => return Err(AppError::new(ErrorCode::InvalidInput, "LUTs apply to results and imported images.")),
         };
+        let source_private = match (&parent, src.strip_prefix("input:")) {
+            (Some(p), _) => Arc::ptr_eq(self.gen_store(&p.id), &self.private_store),
+            (None, Some(id)) => Arc::ptr_eq(self.input_store(id), &self.private_store),
+            _ => false,
+        };
+        let private = private || source_private;
+        let (img, input) = self.resolve_source(src, None, private)?;
+        let intensity = if intensity.is_finite() { intensity.clamp(0.0, 1.0) } else { 1.0 };
+        let out = lut.apply(&img.pixels, intensity);
+        library.touch(name);
+
+        let cfg = self.config();
+        let id = new_id();
+        let now = chrono::Local::now();
         let store = if private { &self.private_store } else { &self.store };
-        let rec = store.put_input(&bytes, name.as_deref(), original_path.as_deref())?;
-        let img = imaging::decode_image(&bytes)?;
-        Ok((img, rec))
+        let dir = if private { self.private_dir.join("out") } else { cfg.output_dir.join(now.format("%Y-%m-%d").to_string()) };
+        std::fs::create_dir_all(&dir).map_err(|e| AppError::io("create the output folder", &dir, e))?;
+        let format = match parent.as_ref().and_then(|p| Path::new(&p.file_path).extension()).map(|e| e.to_string_lossy().to_ascii_lowercase()).as_deref() {
+            Some("jpg" | "jpeg") => OutputFormat::Jpeg,
+            Some("webp") => OutputFormat::Webp,
+            _ => OutputFormat::Png,
+        };
+        let file = paths::unique_path(dir.join(format!("{}-lut-{}.{}", now.format("%H%M%S"), paths::sanitize_file_stem(name), format.ext())), &[]);
+        let pct = (intensity * 100.0).round();
+        let mut rec = GenerationRecord {
+            id: id.clone(),
+            created_at: now_rfc3339(),
+            mode: "lut".into(),
+            prompt: String::new(),
+            original_prompt: None,
+            loras: vec![],
+            negative_prompt: String::new(),
+            seed: parent.as_ref().map(|p| p.seed).unwrap_or(0),
+            width: out.width(),
+            height: out.height(),
+            working_width: out.width(),
+            working_height: out.height(),
+            model: String::new(),
+            sampler: String::new(),
+            scheduler: None,
+            steps: 0,
+            cfg: 0.0,
+            strength: None,
+            quality: String::new(),
+            resolution: String::new(),
+            references: vec![ReferenceRecord { index: 0, input_id: input.id.clone(), original_path: input.original_path.clone(), width: input.width, height: input.height }],
+            mask_input_id: None,
+            outpaint: None,
+            file_path: file.to_string_lossy().into_owned(),
+            extra_paths: vec![],
+            favorite: false,
+            parent_id: parent.as_ref().map(|p| p.id.clone()),
+            duration_ms: 0,
+            notes: vec![format!("Colour LUT \"{name}\" at {pct} %.")],
+            app_version: APP_VERSION.into(),
+            backend_version: None,
+            client: None,
+            request: serde_json::json!({
+                "mode": "lut",
+                "images": [src],
+                "parent_id": parent.as_ref().map(|p| p.id.clone()),
+                "lut": { "name": name, "title": lut.title, "intensity": intensity },
+                "private": private,
+            }),
+            pipeline: None,
+        };
+        rec.duration_ms = started.elapsed().as_millis() as u64;
+        write_atomic(&file, &encode_output(&out, format, &rec, img.icc_profile.as_deref())?)?;
+        if let Ok(j) = imaging::encode_jpeg(&imaging::thumbnail(&out, 512), 85) {
+            let _ = std::fs::write(store.thumb_path(&id), j);
+        }
+        store.insert_generation(&rec)?;
+        if !private {
+            let _ = self.events.send(Event::Gallery { id: id.clone(), change: "added" });
+        }
+        Ok(rec)
     }
 
     /// How this machine's measured speed compares with the time model (None: not measured).
@@ -676,7 +924,7 @@ impl Engine {
         // Whether the running server can use the upscaler (an engine older than MoSR lists the
         // file but cannot run it; an external server may lack --hires-upscalers-dir):
         // enlargements fall back to Lanczos. Fresh, because the server rescans the folder.
-        let client = SdcppClient::new(cfg.server_port);
+        let client = SdcppClient::new(self.server.port());
         let caps = client.capabilities(Duration::from_secs(5)).await.ok().or_else(|| self.server.capabilities()).unwrap_or_default();
         let esrgan = plan.upscaler.clone().filter(|n| caps.has_upscaler(n, true));
         let needs_esrgan = plan.upscale.is_some() || plan.output.area() as f64 > plan.content.area() as f64 * 1.21;
@@ -687,6 +935,8 @@ impl Engine {
         }
         let quick_upscale = plan.upscale.is_some();
         let icc = images.first().and_then(|i| i.icc_profile.clone());
+        let mut enhanced: Option<String> = None;
+        let mut loras: Vec<AppliedLora> = Vec::new();
 
         let (contents, post) = if quick_upscale {
             // No diffusion: the source itself is enlarged.
@@ -711,7 +961,23 @@ impl Engine {
             let prepared = tokio::task::spawn_blocking(move || pipeline::prepare(&plan2, &prompt, seed, &images, mask_img.as_ref(), &opts))
                 .await
                 .map_err(AppError::internal)??;
-            let pipeline::PreparedJob { request: sd_req, post } = prepared;
+            let pipeline::PreparedJob { request: mut sd_req, post } = prepared;
+
+            // 4b. Prompt enhancer: rewrites the user's prompt, looking at the references
+            // exactly as the image model gets them.
+            if request.enhance && enhancer::applies(plan.mode) {
+                enhanced = self.enhance_prompt(id, &client, &caps, &cfg, plan.mode, &request.prompt, &sd_req.ref_images, seed).await?;
+                if let Some(text) = &enhanced {
+                    sd_req.prompt = pipeline::enhanced_prompt(&request.prompt, text);
+                }
+            }
+
+            // 4c. The user's LoRAs, trigger words in front of the final prompt.
+            loras = self.job_loras(id, &cfg, &request, &caps);
+            if !loras.is_empty() {
+                sd_req.prompt = lora::with_triggers(&sd_req.prompt, &loras);
+                sd_req.lora = lora::request_entries(&loras);
+            }
 
             // 5. Submit and follow.
             let mut lines = self.server.subscribe_lines();
@@ -786,7 +1052,8 @@ impl Engine {
                     return self.maybe_retry_oom(id, err).await;
                 }
             }
-            if !cold_start {
+            // LoRAs slow each step (~19 % for one at 0.7 on Q4_K): not a speed sample.
+            if !cold_start && loras.is_empty() {
                 let key = crate::speed::machine_key(&cfg, self.gpu().as_ref());
                 let predicted = planner::backend_seconds(&plan, cfg.uses_sage_attention());
                 if let Some(f) = self.speed.record(&key, submitted.elapsed().as_secs_f32(), predicted) {
@@ -817,13 +1084,14 @@ impl Engine {
         let duration_start = started;
         let mask_rec = mask.map(|(_, r)| r);
         let mut records = Vec::with_capacity(contents.len());
+        let count = contents.len() as u32;
         for (i, content) in contents.into_iter().enumerate() {
             let before = Size::new(content.width(), content.height());
             let target = pipeline::enlarge_target(&post);
             // Kept when the upscaler enlarges it, so the user can still see and save it.
             let original = target.map(|_| content.clone());
             let how = EnlargeOptions { tile: plan.upscale_tile, blend: cfg.upscale_blend, prescale: cfg.upscale_prescale };
-            let (content, enlarged_with) = self.enlarge(id, &client, content, target, esrgan.as_deref(), how).await?;
+            let (content, enlarged_with) = self.enlarge(id, &client, content, target, esrgan.as_deref(), how, (i as u32 + 1, count)).await?;
             let original = original.filter(|_| enlarged_with.is_some());
             self.update(id, |j| {
                 j.view.status = JobStatus::Saving;
@@ -846,12 +1114,12 @@ impl Engine {
             if let Some(j) = self.job(id) {
                 plan3.notes = j.notes;
             }
-            let (p, req3, inputs3, mask3, icc3, ws) = (post.clone(), request.clone(), inputs_meta.clone(), mask_rec.clone(), icc.clone(), workspace.clone());
+            let (p, req3, inputs3, mask3, icc3, ws, enh3, loras3) = (post.clone(), request.clone(), inputs_meta.clone(), mask_rec.clone(), icc.clone(), workspace.clone(), enhanced.clone(), loras.clone());
             let rec = blocking(move || {
                 let final_img = pipeline::finish(content, &p)?;
                 let duration_ms = duration_start.elapsed().as_millis() as u64;
                 let pipeline = (pipeline_rec != PipelineRecord::default()).then_some(pipeline_rec);
-                this.save_result(&final_img, &req3, &plan3, seed + i as i64, &inputs3, mask3.as_ref(), icc3.as_deref(), duration_ms, ws.as_deref(), i, pipeline, original.as_ref())
+                this.save_result(&final_img, &req3, &plan3, seed + i as i64, &inputs3, mask3.as_ref(), icc3.as_deref(), duration_ms, ws.as_deref(), i, pipeline, original.as_ref(), enh3, loras3)
             })
             .await?;
             if !request.private {
@@ -868,6 +1136,89 @@ impl Engine {
         Ok(())
     }
 
+    /// The LoRAs job `id` uses (see `lora::resolve`); skipped ones are noted on the job.
+    fn job_loras(&self, id: &str, cfg: &AppConfig, request: &GenerationRequest, caps: &Capabilities) -> Vec<AppliedLora> {
+        let (loras, notes) = lora::resolve(cfg, request.loras.as_deref());
+        let (loras, notes) = if !loras.is_empty() && !caps.img_feature("lora") {
+            (Vec::new(), vec!["This inference engine can't use LoRAs (update it in Setup); made without them.".to_string()])
+        } else {
+            (loras, notes)
+        };
+        if !notes.is_empty() {
+            self.update(id, |j| j.view.notes.extend(notes));
+        }
+        loras
+    }
+
+    /// Runs the prompt enhancer for job `id` and streams its text into the job. Returns the
+    /// new prompt, or None when the job keeps the user's prompt: the engine cannot write text,
+    /// or the enhancer failed (both noted on the job). Errors only for a cancel or a crash.
+    #[allow(clippy::too_many_arguments)]
+    async fn enhance_prompt(&self, id: &str, client: &SdcppClient, caps: &Capabilities, cfg: &AppConfig, mode: ResolvedMode, prompt: &str, images: &[String], seed: i64) -> AppResult<Option<String>> {
+        // A retry after running out of memory keeps the first prompt.
+        if let Some(done) = self.jobs.lock().unwrap().get(id).and_then(|j| j.enhanced.clone()) {
+            return Ok(Some(done));
+        }
+        if !caps.text_generation {
+            self.update(id, |j| j.view.notes.push("This inference engine has no prompt enhancer (update it in Setup); your prompt was used as written.".into()));
+            return Ok(None);
+        }
+        self.update(id, |j| {
+            j.view.status = JobStatus::EnhancingPrompt;
+            j.view.stage = None;
+            j.view.enhanced_prompt = Some(String::new());
+        });
+        let req = enhancer::request(cfg, mode, prompt, images.to_vec(), seed);
+        let started = Instant::now();
+        let mut text = String::new();
+        let mut last_emit = Instant::now();
+        let on_delta = |d: &str| {
+            text.push_str(d);
+            // The UI follows the text at ~10 updates a second.
+            if last_emit.elapsed() >= Duration::from_millis(100) {
+                last_emit = Instant::now();
+                let partial = text.clone();
+                self.update(id, |j| j.view.enhanced_prompt = Some(partial));
+            }
+        };
+        let r = client.text_gen(&req, Duration::from_secs(300), on_delta, || self.is_cancelled(id)).await;
+        let failure = match r {
+            Ok(done) => match enhancer::clean(&done.text) {
+                Some(t) => {
+                    tracing::info!("prompt enhancer: {} tokens in {:.1} s ({}, seed {})", done.usage.completion_tokens, started.elapsed().as_secs_f32(), done.finish_reason, done.seed);
+                    let cut = done.finish_reason == "length";
+                    self.update(id, |j| {
+                        j.view.enhanced_prompt = Some(t.clone());
+                        j.enhanced = Some(t.clone());
+                        if cut {
+                            j.view.notes.push("The prompt enhancer reached its length limit; its prompt may end abruptly.".into());
+                        }
+                    });
+                    return Ok(Some(t));
+                }
+                None => "it wrote nothing".to_string(),
+            },
+            Err(e) if e.code == ErrorCode::Cancelled => return Err(e),
+            Err(e) => {
+                if self.server.owned_alive() == Some(false) {
+                    let tail = self.server.log.tail(30).join("\n");
+                    self.server.mark_lost(AppError::new(ErrorCode::ServerCrashed, "The inference server stopped unexpectedly."));
+                    self.emit_server();
+                    return Err(AppError::new(ErrorCode::ServerCrashed, "The inference server stopped while writing the prompt.")
+                        .suggest("It will restart automatically on the next job. Turn the prompt enhancer off if it happens again.")
+                        .detail(tail));
+                }
+                tracing::warn!("prompt enhancer failed: {} {:?}", e.message, e.detail);
+                e.detail.clone().map(|d| format!("{} {d}", e.message)).unwrap_or(e.message)
+            }
+        };
+        self.update(id, |j| {
+            j.view.enhanced_prompt = None;
+            j.view.notes.push(format!("The prompt enhancer failed ({}); your prompt was used as written.", failure.trim_end_matches('.')));
+        });
+        Ok(None)
+    }
+
     /// Label of an upscale request that has no prompt: the source's own prompt, if any.
     fn upscale_prompt(&self, req: &GenerationRequest) -> String {
         let source = req.images.first().and_then(|s| s.strip_prefix("gen:")).and_then(|g| self.gen_store(g).get_generation(g).ok());
@@ -879,8 +1230,10 @@ impl Engine {
 
     /// Enlarges `content` with the upscaler model when [`pipeline::finish`] would resize it
     /// up to `target` by more than ~1.1x. Returns the (possibly larger) content and how the
-    /// enlargement is done; upscaler failures fall back to Lanczos with a note.
-    async fn enlarge(&self, id: &str, client: &SdcppClient, content: image::RgbaImage, target: Option<Size>, esrgan: Option<&str>, how: EnlargeOptions) -> AppResult<(image::RgbaImage, Option<String>)> {
+    /// enlargement is done; upscaler failures fall back to Lanczos with a note. `image` is
+    /// (this image, images in the batch), for the progress.
+    #[allow(clippy::too_many_arguments)]
+    async fn enlarge(&self, id: &str, client: &SdcppClient, content: image::RgbaImage, target: Option<Size>, esrgan: Option<&str>, how: EnlargeOptions, image: (u32, u32)) -> AppResult<(image::RgbaImage, Option<String>)> {
         let Some(target) = target else { return Ok((content, None)) };
         let size = Size::new(content.width(), content.height());
         let factor = (target.width as f64 / size.width as f64).max(target.height as f64 / size.height as f64);
@@ -892,6 +1245,8 @@ impl Engine {
             j.view.status = JobStatus::Running;
             j.view.stage = Some(BackendStage::Upscaling);
             j.view.step = None;
+            j.view.image = Some(image);
+            j.view.seconds_per_step = None;
         });
         let content = Arc::new(content);
         let r = self.esrgan_enlarge(id, client, content.clone(), target, name, how).await;
@@ -924,13 +1279,23 @@ impl Engine {
         let c = content.clone();
         let input = Arc::new(blocking(move || Ok(imaging::resize(&c, ep.input.width, ep.input.height))).await?);
         let mut stitcher = pipeline::Stitcher::new(ep.input);
-        for tile in &ep.tiles {
+        // Tiles are the upscaler's steps: (done, total) and the measured time per tile.
+        let total = ep.tiles.len() as u32;
+        self.update(id, |j| j.view.step = Some((0, total)));
+        let started = Instant::now();
+        for (k, tile) in ep.tiles.iter().enumerate() {
             self.check_cancel(id)?;
             let (inp, t) = (input.clone(), *tile);
             let png = blocking(move || pipeline::tile_png_b64(&inp, &t)).await?;
             let resp = client.upscale(&UpscaleRequest { image: png, upscaler: Some(upscaler.to_string()), tile_size: (tile_px > 0).then_some(tile_px), output_format: "png".into() }).await?;
-            let up = blocking(move || Ok(imaging::decode_image(&crate::sdcpp::b64_decode(&resp.images[0].b64_json)?)?.pixels)).await?;
+            let up = blocking(move || imaging::decode_engine_image(&crate::sdcpp::b64_decode(&resp.images[0].b64_json)?, pipeline::ESRGAN_MAX_OUTPUT_SIDE)).await?;
             stitcher.add(tile, &up)?;
+            let done = k as u32 + 1;
+            let per_tile = started.elapsed().as_secs_f32() / done as f32;
+            self.update(id, |j| {
+                j.view.step = Some((done, total));
+                j.view.seconds_per_step = Some(per_tile);
+            });
         }
         Ok(Some(blocking(move || stitcher.finish(&content)).await?))
     }
@@ -1022,6 +1387,8 @@ impl Engine {
         index: usize,
         mut pipeline: Option<PipelineRecord>,
         original: Option<&image::RgbaImage>,
+        enhanced_prompt: Option<String>,
+        loras: Vec<AppliedLora>,
     ) -> AppResult<GenerationRecord> {
         let cfg = self.config();
         let id = new_id();
@@ -1063,7 +1430,10 @@ impl Engine {
             id: id.clone(),
             created_at: now_rfc3339(),
             mode: mode.into(),
-            prompt: req.prompt.clone(),
+            // An enhanced job records the prompt the image was made from, and the user's.
+            original_prompt: enhanced_prompt.is_some().then(|| req.prompt.clone()),
+            prompt: enhanced_prompt.unwrap_or_else(|| req.prompt.clone()),
+            loras,
             negative_prompt: plan.negative_prompt.clone(),
             seed,
             width: img.width(),
@@ -1264,6 +1634,43 @@ mod tests {
         assert_eq!(numbered("x", 2), "x-3");
     }
 
+    #[test]
+    fn lora_library_survives_settings_saves() {
+        let dir = tempfile::tempdir().unwrap();
+        // SAFETY: test-only env override, single-threaded setup.
+        unsafe { std::env::set_var("QLS_CONFIG_DIR", dir.path().join("cfg")) };
+        let mut cfg = AppConfig { sdcpp_dir: dir.path().join("sdcpp"), ..AppConfig::default() };
+        cfg.normalize();
+        let model = cfg.profile().diffusion_model.clone();
+        std::fs::create_dir_all(model.parent().unwrap()).unwrap();
+        crate::modelfile::tests::write_gguf(&model, &[], &[], &[("transformer_blocks.0.attn.to_q.weight", 1, &[8, 8])]);
+        // A LoRA for that layer (header only: the copy is byte for byte).
+        let src = dir.path().join("My Style.safetensors");
+        crate::modelfile::tests::write_st(&src, &[("transformer_blocks.0.attn.to_q.lora_A.weight", "BF16", &[4, 8]), ("transformer_blocks.0.attn.to_q.lora_B.weight", "BF16", &[8, 4])]);
+        let e = Engine::new(cfg, dir.path()).unwrap();
+
+        let added = e.add_lora(&src).unwrap();
+        assert_eq!((added.id.as_str(), added.name.as_str(), added.weight), ("my-style", "My Style", 1.0));
+        let copy = e.config().lora_dir().join("my-style.safetensors");
+        assert_eq!(std::fs::read(&copy).unwrap(), std::fs::read(&src).unwrap());
+        e.update_lora("my-style", LoraPatch { weight: Some(0.75), trigger_words: Some(" grainscape ".into()), on_by_default: Some(true), ..Default::default() }).unwrap();
+        assert!(e.update_lora("my-style", LoraPatch { weight: Some(3.0), ..Default::default() }).is_err());
+        // Loading the same file again keeps its settings.
+        assert_eq!(e.add_lora(&src).unwrap().weight, 0.75);
+
+        // Settings saved from an older copy of the config keep the list.
+        let mut stale = e.config();
+        stale.loras.clear();
+        e.set_config(stale).unwrap();
+        let l = &e.loras()[0];
+        assert!(l.available);
+        assert_eq!((l.entry.trigger_words.as_str(), l.entry.on_by_default), ("grainscape", true));
+        assert_eq!(AppConfig::load().loras.len(), 1);
+
+        e.remove_lora("my-style").unwrap();
+        assert!(e.loras().is_empty() && !copy.exists() && src.exists());
+    }
+
     #[tokio::test]
     async fn submit_validate_and_cancel_queued() {
         let dir = tempfile::tempdir().unwrap();
@@ -1316,6 +1723,158 @@ mod tests {
         assert_eq!(e.job(&mcp.id).unwrap().status, JobStatus::Queued);
     }
 
+    /// An upscale endpoint that answers every request with its tile enlarged x2 (nearest).
+    async fn fake_upscaler() -> u16 {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            while let Ok((mut sock, _)) = listener.accept().await {
+                let mut req = Vec::new();
+                let mut buf = [0u8; 65536];
+                let body = loop {
+                    let n = sock.read(&mut buf).await.unwrap();
+                    req.extend_from_slice(&buf[..n]);
+                    let text = String::from_utf8_lossy(&req).to_string();
+                    if let Some(end) = text.find("\r\n\r\n") {
+                        let len = text.lines().find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length:").map(|v| v.trim().parse::<usize>().unwrap())).unwrap_or(0);
+                        if req.len() >= end + 4 + len {
+                            break req[end + 4..end + 4 + len].to_vec();
+                        }
+                    }
+                };
+                let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                let tile = image::load_from_memory(&crate::sdcpp::b64_decode(v["image"].as_str().unwrap()).unwrap()).unwrap();
+                let up = tile.resize_exact(tile.width() * 2, tile.height() * 2, image::imageops::FilterType::Nearest);
+                let mut png = std::io::Cursor::new(Vec::new());
+                up.write_to(&mut png, image::ImageFormat::Png).unwrap();
+                let out = serde_json::json!({ "images": [{ "index": 0, "b64_json": crate::sdcpp::b64(png.get_ref()) }] }).to_string();
+                let head = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", out.len());
+                let _ = sock.write_all(head.as_bytes()).await;
+                let _ = sock.write_all(out.as_bytes()).await;
+            }
+        });
+        port
+    }
+
+    #[tokio::test]
+    async fn upscaling_reports_its_tiles_as_steps() {
+        let dir = tempfile::tempdir().unwrap();
+        // SAFETY: test-only env override, single-threaded setup.
+        unsafe { std::env::set_var("QLS_CONFIG_DIR", dir.path().join("cfg")) };
+        let mut cfg = AppConfig::default();
+        cfg.sdcpp_dir = dir.path().join("sdcpp");
+        cfg.normalize();
+        std::fs::create_dir_all(cfg.engine_dir()).unwrap();
+        std::fs::write(cfg.server_exe(), b"").unwrap();
+        for (_, p, _) in cfg.profile().files() {
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, b"").unwrap();
+        }
+        let e = Engine::new(cfg, dir.path()).unwrap();
+        let id = e.submit(GenerationRequest { prompt: "a long strip".into(), ..Default::default() }, None).unwrap().id;
+        let mut events = e.events.subscribe();
+        // 4200 px wide: three tiles of at most 2048 px for an x4 model.
+        let content = image::RgbaImage::from_pixel(4200, 40, image::Rgba([90, 120, 200, 255]));
+        let how = EnlargeOptions { tile: 0, blend: 1.0, prescale: false };
+        let client = SdcppClient::new(fake_upscaler().await);
+        let (img, with) = e.enlarge(&id, &client, content, Some(Size::new(16800, 160)), Some("4x"), how, (2, 3)).await.unwrap();
+        assert_eq!((img.width(), with.as_deref()), (8400, Some("4x")), "stitched from the x2 answers");
+        let mut steps = Vec::new();
+        while let Ok(ev) = events.try_recv() {
+            if let Event::Job { job } = ev {
+                if job.stage == Some(BackendStage::Upscaling) {
+                    assert_eq!((job.status, job.image), (JobStatus::Running, Some((2, 3))));
+                    if steps.last() != Some(&(job.step, job.seconds_per_step.is_some())) {
+                        steps.push((job.step, job.seconds_per_step.is_some()));
+                    }
+                }
+            }
+        }
+        assert_eq!(steps.first(), Some(&(None, false)));
+        let tiles: Vec<_> = steps.iter().filter_map(|(s, timed)| s.map(|s| (s, *timed))).collect();
+        assert_eq!(tiles, vec![((0, 3), false), ((1, 3), true), ((2, 3), true), ((3, 3), true)], "{steps:?}");
+    }
+
+    #[tokio::test]
+    async fn prompt_enhancer_streams_falls_back_and_is_kept_for_retries() {
+        use crate::sdcpp::{fake_server, sse_answer};
+        let dir = tempfile::tempdir().unwrap();
+        // SAFETY: test-only env override, single-threaded setup.
+        unsafe { std::env::set_var("QLS_CONFIG_DIR", dir.path().join("cfg")) };
+        let mut cfg = AppConfig::default();
+        cfg.sdcpp_dir = dir.path().join("sdcpp");
+        cfg.normalize();
+        std::fs::create_dir_all(cfg.engine_dir()).unwrap();
+        std::fs::write(cfg.server_exe(), b"").unwrap();
+        for (_, p, _) in cfg.profile().files() {
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, b"").unwrap();
+        }
+        let e = Engine::new(cfg.clone(), dir.path()).unwrap();
+        let caps = Capabilities { text_generation: true, ..Default::default() };
+        let submit = || e.submit(GenerationRequest { prompt: "rendi il gatto nero".into(), enhance: true, ..Default::default() }, None).unwrap().id;
+        let images = vec!["PNG1".to_string()];
+
+        // Streams into the job (~10 updates a second) and keeps the finished text.
+        let id = submit();
+        let mut events = e.events.subscribe();
+        let (port, body) = fake_server(200, "text/event-stream", sse_answer(&["Change the cat's", " fur to black."], "stop"), Duration::from_millis(150)).await;
+        let out = e.enhance_prompt(&id, &SdcppClient::new(port), &caps, &cfg, ResolvedMode::Edit, "rendi il gatto nero", &images, 42).await.unwrap();
+        assert_eq!(out.as_deref(), Some("Change the cat's fur to black."));
+        let mut partial = false;
+        while let Ok(ev) = events.try_recv() {
+            if let Event::Job { job } = ev {
+                partial |= job.status == JobStatus::EnhancingPrompt && job.enhanced_prompt.as_deref() == Some("Change the cat's");
+            }
+        }
+        assert!(partial, "the job shows the text while it is written");
+        let v = e.job(&id).unwrap();
+        assert_eq!((v.enhanced_prompt.as_deref(), v.prompt.as_str()), (Some("Change the cat's fur to black."), "rendi il gatto nero"));
+        let sent: serde_json::Value = serde_json::from_str(&body.await.unwrap()).unwrap();
+        assert_eq!((sent["images"][0].as_str(), sent["sampling"]["seed"].as_i64()), (Some("PNG1"), Some(42)), "the references and the job's seed");
+        assert_eq!(sent["system_prompt"], enhancer::EDIT_SYSTEM_PROMPT);
+        // A retry (out of memory) keeps that prompt without asking the server again.
+        let again = e.enhance_prompt(&id, &SdcppClient::new(1), &caps, &cfg, ResolvedMode::Edit, "rendi il gatto nero", &images, 43).await.unwrap();
+        assert_eq!(again, out);
+
+        // A failure keeps the user's prompt, with a note.
+        let id = submit();
+        let chunks = vec!["event: delta\ndata: {\"text\":\"Chan\"}\n\n".into(), "event: error\ndata: {\"error\":\"out of memory\"}\n\n".into()];
+        let (port, _) = fake_server(200, "text/event-stream", chunks, Duration::from_millis(1)).await;
+        assert_eq!(e.enhance_prompt(&id, &SdcppClient::new(port), &caps, &cfg, ResolvedMode::Generate, "un gatto", &[], 1).await.unwrap(), None);
+        let v = e.job(&id).unwrap();
+        assert_eq!(v.enhanced_prompt, None);
+        assert!(v.notes.last().is_some_and(|n| n.contains("prompt enhancer failed") && n.contains("out of memory") && n.ends_with("used as written.")), "{:?}", v.notes);
+        // An empty answer too.
+        let id = submit();
+        let (port, _) = fake_server(200, "text/event-stream", sse_answer(&["  "], "stop"), Duration::ZERO).await;
+        assert_eq!(e.enhance_prompt(&id, &SdcppClient::new(port), &caps, &cfg, ResolvedMode::Generate, "un gatto", &[], 1).await.unwrap(), None);
+        assert!(e.job(&id).unwrap().notes.last().unwrap().contains("wrote nothing"));
+        // A cut-off answer is used, with a note.
+        let id = submit();
+        let (port, _) = fake_server(200, "text/event-stream", sse_answer(&["A cat on a"], "length"), Duration::ZERO).await;
+        assert_eq!(e.enhance_prompt(&id, &SdcppClient::new(port), &caps, &cfg, ResolvedMode::Generate, "un gatto", &[], 1).await.unwrap().as_deref(), Some("A cat on a"));
+        assert!(e.job(&id).unwrap().notes.last().unwrap().contains("length limit"));
+
+        // An engine without text generation (official builds): note, no request.
+        let id = submit();
+        assert_eq!(e.enhance_prompt(&id, &SdcppClient::new(1), &Capabilities::default(), &cfg, ResolvedMode::Generate, "un gatto", &[], 1).await.unwrap(), None);
+        assert!(e.job(&id).unwrap().notes.last().unwrap().contains("no prompt enhancer"));
+        assert_eq!(e.job(&id).unwrap().status, JobStatus::Queued, "status untouched");
+
+        // Cancel while the enhancer is writing: the job stops.
+        let id = submit();
+        let (port, _) = fake_server(200, "text/event-stream", sse_answer(&["slow"], "stop"), Duration::from_secs(30)).await;
+        let (e2, id2) = (e.clone(), id.clone());
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            e2.cancel(&id2).unwrap();
+        });
+        let err = e.enhance_prompt(&id, &SdcppClient::new(port), &caps, &cfg, ResolvedMode::Generate, "un gatto", &[], 1).await.unwrap_err();
+        assert_eq!(err.code, ErrorCode::Cancelled);
+    }
+
     #[test]
     fn private_results_stay_out_of_the_gallery() {
         let dir = tempfile::tempdir().unwrap();
@@ -1340,6 +1899,52 @@ mod tests {
         assert!(!dir.path().join("private").join("out").join("left.png").exists());
         let req: GenerationRequest = serde_json::from_str(r#"{"prompt":"x"}"#).unwrap();
         assert!(!req.private, "off unless asked");
+    }
+
+    #[test]
+    fn lut_results_are_new_versions_of_their_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = AppConfig { output_dir: dir.path().join("out"), ..Default::default() };
+        let e = Engine::new(cfg, dir.path()).unwrap();
+        let cube = dir.path().join("Invert.cube");
+        let mut text = String::from("LUT_3D_SIZE 2
+");
+        for b in 0..2 {
+            for g in 0..2 {
+                for r in 0..2 {
+                    text.push_str(&format!("{} {} {}
+", 1 - r, 1 - g, 1 - b));
+                }
+            }
+        }
+        std::fs::write(&cube, text).unwrap();
+        let lut = e.luts().import(&cube).unwrap();
+        let png = imaging::encode_png(&image::RgbaImage::from_pixel(16, 8, image::Rgba([200, 10, 40, 255])), &[], None, false).unwrap();
+        let input = e.store.put_input(&png, Some("photo.png"), None).unwrap();
+        let src = format!("input:{}", input.id);
+        let preview = e.lut_preview(&src, &lut.name, 1024).unwrap();
+        assert_eq!(preview.1, "image/jpeg");
+
+        let rec = e.apply_lut(&src, &lut.name, 0.5, false).unwrap();
+        assert_eq!((rec.mode.as_str(), rec.width, rec.height), ("lut", 16, 8));
+        assert_eq!(rec.request["images"][0], src.as_str(), "made from the source (timeline link)");
+        assert_eq!(rec.request["lut"]["intensity"], 0.5);
+        assert!(Path::new(&rec.file_path).starts_with(dir.path().join("out")) && rec.file_path.ends_with(".png"));
+        let px = *imaging::load_image(Path::new(&rec.file_path)).unwrap().pixels.get_pixel(0, 0);
+        assert!(px[0].abs_diff(128) <= 1 && px[1].abs_diff(128) <= 1, "half way to the inverse: {px:?}");
+        assert!(imaging::read_png_text(&std::fs::read(&rec.file_path).unwrap()).iter().any(|(k, v)| k == "parameters" && v.starts_with("Colour LUT: Invert")));
+        assert!(e.store.get_generation(&rec.id).is_ok());
+
+        // A result of a result keeps its format and parent; private sources stay private.
+        let again = e.apply_lut(&format!("gen:{}", rec.id), &lut.name, 1.0, false).unwrap();
+        assert_eq!(again.parent_id.as_deref(), Some(rec.id.as_str()));
+        let other = imaging::encode_png(&image::RgbaImage::from_pixel(4, 4, image::Rgba([1, 2, 3, 255])), &[], None, false).unwrap();
+        let secret = e.private_store.put_input(&other, Some("secret.png"), None).unwrap();
+        let p = e.apply_lut(&format!("input:{}", secret.id), &lut.name, 1.0, false).unwrap();
+        assert!(e.store.get_generation(&p.id).is_err() && e.private_store.get_generation(&p.id).is_ok());
+        assert!(Path::new(&p.file_path).starts_with(dir.path().join("private")));
+        assert!(e.apply_lut("C:/x.png", &lut.name, 1.0, false).is_err());
+        assert!(e.apply_lut(&src, "missing", 1.0, false).is_err());
     }
 
     #[test]

@@ -1,7 +1,7 @@
-// Six edits, full frame, cut on the music: each starts as the voice names it ("Change the
+// Five edits, full frame, cut on the music: each starts as the voice names it ("Change the
 // season."), its one-sentence prompt appears under the picture, and the result wipes in on the
-// next beat but one. All images were made by Kokon. It ends on the six results together,
-// "One sentence each.", right before the drop the Agent scene lands on.
+// next beat but one. All images were made by Kokon. It ends on the results together with the
+// street from the demo, "One sentence each.", right before the drop the Agent scene lands on.
 import { AbsoluteFill, Img, Sequence, staticFile, useCurrentFrame } from "remotion";
 import { FullImage } from "../app/FullImage";
 import { PROMPTS } from "../app/fixtures";
@@ -23,8 +23,9 @@ const EDITS: Edit[] = [
   { label: "Restyle a portrait.", before: "potter", after: "potter-watercolor", prompt: PROMPTS.restyle },
   { label: "Swap the furniture.", before: "room", after: "room-sofa", prompt: PROMPTS.replace },
   { label: "Expand the frame.", before: "lighthouse", after: "lighthouse-wide", prompt: PROMPTS.expand, expand: 1536 / 2764 },
-  { label: "Shoot a product ad.", before: "sneaker", after: "sneaker-ad", prompt: PROMPTS.product },
 ];
+/** The mosaic: the street with the cat from the demo, then the five edits. */
+const TILES = ["street-cat", ...EDITS.map((e) => e.after)];
 
 export const MONTAGE_FRAMES = LENGTH.montage;
 const START = EDITS.map((_, i) => Math.round(i * MONTAGE_EDIT));
@@ -65,11 +66,11 @@ function Mosaic() {
   return (
     <AbsoluteFill style={{ background: "#050505" }}>
       <div style={{ position: "absolute", left: (1920 - (3 * W + 2 * G)) / 2, top: (1080 - (2 * H + G)) / 2, display: "grid", gridTemplateColumns: `repeat(3, ${W}px)`, gap: G, transform: `scale(${1.02 + f * 0.0012})` }}>
-        {EDITS.map((e, i) => {
+        {TILES.map((id, i) => {
           const p = prog(f, i * 1.5 - 3, 10); // the first tiles are already there on the cut
           return (
-            <div key={e.after} style={{ width: W, height: H, borderRadius: 16, overflow: "hidden", opacity: p, transform: `scale(${0.9 + p * 0.1})`, boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
-              <Img src={staticFile(`img/${e.after}.jpg`)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            <div key={id} style={{ width: W, height: H, borderRadius: 16, overflow: "hidden", opacity: p, transform: `scale(${0.9 + p * 0.1})`, boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+              <Img src={staticFile(`img/${id}.jpg`)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
             </div>
           );
         })}

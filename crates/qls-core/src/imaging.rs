@@ -112,6 +112,21 @@ fn decode_heic(bytes: &[u8]) -> Result<LoadedImage, AppError> {
     })
 }
 
+/// Decodes an image produced by our own engine (an upscaler tile). Not subject to the input
+/// limit: a 2048² tile through an x4 model is 8192² (67 MP), and the request plan already bounds
+/// it to `max_side` per side.
+pub fn decode_engine_image(bytes: &[u8], max_side: u32) -> Result<RgbaImage, AppError> {
+    let mut reader = ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|e| AppError::new(ErrorCode::ImageDecode, "The engine returned an unreadable image.").detail(e.to_string()))?;
+    reader.no_limits();
+    let img = reader.decode().map_err(|e| AppError::new(ErrorCode::ImageDecode, "The engine returned an unreadable image.").detail(e.to_string()))?;
+    if img.width() == 0 || img.height() == 0 || img.width() > max_side || img.height() > max_side {
+        return Err(AppError::new(ErrorCode::ImageDecode, format!("The engine returned an unexpected size ({}×{}).", img.width(), img.height())));
+    }
+    Ok(img.into_rgba8())
+}
+
 pub fn load_image(path: &std::path::Path) -> Result<LoadedImage, AppError> {
     let bytes = std::fs::read(path).map_err(|e| AppError::io("read the image", path, e))?;
     decode_image(&bytes)
@@ -607,6 +622,17 @@ mod tests {
 
     fn gradient(w: u32, h: u32) -> RgbaImage {
         RgbaImage::from_fn(w, h, |x, y| Rgba([(x * 255 / w.max(1)) as u8, (y * 255 / h.max(1)) as u8, 77, 255]))
+    }
+
+    #[test]
+    fn engine_tiles_may_exceed_the_input_limit() {
+        // An x4 tile of a 2048² image is 8192² (67 MP): over the import limit, but ours.
+        let (w, h) = (8192, 8192);
+        assert!(w as u64 * h as u64 > MAX_INPUT_PIXELS);
+        let png = encode_png(&RgbaImage::from_pixel(w, h, Rgba([10, 20, 30, 255])), &[], None, true).unwrap();
+        assert!(decode_image(&png).is_err(), "imports keep the limit");
+        assert_eq!(decode_engine_image(&png, 8192).unwrap().dimensions(), (w, h));
+        assert!(decode_engine_image(&png, 4096).is_err(), "larger than the plan allows");
     }
 
     /// Builds a JPEG with an EXIF APP1 segment carrying the given orientation.

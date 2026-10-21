@@ -271,6 +271,14 @@ pub struct GenerationRequest {
     /// output folder) that is deleted when private mode ends or the service exits.
     #[serde(default)]
     pub private: bool,
+    /// Prompt enhancer: the text encoder's LLM rewrites `prompt` into a full prompt before
+    /// generating (text-to-image, edits, combines; engines with text generation only).
+    #[serde(default)]
+    pub enhance: bool,
+    /// The user's LoRAs to use, by id or name (Settings → LoRA); sent by the app only, None =
+    /// no LoRA (MCP and the HTTP API don't use LoRAs for now). Not used by upscales.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loras: Option<Vec<String>>,
 }
 
 // ---------------------------------------------------------------------------------------
@@ -325,6 +333,10 @@ pub struct Plan {
     pub notes: Vec<String>,
     pub optimized_for_vram: bool,
     pub estimated_seconds: f32,
+    /// Part of the job's time the upscaler takes (0..1, from the time model; also known when
+    /// `estimated_seconds` is 0): the progress gives each phase its share.
+    #[serde(default)]
+    pub upscale_share: f32,
     /// Upscaler model used to enlarge the result; None = Lanczos.
     #[serde(default)]
     pub upscaler: Option<String>,
@@ -564,9 +576,44 @@ pub fn planning_token_budget(vram_total_mib: Option<u64>, unified_memory: bool) 
 }
 
 /// Largest VAE decode tile on discrete GPUs of 15 GiB and up: an untiled decode of ~1.5 MP
-/// already fills a 16 GB card with the DiT resident, so 1 MP leaves margin. sd.cpp retries a
-/// decode that runs out of memory with smaller tiles itself, so too large only costs time.
+/// already fills a 16 GB card with the DiT resident, so 1 MP leaves margin. sd.cpp retries
+/// with smaller tiles only when allocating the decode fails (`GGML_STATUS_ALLOC_FAILED`); a
+/// CUDA out-of-memory during execution aborts sd-server.
 pub const LARGE_GPU_VAE_TILE_AREA: u64 = 1024 * 1024;
+/// Discrete GPUs this large plan untiled decodes from their memory instead of the fixed
+/// 16 GB thresholds (RTX 4090, 5090, …). Smaller cards were measured against tiling and
+/// keep today's behavior, and Macs use the unified-memory budget.
+const UNTILED_VAE_MIN_VRAM_MIB: u64 = 23 * 1024;
+/// Largest decode that runs untiled on any GPU: about 1.5K (1536² plus the Balanced
+/// tolerance). Untiled 2K saved only ~0.6 s (3 %) on an RTX 5090 for ~13 GB more VRAM and
+/// crashed sd-server with ~4.6 GB held by another process, while Fast and 1.5K save ~15 %.
+const UNTILED_VAE_MAX_AREA: u64 = 1536 * 1536 * 102 / 100;
+/// sd-server's VRAM at a cold untiled decode besides the per-pixel activations: weights
+/// (DiT ~3.9 GB + VAE ~0.65 GB), CUDA context and the decode's fixed overhead.
+const VAE_DECODE_RESIDENT_MIB: u64 = 8 * 1024;
+/// Activation bytes per pixel of an untiled decode. Measured on an RTX 5090 (cold decode,
+/// sd-server alone): 1 MP peaks at ~11.7 GiB and 1536² at ~16.5 GiB, ~3.9 kB/px apart.
+const VAE_DECODE_BYTES_PER_PIXEL: f64 = 4100.0;
+/// VRAM left to the desktop and other apps (a browser, a local LLM holding 4–5 GB) plus a
+/// margin. A 24 GB card with ~7.3 GB used elsewhere ran out of memory decoding 1536²
+/// untiled, so 24 GB cards untile Fast only.
+const VAE_DECODE_OTHER_APPS_MIB: u64 = 8 * 1024;
+
+/// Largest decode area (pixels) that may run untiled on a discrete GPU of
+/// [`UNTILED_VAE_MIN_VRAM_MIB`] and up:
+/// `other apps + resident + area * bytes_per_pixel <= vram`, capped at
+/// [`UNTILED_VAE_MAX_AREA`]. Smaller cards keep the fixed thresholds in [`plan`].
+/// sd.cpp only retries a decode whose allocation fails; a CUDA out-of-memory during the
+/// decode aborts sd-server, so the estimate must not be too small.
+pub fn max_untiled_vae_area(vram_total_mib: Option<u64>) -> u64 {
+    match vram_total_mib {
+        None => LARGE_GPU_VAE_TILE_AREA,
+        Some(mib) => {
+            let budget_mib = mib as f64 - (VAE_DECODE_OTHER_APPS_MIB + VAE_DECODE_RESIDENT_MIB) as f64;
+            ((budget_mib.max(0.0) * 1024.0 * 1024.0 / VAE_DECODE_BYTES_PER_PIXEL) as u64).min(UNTILED_VAE_MAX_AREA)
+        }
+    }
+}
 /// Overlap the server is launched with (`--vae-tile-overlap`), also sent with per-job tiles.
 pub const VAE_TILE_OVERLAP: f32 = 0.125;
 /// Pixels per latent of Qwen-Image 2.1's VAE.
@@ -644,6 +691,13 @@ pub const TURBO_STEPS: u32 = TURBO_SIGMAS.len() as u32 - 1;
 /// Area of the inpaint guide reference (the region with the painted area marked), as a
 /// share of the working canvas: enough to locate the area, cheap in tokens.
 pub const INPAINT_GUIDE_AREA: f64 = 0.25;
+
+/// An inpaint paints its region at most this many times its real pixel area (at least
+/// [`INPAINT_MIN_AREA`]): enlarging a small image to the quality tier costs time, and the extra
+/// pixels are thrown away when the patch is shrunk back (1024² painted at 1888²: ~40 s vs ~15 s).
+pub const INPAINT_MAX_ENLARGE: f64 = 1.5;
+/// Smallest inpaint canvas: the model's own ~1 MP, below which it does worse.
+pub const INPAINT_MIN_AREA: u64 = 1024 * 1024;
 
 /// Seconds per sampling step, from RTX 5070 Ti measurements at CFG 6 (two model passes per
 /// step): 1 MP ≈ 2.0 s (1.63 s with SageAttention), 2048x1152 ≈ 5.6 s (3.8 s with
@@ -991,19 +1045,26 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
                 ((bbox.width as f64 * sx).ceil() as u32).max(1),
                 ((bbox.height as f64 * sy).ceil() as u32).max(1),
             );
-            // References: the region itself, plus a smaller copy with the area marked.
-            let area = cap_for_refs(tier_area.unwrap_or(src.area()), 1.0 + INPAINT_GUIDE_AREA, &mut notes);
+            // References: the region itself (at most the reference cap, as in edits), plus a
+            // smaller copy with the area marked. Full: both at the output's area (the server's
+            // own resize), as before 0.9.4.
+            let wanted = tier_area.unwrap_or(src.area());
+            let image1_share = if wanted > ref_cap.saturating_add(ref_cap / 10) { ref_cap as f64 / wanted as f64 } else { 1.0 };
+            let area = cap_for_refs(wanted, image1_share + INPAINT_GUIDE_AREA, &mut notes);
             // At least the working size of context around the mask, so the model sees the scene.
             let min_ctx = (area as f64).sqrt() as u32;
             let region = geometry::inpaint_region(src, bbox, min_ctx, 0.55);
-            let l = CanvasLimits { upscale_to_area: Some(area), max_upscale: 4.0, ..limits(area, rec) };
+            let paint_area = area.min(((region.area() as f64 * INPAINT_MAX_ENLARGE) as u64).max(INPAINT_MIN_AREA));
+            let l = CanvasLimits { upscale_to_area: Some(paint_area), max_upscale: 4.0, ..limits(paint_area, rec) };
             working = plan_working_canvas(region.size(), &l);
             if region.size() != src {
                 notes.push(format!("Focused on a {}×{} area around the mask.", region.width, region.height));
             }
             inpaint_region = Some(region);
             output = src;
-            references.push(RefPlan { index: 0, source: region.size(), canvas: working });
+            // The image being painted stays at the working size; only the model's view of it shrinks.
+            let image1 = if working.canvas.area() <= ref_cap.saturating_add(ref_cap / 10) { working } else { ref_canvas(region.size(), ref_cap, rec) };
+            references.push(RefPlan { index: 0, source: region.size(), canvas: image1 });
             let guide_area = (working.canvas.area() as f64 * INPAINT_GUIDE_AREA) as u64;
             references.push(RefPlan { index: 0, source: region.size(), canvas: ref_canvas(region.size(), guide_area, rec) });
             strength = Some(adv.strength.unwrap_or(1.0).clamp(0.05, 1.0));
@@ -1036,12 +1097,27 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
     if !quick_upscale && !working.canvas.is_aligned(rec.align) {
         return Err(AppError::new(ErrorCode::Internal, "Working size is not aligned.").detail(format!("{:?}", working.canvas)));
     }
-    let ref_tokens: u64 = references.iter().map(|r| r.canvas.canvas.area() / PIXELS_PER_TOKEN).sum();
+    let max_ref_area = references.iter().map(|r| r.canvas.canvas.area()).max().unwrap_or(0);
     let total_area = working.canvas.area();
-    // Untiled decodes above ~1.5 MP OOM on 16 GB with the DiT resident (2K needs ~18 GB)
-    // and the backend's 256 px retry costs ~22 s.
-    let auto_tiling = total_area > 1_600_000 || (ref_tokens * PIXELS_PER_TOKEN + total_area) > 6_000_000;
-    let vae_tiling = adv.vae_tiling.unwrap_or(inputs.server_vae_tiling || auto_tiling);
+    // Untiled decodes are only planned from the card's memory on discrete GPUs of 23 GiB
+    // and up. 12/16 GB cards and Macs keep the measured fixed thresholds and the server's
+    // --vae-tiling, unchanged.
+    let untile_from_memory = !inputs.unified_memory
+        && inputs.vram_total_mib.is_some_and(|mib| mib >= UNTILED_VAE_MIN_VRAM_MIB);
+    let (auto_tiling, server_tiling) = if untile_from_memory {
+        // `resident + area * bytes/pixel` must fit in this GPU's share of memory
+        // (`max_untiled_vae_area`), up to about 1.5K: 2K and larger always tile.
+        // Encoding the references and decoding the result are sequential phases, so each
+        // is judged against the budget on its own rather than added together.
+        let untiled_area = max_untiled_vae_area(inputs.vram_total_mib);
+        (total_area > untiled_area || max_ref_area > untiled_area, false)
+    } else {
+        let ref_tokens: u64 = references.iter().map(|r| r.canvas.canvas.area() / PIXELS_PER_TOKEN).sum();
+        (total_area > 1_600_000 || (ref_tokens * PIXELS_PER_TOKEN + total_area) > 6_000_000, inputs.server_vae_tiling)
+    };
+    // The server's `--vae-tiling` is only a fallback on large GPUs: a decode within the
+    // budget is sent with tiling turned off (only an explicit choice overrides).
+    let vae_tiling = adv.vae_tiling.unwrap_or(server_tiling || auto_tiling);
     if vae_tiling && adv.vae_tiling.is_none() && !inputs.server_vae_tiling && !quick_upscale {
         optimized = true;
         notes.push("Memory optimization enabled for this size.".into());
@@ -1049,7 +1125,7 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
     // Large discrete GPUs: decode tiles shaped to the image (fewer, larger tiles); others keep
     // the server's square tiles.
     let large_gpu = !inputs.unified_memory && inputs.vram_total_mib.map(|m| m as f64 / 1024.0 >= 15.0).unwrap_or(false);
-    let vae_tile = (vae_tiling && large_gpu && !quick_upscale && working.canvas.area() > LARGE_GPU_VAE_TILE_AREA)
+    let vae_tile = (vae_tiling && large_gpu && !quick_upscale && total_area > LARGE_GPU_VAE_TILE_AREA)
         .then(|| vae_decode_tile(working.canvas, LARGE_GPU_VAE_TILE_AREA));
     if (working.content.area() as f64) < output.area() as f64 * 0.98 && matches!(mode, ResolvedMode::Generate | ResolvedMode::Edit | ResolvedMode::MultiReference) {
         notes.push(format!(
@@ -1065,10 +1141,13 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
     let enlarge = output.area() as f64 > working.content.area() as f64 * 1.21;
     let mut estimated_seconds =
         if quick_upscale { 2.0 } else { estimate_seconds(working.canvas, &references, steps, batch_count, inputs.sage_attention, cfg) };
+    let mut upscale_seconds = 0.0;
     if inputs.upscaler.is_some() && (enlarge || quick_upscale) {
         let mosr = inputs.upscaler.as_deref().is_some_and(is_mosr);
-        estimated_seconds += esrgan_seconds(working.content.area(), inputs.upscale_tile, inputs.metal, mosr) * batch_count as f32;
+        upscale_seconds = esrgan_seconds(working.content.area(), inputs.upscale_tile, inputs.metal, mosr) * batch_count as f32;
+        estimated_seconds += upscale_seconds;
     }
+    let upscale_share = upscale_seconds / estimated_seconds;
     estimated_seconds = match inputs.speed_factor {
         Some(f) => estimated_seconds * f,
         None if inputs.hide_uncalibrated => 0.0,
@@ -1103,12 +1182,13 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
         notes,
         optimized_for_vram: optimized,
         estimated_seconds,
+        upscale_share,
         upscaler: inputs.upscaler.clone(),
         upscale_tile: if inputs.upscale_tile > 0 { inputs.upscale_tile } else { LARGE_UPSCALE_TILE },
         upscale,
         custom_sigmas: if quick_upscale { Vec::new() } else { TURBO_SIGMAS.to_vec() },
         vae_tile,
-        reference_detail: matches!(mode, ResolvedMode::Edit | ResolvedMode::MultiReference).then(|| adv.reference_detail.unwrap_or_default()),
+        reference_detail: matches!(mode, ResolvedMode::Edit | ResolvedMode::MultiReference | ResolvedMode::Inpaint).then(|| adv.reference_detail.unwrap_or_default()),
     })
 }
 
@@ -1124,8 +1204,10 @@ mod tests {
         let s = plan(&r, &slow, &RecommendedSettings::default()).unwrap();
         assert!((s.estimated_seconds / raw - 13.0).abs() < 0.01);
         assert!((backend_seconds(&s, false) - raw).abs() < 0.5, "the calibration compares against the uncalibrated backend time");
-        let unknown = PlanInputs { hide_uncalibrated: true, ..base.clone() };
-        assert_eq!(plan(&r, &unknown, &RecommendedSettings::default()).unwrap().estimated_seconds, 0.0, "unknown until measured");
+        let unknown = PlanInputs { hide_uncalibrated: true, upscaler: Some("4xNomos2_hq_mosr".into()), ..base.clone() };
+        let u = plan(&GenerationRequest { quality: Quality::Quality, ..r.clone() }, &unknown, &RecommendedSettings::default()).unwrap();
+        assert_eq!(u.estimated_seconds, 0.0, "unknown until measured");
+        assert!(u.upscale_share >= 0.0 && u.upscale_share < 1.0, "the share is known anyway: {}", u.upscale_share);
         let known = PlanInputs { hide_uncalibrated: true, speed_factor: Some(2.0), ..base };
         assert!(plan(&r, &known, &RecommendedSettings::default()).unwrap().estimated_seconds > 0.0);
     }
@@ -1170,7 +1252,7 @@ mod tests {
         assert_eq!(p.output, Size::new(1536, 1536), "Balanced = 1.5K");
         assert_eq!(p.working, Size::new(1536, 1536));
         assert_eq!((p.steps, p.cfg, p.sampler.as_str()), (8, 1.0, "euler"), "Turbo: 8 steps, no CFG (official)");
-        assert!(p.vae_tiling, "decodes above ~1.5 MP are tiled");
+        assert!(p.vae_tiling, "1.5K is above a 16 GB card's untiled budget");
         assert!(p.references.is_empty());
     }
 
@@ -1367,6 +1449,9 @@ mod tests {
         let p2 = plan(&r, &PlanInputs { upscaler: None, ..i.clone() }, &rec()).unwrap();
         assert!(esrgan > p2.estimated_seconds, "the enlargement is included in the estimate");
         assert!(p2.notes.iter().any(|n| n.ends_with("with Lanczos.")));
+        // Its share of the time, for the progress: the part added by the upscaler.
+        assert!((p.upscale_share - (esrgan - p2.estimated_seconds) / esrgan).abs() < 1e-4, "{}", p.upscale_share);
+        assert_eq!(p2.upscale_share, 0.0, "Lanczos takes no time worth showing");
     }
 
     #[test]
@@ -1488,6 +1573,7 @@ mod tests {
         let i = PlanInputs { image_sizes: vec![Size::new(1472, 1472)], upscale_tile: 768, upscaler: Some("4xNomos2_hq_mosr".into()), ..env(true) };
         let (pc, mac) = (plan(&r, &i, &rec()).unwrap(), plan(&r, &PlanInputs { metal: true, ..i.clone() }, &rec()).unwrap());
         assert!(mac.estimated_seconds > pc.estimated_seconds * 5.0, "{} vs {}", mac.estimated_seconds, pc.estimated_seconds);
+        assert!(pc.upscale_share > 0.5 && mac.upscale_share > 0.9, "an upscale is mostly upscaler: {} {}", pc.upscale_share, mac.upscale_share);
     }
 
     #[test]
@@ -1510,11 +1596,85 @@ mod tests {
     fn server_vae_tiling_is_reflected_in_the_plan() {
         let i = PlanInputs { server_vae_tiling: true, ..inputs(&[]) };
         let p = plan(&req("a fox"), &i, &rec()).unwrap();
-        assert!(p.vae_tiling, "the server tiles every decode");
+        assert!(p.vae_tiling, "16 GB keeps the server's tiling");
         assert!(!p.notes.iter().any(|n| n.contains("Memory optimization")), "nothing to announce");
         let mut r = req("a fox");
         r.advanced.vae_tiling = Some(false);
         assert!(!plan(&r, &i, &rec()).unwrap().vae_tiling, "explicit off wins");
+        let mut r = req("a fox");
+        r.quality = Quality::Fast;
+        assert!(plan(&r, &i, &rec()).unwrap().vae_tiling, "16 GB: the server still tiles the 1 MP decode");
+        // On 23 GiB and up, --vae-tiling is only a fallback: a decode within the budget
+        // runs untiled (the request then turns tiling off, see pipeline::vae_tiling_params).
+        let big = PlanInputs { vram_total_mib: Some(32_607), ..i };
+        assert!(!plan(&r, &big, &rec()).unwrap().vae_tiling, "1 MP fits: untiled even though the server tiles");
+    }
+
+    #[test]
+    fn vae_tiling_follows_the_gpus_memory() {
+        // The launch default is --vae-tiling, so today every decode tiles unless the
+        // planner turns it off.
+        let at = |vram: Option<u64>, unified_memory: bool, quality: Quality| {
+            let mut r = req("a lighthouse at dusk");
+            r.quality = quality;
+            let i = PlanInputs { vram_total_mib: vram, unified_memory, server_vae_tiling: true, ..inputs(&[]) };
+            plan(&r, &i, &rec()).unwrap().vae_tiling
+        };
+        // 32 GB (RTX 5090) untiles up to 1.5K; 2K always tiles (it saved only ~3 % for ~13 GB
+        // more VRAM).
+        assert!(!at(Some(32_607), false, Quality::Fast), "32 GB: 1 MP");
+        assert!(!at(Some(32_607), false, Quality::Balanced), "32 GB: 1.5K");
+        assert!(at(Some(32_607), false, Quality::Quality), "32 GB: 2K still tiles");
+        // 24 GB (RTX 4090) untiles Fast only: 1536² untiled ran out of memory with ~7.3 GB
+        // used elsewhere. Below the 23 GiB gate (22 GiB) nothing changes.
+        assert!(!at(Some(24_564), false, Quality::Fast), "24 GB: 1 MP");
+        assert!(at(Some(24_564), false, Quality::Balanced), "24 GB: 1.5K tiles");
+        assert!(at(Some(24_564), false, Quality::Quality), "24 GB: 2K tiles");
+        assert!(at(Some(22 * 1024), false, Quality::Fast), "22 GiB: below the gate");
+        // Custom sizes between 1.5K and 2K (~4 MP, ~25 GB untiled) tile too.
+        let mut r = req("a lighthouse at dusk");
+        r.resolution = ResolutionMode::Custom;
+        r.width = Some(2016);
+        r.height = Some(2016);
+        let i = PlanInputs { vram_total_mib: Some(32_607), server_vae_tiling: true, ..inputs(&[]) };
+        assert!(plan(&r, &i, &rec()).unwrap().vae_tiling, "32 GB: 2016×2016 tiles");
+        // 16 GB (RTX 5070 Ti) and 12 GB keep today's behavior exactly.
+        for vram in [16_303, 12_282] {
+            for q in [Quality::Fast, Quality::Balanced, Quality::Quality] {
+                assert!(at(Some(vram), false, q), "{vram} MiB: {q:?} unchanged");
+            }
+        }
+        // Macs (unified memory) and unknown GPUs keep today's behavior too.
+        assert!(at(Some(46_080), true, Quality::Fast), "Mac: unchanged");
+        assert!(at(None, false, Quality::Balanced), "unknown GPU: unchanged");
+        // Without the server's tiling the 16 GB thresholds are the measured fixed ones.
+        let auto = |quality: Quality| {
+            let mut r = req("a lighthouse at dusk");
+            r.quality = quality;
+            let i = PlanInputs { vram_total_mib: Some(16_303), ..inputs(&[]) };
+            plan(&r, &i, &rec()).unwrap().vae_tiling
+        };
+        assert!(!auto(Quality::Fast), "16 GB: 1 MP untiles with no server tiling");
+        assert!(auto(Quality::Balanced), "16 GB: 1.5K");
+        assert!(auto(Quality::Quality), "16 GB: 2K");
+    }
+
+    #[test]
+    fn untiled_decode_budget_scales_with_vram() {
+        assert_eq!(max_untiled_vae_area(None), LARGE_GPU_VAE_TILE_AREA, "unknown GPU");
+        // 23–24 GB cards untile 1 MP but not 1.5K; 32 GB and up stop at about 1.5K, never 2K.
+        for vram in [23 * 1024, 24_564] {
+            assert!((1376 * 768..1536 * 1536).contains(&max_untiled_vae_area(Some(vram))), "{vram} MiB");
+        }
+        for vram in [32_607, 96 * 1024] {
+            assert_eq!(max_untiled_vae_area(Some(vram)), UNTILED_VAE_MAX_AREA, "{vram} MiB");
+        }
+        const { assert!(UNTILED_VAE_MAX_AREA >= 1536 * 1536 && UNTILED_VAE_MAX_AREA < 2_500_000) };
+        // The estimate covers the measured cold untiled peaks of sd-server on an RTX 5090.
+        let est_gib = |px: f64| VAE_DECODE_RESIDENT_MIB as f64 / 1024.0 + px * VAE_DECODE_BYTES_PER_PIXEL / (1u64 << 30) as f64;
+        assert!(est_gib(1024.0 * 1024.0) >= 11.7, "1 MP");
+        assert!(est_gib(1536.0 * 1536.0) >= 16.5, "1.5K");
+        assert_eq!(max_untiled_vae_area(Some(4_608)), 0, "a 16 GB Mac's planning budget: nothing untiled");
     }
 
     #[test]
@@ -1575,6 +1735,26 @@ mod tests {
         assert_eq!(p.output, Size::new(4032, 3024));
         assert_eq!(p.strength, Some(1.0));
         assert!(p.working.is_aligned(32));
+    }
+
+    #[test]
+    fn small_images_are_not_inpainted_at_the_full_tier() {
+        let painted = |w: u32, h: u32| {
+            let mut r = req("a red hat");
+            r.mask = Some("input:m".into());
+            r.quality = Quality::Quality;
+            let mut i = inputs(&[(w, h)]);
+            i.vram_total_mib = Some(32607);
+            i.mask = Some((Size::new(w, h), Some(Rect::new(w / 4, 0, w / 2, h / 3)), 0.1));
+            let p = plan(&r, &i, &rec()).unwrap();
+            assert_eq!(p.output, Size::new(w, h));
+            p.working.area()
+        };
+        let a = painted(1024, 1024);
+        assert!(a <= 1_650_000 && a >= 1_400_000, "1 MP photo painted at ~1.5 MP, not the 2K tier: {a}");
+        let a = painted(600, 400);
+        assert!((1_000_000..=1_150_000).contains(&a), "small photos get the model's ~1 MP: {a}");
+        assert!(painted(4000, 3000) > 3_000_000, "large photos keep the tier");
     }
 
     #[test]
@@ -1671,6 +1851,8 @@ mod tests {
         let big = PlanInputs { vram_total_mib: Some(16303), server_vae_tiling: true, ..inputs(&[]) };
         let p = plan(&r, &big, &rec()).unwrap();
         assert!(p.vae_tile.is_some(), "16 GB card");
+        let p = plan(&r, &PlanInputs { vram_total_mib: Some(32_607), ..big.clone() }, &rec()).unwrap();
+        assert_eq!(p.vae_tile, plan(&r, &big, &rec()).unwrap().vae_tile, "32 GB card: 2K uses the same tiles as 16 GB");
         let p = plan(&r, &PlanInputs { unified_memory: true, ..big.clone() }, &rec()).unwrap();
         assert!(p.vae_tile.is_none(), "Mac: the server's tiles");
         let p = plan(&r, &PlanInputs { vram_total_mib: Some(12282), ..big.clone() }, &rec()).unwrap();

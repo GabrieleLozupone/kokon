@@ -17,7 +17,8 @@ fs.writeFileSync(
 );
 run(process.execPath, ["--experimental-sea-config", "build/sea-config.json"]);
 const mac = process.platform === "darwin";
-const exe = path.join(build, mac ? "kokon-mcp" : "kokon-mcp.exe");
+const win = process.platform === "win32";
+const exe = path.join(build, win ? "kokon-mcp.exe" : "kokon-mcp");
 fs.copyFileSync(process.execPath, exe);
 fs.chmodSync(exe, 0o755);
 const fuse = ["--sentinel-fuse", "NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2"];
@@ -30,7 +31,7 @@ if (mac) {
   run("npx", ["postject", exe, "NODE_SEA_BLOB", path.join(build, "sea-prep.blob"), ...fuse]);
 }
 
-const triple = mac ? "aarch64-apple-darwin" : "x86_64-pc-windows-msvc";
-const sidecar = path.resolve(root, "..", "src-tauri", "binaries", `kokon-mcp-${triple}${mac ? "" : ".exe"}`);
+const triple = mac ? "aarch64-apple-darwin" : win ? "x86_64-pc-windows-msvc" : "x86_64-unknown-linux-gnu";
+const sidecar = path.resolve(root, "..", "src-tauri", "binaries", `kokon-mcp-${triple}${win ? ".exe" : ""}`);
 fs.copyFileSync(exe, sidecar);
 console.log(`built ${exe} (${(fs.statSync(exe).size / 1e6).toFixed(1)} MB) -> ${sidecar}`);

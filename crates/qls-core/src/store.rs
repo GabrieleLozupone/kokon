@@ -51,7 +51,14 @@ pub struct GenerationRecord {
     pub id: String,
     pub created_at: String,
     pub mode: String,
+    /// The prompt the image was made from (the prompt enhancer's when it ran).
     pub prompt: String,
+    /// The user's own prompt, when the prompt enhancer rewrote it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_prompt: Option<String>,
+    /// LoRAs the image was made with.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub loras: Vec<crate::lora::AppliedLora>,
     pub negative_prompt: String,
     pub seed: i64,
     pub width: u32,
@@ -89,6 +96,11 @@ pub struct GenerationRecord {
 impl GenerationRecord {
     /// AUTOMATIC1111-style "parameters" text understood by many image tools.
     pub fn parameters_text(&self) -> String {
+        if self.mode == "lut" {
+            let lut = &self.request["lut"];
+            let pct = (lut["intensity"].as_f64().unwrap_or(1.0) * 100.0).round();
+            return format!("Colour LUT: {}, Intensity: {pct}%, Size: {}x{}, Version: Kokon {}", lut["name"].as_str().unwrap_or("?"), self.width, self.height, self.app_version);
+        }
         let mut s = self.prompt.clone();
         if !self.negative_prompt.is_empty() {
             s.push_str(&format!("\nNegative prompt: {}", self.negative_prompt));
@@ -106,6 +118,10 @@ impl GenerationRecord {
         ));
         if let Some(st) = self.strength {
             s.push_str(&format!(", Denoising strength: {st}"));
+        }
+        if !self.loras.is_empty() {
+            let list: Vec<String> = self.loras.iter().map(|l| format!("{} ({})", l.name.replace([',', ':'], " "), l.weight)).collect();
+            s.push_str(&format!(", LoRA: {}", list.join(" + ")));
         }
         if let Some(p) = &self.pipeline
             && let Some(base) = p.base
@@ -431,6 +447,8 @@ mod tests {
             id: id.into(),
             created_at: created.into(),
             mode: "generate".into(),
+            original_prompt: None,
+            loras: vec![],
             prompt: prompt.into(),
             negative_prompt: "blurry".into(),
             seed: 1234,

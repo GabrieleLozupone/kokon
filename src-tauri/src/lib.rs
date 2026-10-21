@@ -69,7 +69,7 @@ fn service_exe() -> Option<PathBuf> {
     let me = std::env::current_exe().ok()?;
     let dir = me.parent()?;
     // Bundled sidecar (Tauri strips the target suffix) or a dev build next to the shell.
-    for name in ["kokon-service.exe", "kokon-service-x86_64-pc-windows-msvc.exe", "kokon-service", "kokon-service-aarch64-apple-darwin"] {
+    for name in ["kokon-service.exe", "kokon-service-x86_64-pc-windows-msvc.exe", "kokon-service", "kokon-service-aarch64-apple-darwin", "kokon-service-x86_64-unknown-linux-gnu"] {
         let p = dir.join(name);
         if p.is_file() {
             return Some(p);
@@ -267,6 +267,14 @@ fn release(shared: &Shared) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // WebKitGTK's DMA-BUF renderer paints a blank window with the NVIDIA driver (#15). Turn it
+    // off there unless the user set the variable; done first, while no other thread exists.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none()
+        && std::path::Path::new("/proc/driver/nvidia/version").exists()
+    {
+        unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") };
+    }
     // Feature unification gives every reqwest client here rustls without a provider (from
     // tauri-plugin-updater); building one before a provider is installed panics.
     let _ = rustls::crypto::ring::default_provider().install_default();

@@ -24,8 +24,8 @@ export const native = {
     if (!r) return [];
     return Array.isArray(r) ? r : [r];
   },
-  pickFile: async (extensions: string[], defaultPath?: string): Promise<string | null> => {
-    const r = await open({ multiple: false, directory: false, defaultPath, filters: [{ name: "Model", extensions }] });
+  pickFile: async (extensions: string[], defaultPath?: string, kind = "Model"): Promise<string | null> => {
+    const r = await open({ multiple: false, directory: false, defaultPath, filters: [{ name: kind, extensions }] });
     return typeof r === "string" ? r : null;
   },
   pickFolder: async (defaultPath?: string): Promise<string | null> => {
@@ -36,6 +36,12 @@ export const native = {
   isFullscreen: () => getCurrentWindow().isFullscreen(),
   setFullscreen: (on: boolean) => getCurrentWindow().setFullscreen(on),
   setTheme: async (theme: "light" | "dark" | null) => getCurrentWindow().setTheme(theme),
+  // Kokon's own title bar (the system one is off on Windows and Linux).
+  minimize: () => getCurrentWindow().minimize(),
+  toggleMaximize: () => getCurrentWindow().toggleMaximize(),
+  close: () => getCurrentWindow().close(),
+  isMaximized: () => getCurrentWindow().isMaximized(),
+  onResized: (f: () => void) => getCurrentWindow().onResized(f),
   saveAs: (defaultName: string) =>
     save({
       defaultPath: defaultName,

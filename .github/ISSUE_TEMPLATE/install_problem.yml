@@ -10,7 +10,8 @@ body:
         - **Windows: "Windows protected your PC".** Click **More info → Run anyway**. Kokon is new,
           so SmartScreen has no download history for it yet.
         - **macOS: "Kokon cannot be opened".** Try to open it once, then go to **System Settings →
-          Privacy & Security** and click **Open Anyway**. Kokon is not notarized by Apple.
+          Privacy & Security** and click **Open Anyway**. Kokon is not notarized by Apple. If there is
+          no Open Anyway button, run `xattr -dr com.apple.quarantine /Applications/Kokon.app` in Terminal.
 
   - type: dropdown
     id: stage
@@ -39,8 +40,8 @@ body:
     id: system
     attributes:
       label: OS and hardware
-      description: Windows or macOS version, GPU and VRAM (or Mac chip and memory), engine if you know it (CUDA, Vulkan, Metal).
-      placeholder: "Windows 11, RX 7800 XT 16 GB, Vulkan"
+      description: Windows, macOS or Linux version, GPU and VRAM (or Mac chip and memory), engine if you know it (CUDA, Vulkan, Metal).
+      placeholder: "Windows 11, RX 7800 XT 16 GB, Vulkan / Ubuntu 24.04, RTX 4070 12 GB, CUDA"
     validations:
       required: true
 

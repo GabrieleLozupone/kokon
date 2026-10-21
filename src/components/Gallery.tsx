@@ -1,4 +1,4 @@
-import { ArrowLeft, FolderOpen, Heart, Loader2, Maximize2, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, FolderOpen, Heart, Loader2, Maximize2, Search, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, urls } from "../lib/api";
 import { native } from "../lib/native";
@@ -28,6 +28,13 @@ export function Gallery() {
   const index = view ? previewIndex(ids, view.id, view.at) : null;
   const loaded = useRef(0);
   loaded.current = items.length;
+  // Selection ("Select", or Ctrl/⌘-click, Shift-click for a range): null = off.
+  const [picked, setPicked] = useState<Set<string> | null>(null);
+  const [anchor, setAnchor] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const selecting = picked !== null;
+  const selectingNow = useRef(selecting);
+  selectingNow.current = selecting;
 
   /** Loads `count` images from `offset` (the first page replaces the list). */
   const load = useCallback(
@@ -64,14 +71,22 @@ export function Gallery() {
   }, [load, version, q]);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setState({ overlay: null });
+    // Esc leaves the selection first, then the gallery.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (selectingNow.current) setPicked(null);
+      else setState({ overlay: null });
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   // A new search or filter closes the preview. When the image it shows has left the list,
   // it moves onto the one now at that position (back to the grid when nothing is left).
-  useEffect(() => setView(null), [q, favorites, sort]);
+  useEffect(() => {
+    setView(null);
+    setPicked(null);
+  }, [q, favorites, sort]);
   useEffect(() => {
     if (!view || loading || ids.includes(view.id)) return;
     setView(index === null ? null : { id: ids[index], at: index });
@@ -118,8 +133,43 @@ export function Gallery() {
     }
   };
 
+  const toggle = (i: number, range: boolean) => {
+    const next = new Set(picked ?? []);
+    if (range && anchor !== null) for (const g of items.slice(Math.min(anchor, i), Math.max(anchor, i) + 1)) next.add(g.id);
+    else if (next.has(items[i].id)) next.delete(items[i].id);
+    else next.add(items[i].id);
+    setPicked(next);
+    setAnchor(i);
+  };
+
+  /** Deletes the picked images from the gallery and the disk, one by one (the ones that fail stay). */
+  const removePicked = async () => {
+    if (!picked?.size || deleting) return;
+    const n = picked.size;
+    if (!(await native.confirm(`Delete ${n} ${n === 1 ? "image" : "images"} from the gallery and disk? This cannot be undone.`, "Delete images"))) return;
+    setDeleting(true);
+    const gone: string[] = [];
+    let failed: unknown = null;
+    for (const id of picked) {
+      try {
+        await api.deleteGeneration(id);
+        gone.push(id);
+        leaving(id);
+        forgetGeneration(id);
+      } catch (e) {
+        failed ??= e;
+      }
+    }
+    const out = new Set(gone);
+    setItems((list) => list.filter((x) => !out.has(x.id)));
+    setTotal((t) => t - gone.length);
+    setPicked(failed ? new Set([...picked].filter((id) => !out.has(id))) : null);
+    setDeleting(false);
+    if (failed) toastError(failed);
+  };
+
   return (
-    <div className="overlay">
+    <div className={`overlay ${selecting ? "selecting" : ""}`}>
       <div className="overlay-head">
         <IconButton title="Back (Esc)" onClick={() => setState({ overlay: null })}>
           <ArrowLeft size={18} />
@@ -145,6 +195,15 @@ export function Gallery() {
             onChange={setSort}
           />
         </div>
+        <IconButton title="Open the images folder" onClick={() => api.config().then((c) => native.openFolder(c.outputDir)).catch(toastError)}>
+          <FolderOpen size={17} />
+        </IconButton>
+        <span className="spacer" />
+        {items.length > 0 && (
+          <button className={`btn ${selecting ? "primary" : ""}`} onClick={() => setPicked(selecting ? null : new Set())} title={selecting ? "Stop selecting (Esc)" : "Select several images to delete them at once (or Ctrl/⌘-click)"}>
+            {selecting ? "Done" : "Select"}
+          </button>
+        )}
       </div>
       <div
         className="grid"
@@ -157,14 +216,18 @@ export function Gallery() {
         {items.map((g, i) => (
           <div
             key={g.id}
-            className="card"
-            onClick={() => {
+            className={`card ${picked?.has(g.id) ? "picked" : ""}`}
+            role={selecting ? "checkbox" : undefined}
+            aria-checked={selecting ? picked.has(g.id) : undefined}
+            onClick={(e) => {
               (document.activeElement as HTMLElement | null)?.blur();
-              setView({ id: g.id, at: i });
+              if (selecting || e.ctrlKey || e.metaKey || e.shiftKey) toggle(i, e.shiftKey);
+              else setView({ id: g.id, at: i });
             }}
             title={g.prompt}
           >
             <img src={urls.genThumb(g.id)} alt="" loading="lazy" draggable={false} />
+            {selecting && <span className="pick-mark">{picked.has(g.id) && <Check size={14} strokeWidth={3} />}</span>}
             <div className={`card-actions ${g.favorite ? "fav" : ""}`} onClick={(e) => e.stopPropagation()}>
               <button title={g.favorite ? "Remove from favorites" : "Favorite"} onClick={() => toggleFav(g)}>
                 <Heart size={14} fill={g.favorite ? "currentColor" : "none"} />
@@ -188,6 +251,21 @@ export function Gallery() {
           </div>
         )}
       </div>
+      {selecting && (
+        <div className="select-bar gallery-select">
+          <span className="select-count">{picked.size ? `${picked.size} selected` : "Click images to select them"}</span>
+          <button className="link-btn" onClick={() => setPicked(picked.size === items.length ? new Set() : new Set(items.map((g) => g.id)))}>
+            {picked.size === items.length ? "Select none" : `Select all ${items.length < total ? "loaded " : ""}(${items.length})`}
+          </button>
+          <span className="spacer" />
+          <button className="btn danger" disabled={!picked.size || deleting} onClick={removePicked}>
+            {deleting ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />} Delete
+          </button>
+          <IconButton title="Cancel (Esc)" onClick={() => setPicked(null)}>
+            <X size={16} />
+          </IconButton>
+        </div>
+      )}
       {index !== null && view && (
         <Preview
           g={items[index]}

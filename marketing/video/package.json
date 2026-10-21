@@ -6,7 +6,10 @@
   "scripts": {
     "studio": "remotion studio",
     "render": "remotion render KokonLaunch out/kokon-launch.mp4",
-    "still": "remotion still"
+    "still": "remotion still",
+    "reels": "remotion render ReelRemove out/reels/reel-remove.mp4 && remotion render ReelSeason out/reels/reel-season.mp4 && remotion render ReelText out/reels/reel-text.mp4",
+    "ph": "remotion still ph-1-hero out/ph/ph-1-hero.png && remotion still ph-2-remove out/ph/ph-2-remove.png && remotion still ph-3-season out/ph/ph-3-season.png && remotion still ph-4-text out/ph/ph-4-text.png && remotion still ph-5-replace out/ph/ph-5-replace.png && remotion still ph-6-compare out/ph/ph-6-compare.png && remotion still ph-7-runs out/ph/ph-7-runs.png",
+    "vreels": "remotion render ReelTour out/vreels/ReelTour.mp4 && remotion render ReelOffline out/vreels/ReelOffline.mp4 && remotion render ReelSetup out/vreels/ReelSetup.mp4 && remotion render ReelFounder out/vreels/ReelFounder.mp4"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",

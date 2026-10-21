@@ -125,9 +125,23 @@ pub fn inspect(path: &Path) -> std::io::Result<FileInfo> {
         }
     };
     info.weights = main_weight_type(&tensors);
-    classify(&tensors, &meta, &mut info);
+    classify(&tensors, &meta, &name, &mut info);
     info.official = info.compatible && official_download(path, size).is_some();
     Ok(info)
+}
+
+/// Name -> shape (PyTorch order) of every tensor in a diffusion model file (.gguf or
+/// .safetensors), without the `model.diffusion_model.` / `diffusion_model.` prefix.
+pub fn diffusion_tensor_shapes(path: &Path) -> std::io::Result<HashMap<String, Vec<u64>>> {
+    let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    let (tensors, _) = if ext == "gguf" { read_gguf(path)? } else { read_safetensors(path)? };
+    Ok(tensors
+        .into_iter()
+        .map(|t| {
+            let name = t.name.strip_prefix("model.diffusion_model.").or_else(|| t.name.strip_prefix("diffusion_model.")).unwrap_or(&t.name).to_string();
+            (name, t.shape)
+        })
+        .collect())
 }
 
 /// `name-00001-of-00004.safetensors`
@@ -137,7 +151,7 @@ fn is_shard(name: &str) -> bool {
     parts.len() == 4 && parts[1] == "of" && [parts[0], parts[2]].iter().all(|p| p.len() >= 3 && p.chars().all(|c| c.is_ascii_digit()))
 }
 
-fn classify(t: &[Tensor], meta: &HashMap<String, String>, info: &mut FileInfo) {
+fn classify(t: &[Tensor], meta: &HashMap<String, String>, file_name: &str, info: &mut FileInfo) {
     let ends = |s: &str| t.iter().any(|x| x.name.ends_with(s));
     let contains = |s: &str| t.iter().any(|x| x.name.contains(s));
     let find = |s: &str| t.iter().find(|x| x.name.ends_with(s));
@@ -183,8 +197,23 @@ fn classify(t: &[Tensor], meta: &HashMap<String, String>, info: &mut FileInfo) {
         let qk_norm = ends("self_attn.q_norm.weight") || ends("attn_q_norm.weight");
         let hidden = find("embed_tokens.weight").or_else(|| find("token_embd.weight")).and_then(|x| x.shape.get(1).copied());
         let hidden = hidden.or_else(|| meta.iter().find(|(k, _)| k.ends_with(".embedding_length")).and_then(|(_, v)| v.parse().ok()));
+        // Qwen3 8B (text only: Flux.2 Klein's text encoder, prompt enhancers) has exactly the
+        // shapes of Qwen3-VL 8B's language model, so only what the file says about itself tells
+        // them apart: the GGUF architecture, the vision weights, HF's `language_model.` names,
+        // or "VL" in the file name.
+        let arch = meta.get("general.architecture").map(|a| a.to_ascii_lowercase());
+        let says_vl = vision || arch.as_deref().is_some_and(|a| a.starts_with("qwen3vl")) || contains("language_model.") || file_name.contains("vl");
         if qk_norm && hidden == Some(TEXT_HIDDEN) {
-            info.compatible = true;
+            match arch.as_deref() {
+                Some(a) if !a.starts_with("qwen3vl") => {
+                    let what = if a == "qwen3" { "Qwen3 8B, a text-only language model (used by Flux.2 Klein and by prompt enhancers)".to_string() } else { format!("a {a} language model") };
+                    info.problem = Some(format!("This is {what}, not the Qwen3-VL 8B text encoder that Qwen-Image 2.1 needs."));
+                }
+                _ if !says_vl => {
+                    info.problem = Some("Kokon can't tell this file from Qwen3 8B, the text-only model used by Flux.2 Klein and by prompt enhancers, which looks the same inside. Qwen-Image 2.1 needs Qwen3-VL 8B: choose a file with \"VL\" in its name, or download the official one.".into());
+                }
+                _ => info.compatible = true,
+            }
         } else if hidden == Some(3584) {
             info.problem = Some("This is the Qwen2.5-VL text encoder of older Qwen-Image models. Qwen-Image 2.1 needs Qwen3-VL 8B.".into());
         } else {
@@ -671,6 +700,31 @@ pub(crate) mod tests {
         let mm4b = dir.path().join("mmproj-4b.gguf");
         write_gguf(&mm4b, &[("general.architecture", "clip")], &[("clip.vision.projection_dim", 2560)], &[("v.blk.0.attn_qkv.weight", 1, &[1024, 3072])]);
         assert!(!inspect(&mm4b).unwrap().compatible);
+    }
+
+    #[test]
+    fn text_only_qwen3_is_not_the_text_encoder() {
+        // chillahc (Reddit, 10-21): setup picked a prompt enhancer's Qwen3 8B as the text encoder.
+        let dir = tempfile::tempdir().unwrap();
+        let te_tensors: &[(&str, &str, &[u64])] = &[("model.embed_tokens.weight", "BF16", &[151936, 4096]), ("model.layers.0.self_attn.q_proj.weight", "F8_E4M3", &[4096, 4096]), ("model.layers.0.self_attn.q_norm.weight", "BF16", &[128])];
+        let gguf = dir.path().join("Qwen3-8B-Q4_K_M.gguf");
+        write_gguf(&gguf, &[("general.architecture", "qwen3")], &[("qwen3.embedding_length", 4096)], &[("token_embd.weight", 12, &[4096, 151936]), ("blk.0.attn_q.weight", 12, &[4096, 4096]), ("blk.0.attn_q_norm.weight", 0, &[128])]);
+        let g = inspect(&gguf).unwrap();
+        assert_eq!((g.role, g.compatible), (Some(Role::TextEncoder), false));
+        assert!(g.problem.unwrap().contains("Qwen3 8B, a text-only"));
+        // Same shapes in a safetensors file with nothing that says VL: not picked either.
+        let klein = dir.path().join("qwen_3_8b_fp8mixed.safetensors");
+        write_st(&klein, te_tensors);
+        let k = inspect(&klein).unwrap();
+        assert!(!k.compatible && k.problem.unwrap().contains("can't tell"));
+        // ...but the same file named as Qwen3-VL is accepted (it needs the projector).
+        let vl = dir.path().join("qwen3_vl_8b_text_fp8.safetensors");
+        write_st(&vl, te_tensors);
+        let v = inspect(&vl).unwrap();
+        assert_eq!((v.compatible, v.has_vision), (true, false));
+        // A scan with only the text-only files suggests no text encoder (the official one is downloaded).
+        std::fs::remove_file(&vl).unwrap();
+        assert_eq!(best(&scan_with(dir.path(), 0), None).text_encoder, None);
     }
 
     #[test]

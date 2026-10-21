@@ -1,10 +1,10 @@
-import { ArrowUp, Brush, ChevronDown, Expand, FolderOpen, Gauge, ImagePlus, Lightbulb, Maximize, Pencil, SlidersHorizontal, Sparkles, X } from "lucide-react";
+import { ArrowUp, Brush, Check, ChevronDown, Expand, FolderOpen, Gauge, ImagePlus, Layers, Lightbulb, Maximize, Pencil, Settings2, SlidersHorizontal, Sparkles, WandSparkles, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, urls } from "../lib/api";
-import { activeOverrides, aspectLabel, buildRequest, expansionPixels, formatDuration, hasOutpaint, imageName, moveRef, needsPrompt, parseRatio, type Ref } from "../lib/logic";
+import { activeLoras, activeOverrides, aspectLabel, buildRequest, enhancerApplies, expansionPixels, formatDuration, hasOutpaint, imageName, MAX_LORAS, moveRef, needsPrompt, parseRatio, toggleLora, type Ref } from "../lib/logic";
 import { native } from "../lib/native";
 import {
-  addAsReference, addInputs, editShownImage, getState, itemSource, selectedItem, sessionLabels, setState, startNewImage, submitComposer, toastError, updateComposer, useStore, type SessionItem,
+  addAsReference, addInputs, editShownImage, enhancerAvailable, getState, itemSource, openSettings, selectedItem, sessionLabels, setProjectLoras, setState, startNewImage, submitComposer, toastError, updateComposer, useStore, type SessionItem,
 } from "../lib/store";
 import type { InpaintAction, Plan, Quality } from "../lib/types";
 import { AdvancedPanel } from "./Advanced";
@@ -131,10 +131,10 @@ function ModeSwitch({ editing }: { editing: boolean }) {
   return (
     <div className="mode-switch" role="radiogroup" aria-label="What the prompt does">
       <button className={editing ? "" : "on"} role="radio" aria-checked={!editing} onClick={() => editing && startNewImage()} title="Make a new image from the prompt alone; your images stay in the timeline">
-        <Sparkles size={14} /> New image
+        <Sparkles size={14} /> <span className="lbl">New image</span>
       </button>
       <button className={editing ? "on" : ""} role="radio" aria-checked={editing} onClick={() => !editing && editShownImage()} title={editing ? "The prompt edits this image" : `Edit ${name}, the image shown`}>
-        <Pencil size={14} /> Edit image
+        <Pencil size={14} /> <span className="lbl">Edit image</span>
       </button>
     </div>
   );
@@ -182,7 +182,7 @@ function TargetBar() {
       <span className="spacer" />
       <span className="tool-group">
         <button className={`tool ${c.mask ? "on" : ""}`} data-tour="paint" onClick={() => setState({ overlay: "inpaint" })} title="Paint the area to change; the rest stays as it is">
-          <Brush size={14} /> {c.mask ? "Area painted" : "Paint area"}
+          <Brush size={14} /> <span className="lbl">{c.mask ? "Area painted" : "Paint area"}</span>
         </button>
         {c.mask && (
           <button className="tool-x" title="Remove the painted area" onClick={() => updateComposer({ mask: null })}>
@@ -192,7 +192,7 @@ function TargetBar() {
       </span>
       <span className="tool-group">
         <button className={`tool ${outPx ? "on" : ""}`} onClick={() => setState({ overlay: "expand" })} title="Extend the image beyond its borders">
-          <Expand size={14} /> {outPx ? "Expanded" : "Expand"}
+          <Expand size={14} /> <span className="lbl">{outPx ? "Expanded" : "Expand"}</span>
         </button>
         {outPx && (
           <button className="tool-x" title="Remove the expansion" onClick={() => updateComposer({ outpaint: null })}>
@@ -282,6 +282,79 @@ function usePlanPreview(): { plan: Plan | null; error: string | null } {
   return res;
 }
 
+const weightLabel = (w: number) => `${Math.round(w * 100)} %`;
+
+/** The project's LoRAs: shown once any LoRA is loaded in Settings. With one LoRA a click turns
+ * it on or off; with more, a list with one switch each. */
+function LoraBadge() {
+  const all = useStore((s) => s.loras);
+  const choice = useStore((s) => s.composer.loras);
+  if (all.length === 0) return null;
+  const on = activeLoras({ loras: choice }, all);
+  const names = all.filter((l) => on.includes(l.id)).map((l) => `${l.name} (${weightLabel(l.weight)})`);
+  const title = on.length ? `LoRA on in this project: ${names.join(", ")}` : "LoRA: none on in this project";
+  const toggle = (id: string) => setProjectLoras(toggleLora({ loras: choice }, all, id));
+  if (all.length === 1) {
+    const l = all[0];
+    return (
+      <button
+        className={`pill toggle ${on.length ? "on" : ""}`}
+        role="switch"
+        aria-checked={on.length > 0}
+        disabled={!l.available}
+        onClick={() => toggle(l.id)}
+        title={l.available ? `${title}. Click to turn ${on.length ? "off" : "on"}.` : "This LoRA's file is missing: load it again in Settings → LoRA."}
+      >
+        <Layers size={15} />
+        <span className="lbl">LoRA</span>
+      </button>
+    );
+  }
+  return (
+    <Popover
+      trigger={(open, toggleOpen) => (
+        <button className={`pill toggle ${on.length || open ? "on" : ""}`} onClick={toggleOpen} title={title}>
+          <Layers size={15} />
+          <span className="lbl">LoRA</span>
+          {on.length > 0 && <span className="lora-count">{on.length}</span>}
+          <ChevronDown size={13} className="chev" />
+        </button>
+      )}
+    >
+      {(close) => (
+        <>
+          <div className="label">LoRA in this project · up to {MAX_LORAS}</div>
+          {all.map((l) => {
+            const active = on.includes(l.id);
+            const full = !active && on.length >= MAX_LORAS;
+            return (
+              <button
+                key={l.id}
+                className="opt"
+                role="menuitemcheckbox"
+                aria-checked={active}
+                disabled={!l.available || full}
+                onClick={() => toggle(l.id)}
+                title={!l.available ? "This LoRA's file is missing: load it again in Settings → LoRA." : full ? `At most ${MAX_LORAS} LoRAs at once.` : l.triggerWords ? `Adds: ${l.triggerWords}` : undefined}
+              >
+                <span className="check">{active && <Check size={15} />}</span>
+                <span className="lora-name">{l.name}</span>
+                <span className="sub">{l.available ? weightLabel(l.weight) : "missing"}</span>
+              </button>
+            );
+          })}
+          <button className="opt" onClick={() => (close(), openSettings("lora"))}>
+            <span className="check">
+              <Settings2 size={15} />
+            </span>
+            <span>Manage LoRAs…</span>
+          </button>
+        </>
+      )}
+    </Popover>
+  );
+}
+
 export function Composer() {
   const c = useStore((s) => s.composer);
   const hasProject = useStore((s) => s.session.length > 0);
@@ -289,12 +362,27 @@ export function Composer() {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const hasImages = c.refs.length > 0;
   const overrides = activeOverrides(c.advanced);
+  const canEnhance = useStore(enhancerAvailable) && enhancerApplies(c);
 
   useEffect(() => {
     const ta = taRef.current;
     if (!ta) return;
-    ta.style.height = "auto";
-    ta.style.height = Math.min(200, ta.scrollHeight) + "px";
+    const fit = () => {
+      ta.style.height = "auto";
+      ta.style.height = Math.min(200, ta.scrollHeight) + "px";
+    };
+    fit();
+    // Also when its width changes: WebKitGTK (Linux) lays the box out while the window is still
+    // hidden at startup, so the first measure wraps the placeholder into a column.
+    let width = ta.clientWidth;
+    const ro = new ResizeObserver(() => {
+      if (ta.clientWidth !== width) {
+        width = ta.clientWidth;
+        fit();
+      }
+    });
+    ro.observe(ta);
+    return () => ro.disconnect();
   }, [c.prompt]);
 
   const outPx = hasOutpaint(c.outpaint) && c.refs[0] ? expansionPixels(c.outpaint!, c.refs[0].width, c.refs[0].height) : null;
@@ -374,7 +462,7 @@ export function Composer() {
                 <button className={`pill ${open ? "on" : ""}`} onClick={toggle} title="Aspect ratio">
                   <RatioIcon ratio={aspectRatioNow} size={15} />
                   {aspectText}
-                  <ChevronDown size={13} />
+                  <ChevronDown size={13} className="chev" />
                 </button>
               )}
             >
@@ -388,7 +476,7 @@ export function Composer() {
               <button className={`pill ${open ? "on" : ""}`} onClick={toggle} title="Resolution">
                 <Maximize size={14} />
                 {resolutionLabel(c.resolution, c.customWidth, c.customHeight)}
-                <ChevronDown size={13} />
+                <ChevronDown size={13} className="chev" />
               </button>
             )}
           >
@@ -399,8 +487,8 @@ export function Composer() {
             trigger={(open, toggle) => (
               <button className={`pill ${open ? "on" : ""}`} onClick={toggle} title="Quality">
                 <Gauge size={15} />
-                {QUALITY.find((q) => q.value === c.quality)?.label}
-                <ChevronDown size={13} />
+                <span className="lbl">{QUALITY.find((q) => q.value === c.quality)?.label}</span>
+                <ChevronDown size={13} className="chev" />
               </button>
             )}
           >
@@ -408,6 +496,25 @@ export function Composer() {
               QUALITY.map((q) => <Option key={q.value} selected={c.quality === q.value} label={q.label} sub={q.sub} onClick={() => (updateComposer({ quality: q.value }), close())} />)
             }
           </Popover>
+
+          {canEnhance && (
+            <button
+              className={`pill toggle ${c.enhance ? "on" : ""}`}
+              role="switch"
+              aria-checked={c.enhance}
+              onClick={() => updateComposer({ enhance: !c.enhance })}
+              title={
+                c.enhance
+                  ? "Prompt+ on: before making the image, the model rewrites your prompt as a detailed English description (looking at your image for edits). You see it being written; the result keeps both. Click to turn off."
+                  : "Prompt+: let the model rewrite a short prompt, in any language, as a detailed English description before making the image. Adds a few seconds."
+              }
+            >
+              <WandSparkles size={15} />
+              <span className="lbl">Prompt+</span>
+            </button>
+          )}
+
+          <LoraBadge />
 
           <Popover
             placement="top-start"
@@ -426,6 +533,7 @@ export function Composer() {
           >
             {() => <AdvancedPanel plan={plan} />}
           </Popover>
+
 
           <button className="icon-btn" onClick={() => setState({ overlay: "prompt-tips" })} title="Prompt tips" aria-label="Prompt tips">
             <Lightbulb size={17} />

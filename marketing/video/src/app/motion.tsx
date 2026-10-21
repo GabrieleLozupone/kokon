@@ -179,13 +179,13 @@ export function Pointer({ path, clicks = [], hideBefore = -1, hideAfter = 1e9 }:
 const captionBase: CSSProperties = { position: "absolute", fontFamily: '"Inter Variable", Inter, sans-serif', color: "#f2f2f2", pointerEvents: "none" };
 
 /** Big title + small line, words rising in one after another; fades out at `end`. */
-export function Caption({ title, sub, start, end, x = 96, y = 820, align = "left", size = 64 }: { title: string; sub?: string; start: number; end: number; x?: number; y?: number; align?: "left" | "center"; size?: number }) {
+export function Caption({ title, sub, start, end, x = 96, y = 820, align = "left", size = 64, maxWidth }: { title: string; sub?: string; start: number; end: number; x?: number; y?: number; align?: "left" | "center"; size?: number; maxWidth?: number }) {
   const f = useCurrentFrame();
   const gone = prog(f, end - 10, 10, inOut);
   if (f < start || f > end) return null;
   const words = title.split(" ");
   return (
-    <div style={{ ...captionBase, left: align === "center" ? 0 : x, right: align === "center" ? 0 : undefined, top: y, textAlign: align, opacity: 1 - gone, transform: `translateY(${-gone * 16}px)` }}>
+    <div style={{ ...captionBase, left: align === "center" ? 0 : x, right: align === "center" ? 0 : undefined, top: y, maxWidth, textAlign: align, opacity: 1 - gone, transform: `translateY(${-gone * 16}px)` }}>
       <div style={{ fontSize: size, fontWeight: 650, letterSpacing: "-0.035em", lineHeight: 1.05, textShadow: "0 4px 30px rgba(0,0,0,0.55)" }}>
         {words.map((w, i) => {
           const p = prog(f, start + i * 3, 16);
@@ -197,7 +197,7 @@ export function Caption({ title, sub, start, end, x = 96, y = 820, align = "left
         })}
       </div>
       {sub && (
-        <div style={{ marginTop: 14, fontSize: size * 0.36, fontWeight: 450, color: "rgba(240,240,240,0.72)", letterSpacing: "-0.01em", opacity: prog(f, start + words.length * 3 + 4, 16), textShadow: "0 2px 18px rgba(0,0,0,0.6)" }}>
+        <div style={{ marginTop: 14, lineHeight: maxWidth ? 1.35 : undefined, fontSize: size * 0.36, fontWeight: 450, color: "rgba(240,240,240,0.72)", letterSpacing: "-0.01em", opacity: prog(f, start + words.length * 3 + 4, 16), textShadow: "0 2px 18px rgba(0,0,0,0.6)" }}>
           {sub}
         </div>
       )}

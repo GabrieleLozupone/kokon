@@ -6,8 +6,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { handlers, schemas, toErrorResult, type ToolContext, type ToolResult } from "./tools.js";
 import { ServiceClient } from "./service.js";
+import pkg from "../package.json" with { type: "json" };
 
-const VERSION = "0.9.1";
+// Bundled in by esbuild: the one place to bump is package.json (see docs/releasing.md).
+const VERSION = pkg.version;
 
 const DESCRIPTIONS: Record<keyof typeof schemas, { title: string; description: string }> = {
   generate_image: {

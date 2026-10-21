@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How to Run Qwen-Image 2.1 Locally on Windows and Mac (No Python, No ComfyUI)</title>
-<meta name="description" content="Step-by-step guide to run Qwen-Image 2.1 on your own GPU: requirements (12 GB VRAM, AMD, Intel, Apple Silicon), one-installer setup with Kokon, editing tips, speed and troubleshooting.">
+<title>How to Run Qwen-Image 2.1 Locally on Windows, Mac and Linux (No Python, No ComfyUI)</title>
+<meta name="description" content="Step-by-step guide to run Qwen-Image 2.1 on your own GPU: requirements (12 GB VRAM, AMD, Intel, Apple Silicon, Linux), one-installer setup with Kokon, editing tips, speed and troubleshooting.">
 <meta name="author" content="Gabriele Lozupone">
 <meta name="robots" content="index, follow, max-image-preview:large">
 <meta name="theme-color" content="#0a0a0a">
@@ -15,23 +15,23 @@
 <meta property="og:site_name" content="Kokon">
 <meta property="og:type" content="article">
 <meta property="og:title" content="How to run Qwen-Image 2.1 locally (no Python, no ComfyUI)">
-<meta property="og:description" content="Run Qwen-Image 2.1 on Windows or Mac with one installer: requirements, setup, editing tips and troubleshooting.">
+<meta property="og:description" content="Run Qwen-Image 2.1 on Windows, Mac or Linux with one installer: requirements, setup, editing tips and troubleshooting.">
 <meta property="og:url" content="https://kokon.app/qwen-image-2-1-local/">
-<meta property="og:image" content="https://kokon.app/assets/img/app-screenshot.webp">
+<meta property="og:image" content="https://kokon.app/assets/img/app-screenshot.webp?v=2">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/style.css?v=6">
+<link rel="stylesheet" href="../assets/style.css?v=8">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@graph": [
     {
       "@type": "TechArticle",
-      "headline": "How to Run Qwen-Image 2.1 Locally on Windows and Mac (No Python, No ComfyUI)",
+      "headline": "How to Run Qwen-Image 2.1 Locally on Windows, Mac and Linux (No Python, No ComfyUI)",
       "description": "Requirements, one-installer setup, editing tips, speed and troubleshooting for running Qwen-Image 2.1 on your own GPU.",
-      "image": "https://kokon.app/assets/img/app-screenshot.webp",
+      "image": "https://kokon.app/assets/img/app-screenshot.webp?v=2",
       "datePublished": "2026-10-10",
       "dateModified": "2026-10-10",
       "author": { "@type": "Person", "name": "Gabriele Lozupone", "url": "https://gabrielelozupone.github.io/" },
@@ -83,11 +83,11 @@
 <main class="article">
   <div class="wrap narrow">
     <nav class="crumbs" aria-label="Breadcrumb"><a href="../">Kokon</a> <span>/</span> Guide</nav>
-    <h1>How to run Qwen-Image 2.1 locally on Windows and Mac</h1>
+    <h1>How to run Qwen-Image 2.1 locally on Windows, Mac and Linux</h1>
     <p class="lede-left">No Python, no ComfyUI, no cloud. One installer, a model download, and you edit photos by describing the change. Updated October 10, 2026.</p>
 
     <figure>
-      <img src="../assets/img/app-screenshot.webp" width="1600" height="980" alt="Kokon running Qwen-Image 2.1 locally: a café street photo with the scooter removed, shown with a before/after slider" loading="eager">
+      <img src="../assets/img/app-screenshot.webp?v=2" width="1600" height="1000" alt="Kokon running Qwen-Image 2.1 locally: a café street photo with the scooter removed, shown with a before/after slider" loading="eager">
       <figcaption>Kokon with a local Qwen-Image 2.1 edit: the scooter was painted and removed.</figcaption>
     </figure>
 
@@ -102,7 +102,8 @@
         <tbody>
           <tr><td>Windows + NVIDIA</td><td class="us">12 GB VRAM (RTX 3060 12 GB, 4070, 5070)</td><td>16 GB or more (RTX 4080, 5070 Ti, 4090, 5090)</td></tr>
           <tr><td>Windows + AMD / Intel Arc</td><td class="us">12 GB VRAM, Vulkan (beta)</td><td>16 GB or more</td></tr>
-          <tr><td>Mac</td><td class="us">Apple Silicon, 16 GB unified memory, macOS 26 (slow)</td><td>32 GB or more, Pro/Max/Ultra chip</td></tr>
+          <tr><td>Mac</td><td class="us">Apple Silicon, 16 GB unified memory, macOS 15 (slow)</td><td>32 GB or more, Pro/Max/Ultra chip</td></tr>
+          <tr><td>Linux (beta)</td><td class="us">x86-64, Ubuntu 22.04 / Debian 12 / Fedora 40 or newer, GPU as on Windows</td><td>16 GB VRAM or more, NVIDIA proprietary driver</td></tr>
           <tr><td>Disk</td><td class="us">15 GB free</td><td>25 GB free</td></tr>
         </tbody>
       </table>
@@ -112,7 +113,8 @@
     <h2>Step 1: Install Kokon</h2>
     <p>Download the latest release from <a href="https://github.com/GabrieleLozupone/kokon/releases/latest" rel="noopener">GitHub</a>:</p>
     <ul>
-      <li><strong>Windows:</strong> <code>Kokon_&lt;version&gt;_x64-setup.exe</code> (about 35 MB). It installs for your user only, no administrator rights. The beta is not code-signed yet, so if SmartScreen warns, click <em>More info → Run anyway</em>.</li>
+      <li><strong>Windows:</strong> <code>Kokon_&lt;version&gt;_x64-setup.exe</code> (about 55 MB). It installs for your user only, no administrator rights. The beta is not code-signed yet, so if SmartScreen warns, click <em>More info → Run anyway</em>.</li>
+      <li><strong>Linux (x86-64, beta):</strong> <code>Kokon_&lt;version&gt;_amd64.deb</code> (Ubuntu, Debian, Mint: <code>sudo apt install ./Kokon_&lt;version&gt;_amd64.deb</code>) or <code>Kokon-&lt;version&gt;-1.x86_64.rpm</code> (Fedora: <code>sudo dnf install ./Kokon-&lt;version&gt;-1.x86_64.rpm</code>). NVIDIA cards need the proprietary driver.</li>
       <li><strong>Mac (Apple Silicon, beta):</strong> <code>Kokon_&lt;version&gt;_aarch64.dmg</code>. Drag Kokon to Applications. The beta is not notarized by Apple yet, so macOS blocks it the first time:</li>
     </ul>
     <ol class="mac-steps">
@@ -120,6 +122,7 @@
       <li>Open <strong>System Settings &rarr; Privacy &amp; Security</strong> and scroll down to <strong>Security</strong>. Next to &ldquo;Kokon&rdquo; was blocked to protect your Mac, click <strong>Open Anyway</strong> and confirm with your password or Touch ID.<img class="settings" src="../assets/mac/open-anyway.webp" width="970" height="360" alt="System Settings, Privacy and Security: &ldquo;Kokon&rdquo; was blocked to protect your Mac, with the Open Anyway button highlighted" loading="lazy"></li>
       <li>Open Kokon again and click <strong>Open</strong>. You only do this once; in-app updates don&#39;t trigger it again.</li>
     </ol>
+    <p>If macOS instead only says <strong>The application &ldquo;Kokon&rdquo; can&#39;t be opened</strong>, with just an <strong>OK</strong> button, and Privacy &amp; Security shows no <em>Open Anyway</em>: open <strong>Terminal</strong>, run <code>xattr -dr com.apple.quarantine /Applications/Kokon.app</code>, then open Kokon as usual. This removes the &ldquo;downloaded from the internet&rdquo; flag from Kokon only.</p>
 
     <h2>Step 2: Let it download the model</h2>
     <p>On first launch Kokon shows your graphics card (or your Mac's chip and memory) and recommends a preset. It downloads what it needs: the stable-diffusion.cpp engine, <strong>Qwen-Image 2.1 Turbo</strong> as a 4-bit GGUF (about 4 GB), the Qwen3-VL text encoder and the VAE, about 12 GB in total. Downloads resume if interrupted, and every file is checked against a pinned SHA-256 hash.</p>
@@ -174,7 +177,7 @@
 
     <div class="cta-box">
       <h2>Try it</h2>
-      <p>Free and open source for Windows and macOS.</p>
+      <p>Free and open source for Windows, macOS and Linux.</p>
       <div class="ctas" style="justify-content:flex-start">
         <a class="btn primary" href="https://github.com/GabrieleLozupone/kokon/releases/latest" rel="noopener">Download Kokon</a>
         <a class="btn ghost" href="https://github.com/GabrieleLozupone/kokon" rel="noopener">View on GitHub</a>

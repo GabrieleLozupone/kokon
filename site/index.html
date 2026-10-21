@@ -3,21 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kokon: Run Qwen-Image 2.1 Locally — Free AI Photo Editor for Windows &amp; Mac</title>
-<meta name="description" content="Free, open-source app to edit and create photos with Qwen-Image 2.1 on your own GPU. No Python, no ComfyUI, no cloud. Windows (NVIDIA, AMD, Intel) and Apple Silicon Macs. MCP server for AI agents.">
-<meta name="keywords" content="Qwen-Image 2.1, Qwen Image Edit, run Qwen-Image locally, local AI photo editor, offline AI image editor, ComfyUI alternative, AI inpainting, remove objects from photos, MCP image generation, stable-diffusion.cpp">
+<title>Kokon: Free Offline AI Photo Editor for Windows, Mac &amp; Linux (Qwen-Image 2.1)</title>
+<meta name="description" content="Edit photos by describing the change, like Nano Banana or ChatGPT, but on your own computer: free, private, no limits. One installer; Kokon picks the best open model and sets it up for your GPU. Windows, Mac and Linux.">
+<meta name="keywords" content="local AI photo editor, offline AI image editor, Nano Banana alternative, local Nano Banana, Photoshop Generative Fill alternative, Qwen-Image 2.1, Qwen Image Edit, run Qwen-Image locally, ComfyUI alternative, AI inpainting, remove objects from photos, MCP image generation, stable-diffusion.cpp">
 <meta name="author" content="Gabriele Lozupone">
 <meta name="robots" content="index, follow, max-image-preview:large, max-video-preview:-1">
 <meta property="og:site_name" content="Kokon">
 <meta property="og:title" content="Kokon — Edit photos by describing the change, on your own GPU">
-<meta property="og:description" content="Qwen-Image 2.1 on your own computer. One installer for Windows and Mac, no Python, no cloud. Free and open source.">
+<meta property="og:description" content="Nano Banana-style photo editing on your own computer. Free, private, no limits. One installer for Windows, Mac and Linux; nothing to configure.">
 <meta property="og:image" content="https://kokon.app/assets/og.png">
 <meta property="og:image:width" content="1280">
 <meta property="og:image:height" content="640">
 <meta property="og:image:alt" content="Kokon logo and tagline">
 <meta property="og:url" content="https://kokon.app/">
 <meta property="og:type" content="website">
-<meta property="og:video" content="https://kokon.app/assets/kokon.mp4?v=2">
+<meta property="og:video" content="https://kokon.app/assets/kokon.mp4?v=3">
 <meta property="og:video:type" content="video/mp4">
 <meta property="og:video:width" content="1920">
 <meta property="og:video:height" content="1080">
@@ -26,10 +26,10 @@
 <link rel="icon" href="/assets/favicon.ico" sizes="any">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Kokon — Run Qwen-Image 2.1 locally, no Python">
-<meta name="twitter:description" content="Edit photos by describing the change, on your own GPU. Free and open source for Windows and Mac.">
+<meta name="twitter:title" content="Kokon — AI photo editing on your own PC. Free, private, no limits.">
+<meta name="twitter:description" content="Edit photos by describing the change, on your own GPU. Free and open source for Windows, Mac and Linux.">
 <meta name="twitter:image" content="https://kokon.app/assets/og.png">
-<link rel="preload" as="image" href="assets/kokon-poster.jpg?v=2">
+<link rel="preload" as="image" href="assets/kokon-poster.jpg?v=3">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -43,23 +43,23 @@
       "url": "https://kokon.app/",
       "downloadUrl": "https://github.com/GabrieleLozupone/kokon/releases/latest",
       "installUrl": "https://github.com/GabrieleLozupone/kokon/releases/latest",
-      "softwareVersion": "0.9.3",
+      "softwareVersion": "0.10.0",
       "releaseNotes": "https://github.com/GabrieleLozupone/kokon/releases/latest",
       "softwareHelp": { "@type": "CreativeWork", "url": "https://kokon.app/prompt-guide/", "name": "Prompt guide for Qwen-Image 2.1" },
       "applicationCategory": "MultimediaApplication",
       "applicationSubCategory": "AI image editor",
-      "operatingSystem": "Windows 10, Windows 11, macOS 26",
+      "operatingSystem": "Windows 10, Windows 11, macOS 15, Linux",
       "processorRequirements": "NVIDIA, AMD or Intel GPU with 12 GB of VRAM (NVIDIA 8 GB in beta), or Apple Silicon",
       "storageRequirements": "15 GB",
-      "fileSize": "35 MB",
+      "fileSize": "53 MB",
       "isAccessibleForFree": true,
       "license": "https://www.gnu.org/licenses/agpl-3.0.html",
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-      "screenshot": "https://kokon.app/assets/kokon-poster.jpg?v=2",
+      "screenshot": "https://kokon.app/assets/kokon-poster.jpg?v=3",
       "image": "https://kokon.app/assets/og.png",
-      "featureList": ["Edit photos with a sentence", "Create images from text", "Paint an area to change only that area (inpainting)", "Remove, replace and add objects", "Expand images beyond their borders (outpainting)", "Before/after comparison and version history", "Private mode", "MCP server and local HTTP API for AI agents", "Runs offline on NVIDIA, AMD, Intel and Apple Silicon"],
+      "featureList": ["Edit photos with a sentence", "Create images from text", "Prompt+: a few words become a detailed prompt, written by the model already loaded", "Your own Qwen-Image 2.1 LoRAs (beta)", "Paint an area to change only that area (inpainting)", "Remove, replace and add objects", "Expand images beyond their borders (outpainting)", "Before/after comparison and version history", "Private mode", "MCP server and local HTTP API for AI agents", "Runs offline on NVIDIA, AMD, Intel and Apple Silicon"],
       "author": { "@id": "https://gabrielelozupone.github.io/#me" },
-      "sameAs": ["https://github.com/GabrieleLozupone/kokon", "https://www.npmjs.com/package/kokon-mcp", "https://www.youtube.com/watch?v=ulMVqrhrn-w"]
+      "sameAs": ["https://github.com/GabrieleLozupone/kokon", "https://www.npmjs.com/package/kokon-mcp", "https://www.youtube.com/watch?v=y2NAJkZ4vH0"]
     },
     {
       "@type": "Person",
@@ -72,12 +72,12 @@
     {
       "@type": "VideoObject",
       "name": "Kokon: edit photos by describing the change, on your own GPU",
-      "description": "Kokon in use: creating an image from a sentence, painting an area to remove a scooter, adding a cat, and six more edits made with Qwen-Image 2.1 on a local GPU.",
-      "thumbnailUrl": "https://kokon.app/assets/kokon-poster.jpg?v=2",
-      "contentUrl": "https://kokon.app/assets/kokon.mp4?v=2",
-      "uploadDate": "2026-10-11",
+      "description": "Kokon in use: Prompt+ writing a prompt from a few words, painting an area to remove a scooter, and five more edits made with Qwen-Image 2.1 on a local GPU.",
+      "thumbnailUrl": "https://kokon.app/assets/kokon-poster.jpg?v=3",
+      "contentUrl": "https://kokon.app/assets/kokon.mp4?v=3",
+      "uploadDate": "2026-10-20",
       "duration": "PT1M25S",
-      "embedUrl": "https://www.youtube.com/embed/ulMVqrhrn-w"
+      "embedUrl": "https://www.youtube.com/embed/y2NAJkZ4vH0"
     },
     {
       "@type": "WebSite",
@@ -92,7 +92,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/style.css?v=6">
+<link rel="stylesheet" href="assets/style.css?v=8">
 <script type="application/ld+json">
 {
  "@context": "https://schema.org",
@@ -103,7 +103,23 @@
    "name": "Is it really free?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "Yes. Kokon is open source under the GNU AGPL-3.0 license. No account, no credits, no subscription. It uses your own GPU, so there is nothing to pay for."
+    "text": "Yes. Kokon is open source under the GNU AGPL-3.0 license. No account, no credits, no subscription, no daily limit. It uses your own GPU, so there is nothing to pay for. The images are for non-commercial use, because of the model's license."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "Is Kokon a local alternative to Nano Banana or ChatGPT image editing?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "For editing photos with a sentence, yes. Kokon runs on your own GPU, so your photos are never uploaded and there are no limits or subscriptions. Cloud models run on data-center GPUs and can be faster or stronger on some edits; Kokon uses Qwen-Image 2.1, which leads the open-weights image-editing rankings."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "Can I choose a different model?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "Kokon makes that choice for you, on purpose: we test the open image models and ship the best one as the default, tuned for your graphics card. Today that is Qwen-Image 2.1 Turbo. When a better open model wins our tests, an update brings it. Setup can reuse the same model files if you already have them, and you can add your own LoRAs."
    }
   },
   {
@@ -172,10 +188,34 @@
   },
   {
    "@type": "Question",
+   "name": "Does it run on Linux?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "Yes, in beta, on x86-64: a .deb for Ubuntu, Debian and Mint and an .rpm for Fedora, from the latest GitHub release. NVIDIA cards need the proprietary driver; AMD and Intel cards use Vulkan. A headless server with the interface in your browser, then Docker, come next."
+   }
+  },
+  {
+   "@type": "Question",
    "name": "macOS says Kokon cannot be opened. What do I do?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "The beta is not notarized by Apple yet, so macOS blocks it the first time. Try to open it once, then go to System Settings, Privacy & Security, scroll down and click \"Open Anyway\". You only do this once; in-app updates don't trigger it again."
+    "text": "The beta is not notarized by Apple yet, so macOS blocks it the first time. Try to open it once, then go to System Settings, Privacy & Security, scroll down and click \"Open Anyway\". You only do this once; in-app updates don't trigger it again. If macOS only says the app can't be opened, with just an OK button and no Open Anyway in Settings, run xattr -dr com.apple.quarantine /Applications/Kokon.app in Terminal, then open Kokon."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "What is Prompt+?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "An optional helper next to the prompt box. Write a short idea in any language and Prompt+ writes a detailed English prompt from it (looking at your photo for edits), then makes the image; the result keeps both prompts. It runs on Qwen3-VL, the text encoder Qwen-Image 2.1 already loads, inside Kokon's own build of stable-diffusion.cpp, so there is no second model to download. It adds about 2 seconds per image on an RTX 5070 Ti."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "Can I use LoRAs?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "Yes, in beta: your own LoRA files made for Qwen-Image 2.1 (.safetensors). Load them in Settings, LoRA and turn them on for each project with the LoRA button next to the prompt, up to 3 at a time. LoRAs for older Qwen-Image versions don't work with 2.1. Tested on Windows so far; there is no LoRA catalog yet, because the popular LoRAs we tested didn't improve on what Turbo does with a good prompt."
    }
   },
   {
@@ -204,6 +244,7 @@
   <defs>
     <symbol id="mark" viewBox="0 0 1024 1024"><path d="M0.00 242.81 C0.00 112.17 70.23 25.08 175.59 25.08 C280.94 25.08 351.17 112.17 351.17 242.81 L351.17 781.19 C351.17 911.83 280.94 998.92 175.59 998.92 C70.23 998.92 0.00 911.83 0.00 781.19 Z M389.53 548.95 C389.53 250.35 662.35 25.08 1024.00 25.08 C1024.00 323.68 751.18 548.95 389.53 548.95 Z M389.53 587.31 C389.53 821.93 618.71 998.92 922.49 998.92 C922.49 764.30 693.31 587.31 389.53 587.31 Z" fill="currentColor"/></symbol>
     <symbol id="win" viewBox="0 0 24 24"><path d="M0 0h11.3v11.3H0zM12.7 0H24v11.3H12.7zM0 12.7h11.3V24H0zM12.7 12.7H24V24H12.7z"/></symbol>
+    <symbol id="linux" viewBox="0 0 24 24"><path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.132 1.884 1.071.771-.06 1.592-.536 2.257-1.306.631-.765 1.683-1.084 2.378-1.503.348-.199.629-.469.649-.853.023-.4-.2-.811-.714-1.376v-.097l-.003-.003c-.17-.2-.25-.535-.338-.926-.085-.401-.182-.786-.492-1.046h-.003c-.059-.054-.123-.067-.188-.135a.357.357 0 00-.19-.064c.431-1.278.264-2.55-.173-3.694-.533-1.41-1.465-2.638-2.175-3.483-.796-1.005-1.576-1.957-1.56-3.368.026-2.152.236-6.133-3.544-6.139zm.529 3.405h.013c.213 0 .396.062.584.198.19.135.33.332.438.533.105.259.158.459.166.724 0-.02.006-.04.006-.06v.105a.086.086 0 01-.004-.021l-.004-.024a1.807 1.807 0 01-.15.706.953.953 0 01-.213.335.71.71 0 00-.088-.042c-.104-.045-.198-.064-.284-.133a1.312 1.312 0 00-.22-.066c.05-.06.146-.133.183-.198.053-.128.082-.264.088-.402v-.02a1.21 1.21 0 00-.061-.4c-.045-.134-.101-.2-.183-.333-.084-.066-.167-.132-.267-.132h-.016c-.093 0-.176.03-.262.132a.8.8 0 00-.205.334 1.18 1.18 0 00-.09.4v.019c.002.089.008.179.02.267-.193-.067-.438-.135-.607-.202a1.635 1.635 0 01-.018-.2v-.02a1.772 1.772 0 01.15-.768c.082-.22.232-.406.43-.533a.985.985 0 01.594-.2zm-2.962.059h.036c.142 0 .27.048.399.135.146.129.264.288.344.465.09.199.14.4.153.667v.004c.007.134.006.2-.002.266v.08c-.03.007-.056.018-.083.024-.152.055-.274.135-.393.2.012-.09.013-.18.003-.267v-.015c-.012-.133-.04-.2-.082-.333a.613.613 0 00-.166-.267.248.248 0 00-.183-.064h-.021c-.071.006-.13.04-.186.132a.552.552 0 00-.12.27.944.944 0 00-.023.33v.015c.012.135.037.2.08.334.046.134.098.2.166.268.01.009.02.018.034.024-.07.057-.117.07-.176.136a.304.304 0 01-.131.068 2.62 2.62 0 01-.275-.402 1.772 1.772 0 01-.155-.667 1.759 1.759 0 01.08-.668 1.43 1.43 0 01.283-.535c.128-.133.26-.2.418-.2zm1.37 1.706c.332 0 .733.065 1.216.399.293.2.523.269 1.052.468h.003c.255.136.405.266.478.399v-.131a.571.571 0 01.016.47c-.123.31-.516.643-1.063.842v.002c-.268.135-.501.333-.775.465-.276.135-.588.292-1.012.267a1.139 1.139 0 01-.448-.067 3.566 3.566 0 01-.322-.198c-.195-.135-.363-.332-.612-.465v-.005h-.005c-.4-.246-.616-.512-.686-.71-.07-.268-.005-.47.193-.6.224-.135.38-.271.483-.336.104-.074.143-.102.176-.131h.002v-.003c.169-.202.436-.47.839-.601.139-.036.294-.065.466-.065zm2.8 2.142c.358 1.417 1.196 3.475 1.735 4.473.286.534.855 1.659 1.102 3.024.156-.005.33.018.513.064.646-1.671-.546-3.467-1.089-3.966-.22-.2-.232-.335-.123-.335.59.534 1.365 1.572 1.646 2.757.13.535.16 1.104.021 1.67.067.028.135.06.205.067 1.032.534 1.413.938 1.23 1.537v-.043c-.06-.003-.12 0-.18 0h-.016c.151-.467-.182-.825-1.065-1.224-.915-.4-1.646-.336-1.77.465-.008.043-.013.066-.018.135-.068.023-.139.053-.209.064-.43.268-.662.669-.793 1.187-.13.533-.17 1.156-.205 1.869v.003c-.02.334-.17.838-.319 1.35-1.5 1.072-3.58 1.538-5.348.334a2.645 2.645 0 00-.402-.533 1.45 1.45 0 00-.275-.333c.182 0 .338-.03.465-.067a.615.615 0 00.314-.334c.108-.267 0-.697-.345-1.163-.345-.467-.931-.995-1.788-1.521-.63-.4-.986-.87-1.15-1.396-.165-.534-.143-1.085-.015-1.645.245-1.07.873-2.11 1.274-2.763.107-.065.037.135-.408.974-.396.751-1.14 2.497-.122 3.854a8.123 8.123 0 01.647-2.876c.564-1.278 1.743-3.504 1.836-5.268.048.036.217.135.289.202.218.133.38.333.59.465.21.201.477.335.876.335.039.003.075.006.11.006.412 0 .73-.134.997-.268.29-.134.52-.334.74-.4h.005c.467-.135.835-.402 1.044-.7zm2.185 8.958c.037.6.343 1.245.882 1.377.588.134 1.434-.333 1.791-.765l.211-.01c.315-.007.577.01.847.268l.003.003c.208.199.305.53.391.876.085.4.154.78.409 1.066.486.527.645.906.636 1.14l.003-.007v.018l-.003-.012c-.015.262-.185.396-.498.595-.63.401-1.746.712-2.457 1.57-.618.737-1.37 1.14-2.036 1.191-.664.053-1.237-.2-1.574-.898l-.005-.003c-.21-.4-.12-1.025.056-1.69.176-.668.428-1.344.463-1.897.037-.714.076-1.335.195-1.814.12-.465.308-.797.641-.984l.045-.022zm-10.814.049h.01c.053 0 .105.005.157.014.376.055.706.333 1.023.752l.91 1.664.003.003c.243.533.754 1.064 1.189 1.637.434.598.77 1.131.729 1.57v.006c-.057.744-.48 1.148-1.125 1.294-.645.135-1.52.002-2.395-.464-.968-.536-2.118-.469-2.857-.602-.369-.066-.61-.2-.723-.4-.11-.2-.113-.602.123-1.23v-.004l.002-.003c.117-.334.03-.752-.027-1.118-.055-.401-.083-.71.043-.94.16-.334.396-.4.69-.533.294-.135.64-.202.915-.47h.002v-.002c.256-.268.445-.601.668-.838.19-.201.38-.336.663-.336zm7.159-9.074c-.435.201-.945.535-1.488.535-.542 0-.97-.267-1.28-.466-.154-.134-.28-.268-.373-.335-.164-.134-.144-.333-.074-.333.109.016.129.134.199.2.096.066.215.2.36.333.292.2.68.467 1.167.467.485 0 1.053-.267 1.398-.466.195-.135.445-.334.648-.467.156-.136.149-.267.279-.267.128.016.034.134-.147.332a8.097 8.097 0 01-.69.468zm-1.082-1.583V5.64c-.006-.02.013-.042.029-.05.074-.043.18-.027.26.004.063 0 .16.067.15.135-.006.049-.085.066-.135.066-.055 0-.092-.043-.141-.068-.052-.018-.146-.008-.163-.065zm-.551 0c-.02.058-.113.049-.166.066-.047.025-.086.068-.14.068-.05 0-.13-.02-.136-.068-.01-.066.088-.133.15-.133.08-.031.184-.047.259-.005.019.009.036.03.03.05v.02h.003z"/></symbol>
     <symbol id="apple" viewBox="0 0 24 24"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></symbol>
     <symbol id="nvidia" viewBox="0 0 24 24"><path d="M8.948 8.798v-1.43a6.7 6.7 0 0 1 .424-.018c3.922-.124 6.493 3.374 6.493 3.374s-2.774 3.851-5.75 3.851c-.398 0-.787-.062-1.158-.185v-4.346c1.528.185 1.837.857 2.747 2.385l2.04-1.714s-1.492-1.952-4-1.952a6.016 6.016 0 0 0-.796.035m0-4.735v2.138l.424-.027c5.45-.185 9.01 4.47 9.01 4.47s-4.08 4.964-8.33 4.964c-.37 0-.733-.035-1.095-.097v1.325c.3.035.61.062.91.062 3.957 0 6.82-2.023 9.593-4.408.459.371 2.34 1.263 2.73 1.652-2.633 2.208-8.772 3.984-12.253 3.984-.335 0-.653-.018-.971-.053v1.864H24V4.063zm0 10.326v1.131c-3.657-.654-4.673-4.46-4.673-4.46s1.758-1.944 4.673-2.262v1.237H8.94c-1.528-.186-2.73 1.245-2.73 1.245s.68 2.412 2.739 3.11M2.456 10.9s2.164-3.197 6.5-3.533V6.201C4.153 6.59 0 10.653 0 10.653s2.35 6.802 8.948 7.42v-1.237c-4.84-.6-6.492-5.936-6.492-5.936z"/></symbol>
     <symbol id="amd" viewBox="0 0 24 24"><path d="M18.324 9.137l1.559 1.56h2.556v2.557L24 14.814V9.137zM2 9.52l-2 4.96h1.309l.37-.982H3.9l.408.982h1.338L3.432 9.52zm4.209 0v4.955h1.238v-3.092l1.338 1.562h.188l1.338-1.556v3.091h1.238V9.52H10.47l-1.592 1.845L7.287 9.52zm6.283 0v4.96h2.057c1.979 0 2.88-1.046 2.88-2.472 0-1.36-.937-2.488-2.747-2.488zm1.237.91h.792c1.17 0 1.63.711 1.63 1.57 0 .728-.372 1.572-1.616 1.572h-.806zm-10.985.273l.791 1.932H2.008zm17.137.307l-1.604 1.603v2.25h2.246l1.604-1.607h-2.246z"/></symbol>
@@ -233,23 +274,24 @@
 <main id="top">
   <section class="hero">
     <div class="wrap">
-      <span class="eyebrow rv"><b>Beta</b><span>Qwen-Image 2.1 Turbo<span class="eb-long">, on your own computer</span></span></span>
+      <span class="eyebrow rv"><b>Beta</b><span>Like Nano Banana<span class="eb-long">, but on your own computer</span></span></span>
       <h1 class="rv d1">Edit photos by describing the change.</h1>
-      <p class="lede rv d2">Kokon runs Qwen-Image 2.1, the best open image-editing model, on your own GPU. One installer for Windows and Mac. No Python, no ComfyUI, no cloud, no account.</p>
+      <p class="lede rv d2">AI photo editing on your own GPU: free, private, no limits. We pick the best open model and set it up for your hardware. You just brush, type and get the result. No Python, no ComfyUI, no cloud.</p>
       <div class="ctas rv d3" id="download">
         <a class="btn primary" href="https://github.com/GabrieleLozupone/kokon/releases/latest" rel="noopener" data-dl="windows"><svg fill="currentColor"><use href="#win"/></svg>Download for Windows</a>
         <a class="btn ghost" href="https://github.com/GabrieleLozupone/kokon/releases/latest" rel="noopener" data-dl="mac"><svg fill="currentColor"><use href="#apple"/></svg>Download for macOS <span class="tag">BETA</span></a>
+        <a class="btn ghost" href="https://github.com/GabrieleLozupone/kokon/releases/latest" rel="noopener"><svg fill="currentColor"><use href="#linux"/></svg>Download for Linux <span class="tag">BETA</span></a>
       </div>
-      <p class="fine rv d3">Free and open source · Windows 10/11 with a 12 GB GPU · Apple Silicon Macs</p>
+      <p class="fine rv d3">Free and open source · Windows, Linux with a 12 GB GPU · Apple Silicon Macs · images for non-commercial use</p>
     </div>
     <div class="wrap">
       <div class="showreel rv">
         <div class="glow"></div>
         <div class="frame">
-          <video id="reel" src="assets/kokon.mp4?v=2" poster="assets/kokon-poster.jpg?v=2" muted loop playsinline preload="metadata" aria-label="Kokon in use: creating an image, painting an area to remove a scooter, and six more edits"></video>
+          <video id="reel" src="assets/kokon.mp4?v=3" poster="assets/kokon-poster.jpg?v=3" muted loop playsinline preload="metadata" aria-label="Kokon in use: Prompt+ writing a prompt from a few words, painting an area to remove a scooter, and five more edits"></video>
           <button class="sound" id="reel-btn" type="button" aria-label="Watch the film from the start with sound">🔊 Watch with sound</button>
         </div>
-        <p class="reel-link"><a href="https://youtu.be/ulMVqrhrn-w" rel="noopener">Watch in 4K on YouTube</a></p>
+        <p class="reel-link"><a href="https://youtu.be/y2NAJkZ4vH0" rel="noopener">Watch in 4K on YouTube</a> · <a href="https://youtu.be/qGiGXasJJNI" rel="noopener">What's new in 0.10</a></p>
       </div>
     </div>
   </section>
@@ -263,6 +305,7 @@
         <li><svg><use href="#intel"/></svg>Intel Arc</li>
         <li><svg><use href="#apple"/></svg>Apple Silicon</li>
         <li><svg><use href="#win"/></svg>Windows</li>
+        <li><svg><use href="#linux"/></svg>Linux</li>
       </ul>
     </div>
   </section>
@@ -311,8 +354,8 @@
         </article>
         <article class="card b-small rv d1">
           <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg></div>
-          <h3>Zero settings.</h3>
-          <p>Size, memory and upscaling are chosen for your GPU. Pick Fast, Balanced or Quality. That's it.</p>
+          <h3>We pick the model. You pick the photo.</h3>
+          <p>Kokon ships the best open model we've tested and tunes size, memory and upscaling for your GPU. Pick Fast, Balanced or Quality. That's it.</p>
           <div class="vis chips"><span class="chip">Fast</span><span class="chip">Balanced</span><span class="chip on">Quality</span></div>
         </article>
         <article class="card b-mid rv">
@@ -336,14 +379,26 @@
         <article class="card b-small rv">
           <div class="icon"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></div>
           <h3>No Python. One installer.</h3>
-          <p>A 35 MB native app. The models download and are checked on first run, with resume.</p>
-          <div class="vis"><div class="big-num">35<small>MB installer</small></div></div>
+          <p>A small native app, about 55 MB. The models download and are checked on first run, with resume.</p>
+          <div class="vis"><div class="big-num">55<small>MB installer</small></div></div>
         </article>
         <article class="card b-wide rv d1">
           <div class="icon"><svg viewBox="0 0 24 24"><path d="M4 17l6-6-6-6M12 19h8"/></svg></div>
           <h3>Works with your AI agent.</h3>
           <p>A built-in MCP server and a local HTTP API let Claude Code, Cursor or any MCP client create and edit images on your machine, for free and offline.</p>
           <div class="vis tools" style="margin-top:auto"><code>generate_image</code><code>edit_image</code><code>inpaint_image</code><code>outpaint_image</code><code>upscale_image</code></div>
+        </article>
+        <article class="card b-mid rv">
+          <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg></div>
+          <h3>Prompt+ writes the prompt.</h3>
+          <p>Type a few words, in any language. Prompt+ turns them into a detailed prompt, looking at your photo for edits, then makes the image. It uses Qwen3-VL, which Qwen-Image 2.1 already loads: no second model to download.</p>
+          <div class="vis tools" style="margin-top:auto"><code>sunny italian street, café, red scooter</code><code>A 35mm photograph of a sunny cobblestone street in a small Italian coastal town…</code></div>
+        </article>
+        <article class="card b-mid rv d1">
+          <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 2l9 5-9 5-9-5zM3 12l9 5 9-5M3 17l9 5 9-5"/></svg></div>
+          <h3>Your own LoRAs. <span class="beta">BETA</span></h3>
+          <p>Load a Qwen-Image 2.1 LoRA once in Settings, then turn it on or off for each project with one click. Kokon keeps its own prepared copy; your file is never changed. Tested on Windows so far.</p>
+          <div class="vis chips"><span class="chip">Quality</span><span class="chip">Prompt+</span><span class="chip on">LoRA</span></div>
         </article>
       </div>
     </div>
@@ -355,7 +410,7 @@
       <h2 class="rv d1">Run Qwen-Image 2.1 locally in three steps.</h2>
       <p class="sec-lede rv d2">No Python environment, no ComfyUI workflows, no model files to hunt down. <a href="qwen-image-2-1-local/" style="text-decoration:underline">Read the full guide</a>.</p>
       <div class="privacy">
-        <article class="card rv"><span class="step">1</span><h3>Download the installer</h3><p>A 35 MB native app for Windows 10/11 or macOS on Apple Silicon. It installs for your user, no admin rights needed.</p></article>
+        <article class="card rv"><span class="step">1</span><h3>Download the installer</h3><p>A native app for Windows 10/11 (about 55 MB), macOS on Apple Silicon or Linux (.deb and .rpm, about 75 MB). On Windows it installs for your user, no admin rights needed.</p></article>
         <article class="card rv d1"><span class="step">2</span><h3>Let it set up the model</h3><p>Kokon detects your GPU (NVIDIA, AMD, Intel or Apple Silicon), picks the right preset and downloads Qwen-Image 2.1 Turbo, with resume and SHA-256 checks.</p></article>
         <article class="card rv d2"><span class="step">3</span><h3>Describe the change</h3><p>Drop a photo, write what you want and press Enter. Or paint an area first, and only that area changes.</p></article>
       </div>
@@ -365,23 +420,24 @@
   <section class="sec" id="compare">
     <div class="wrap">
       <p class="kicker rv">Compare</p>
-      <h2 class="rv d1">The simple way to run Qwen-Image.</h2>
-      <p class="sec-lede rv d2">Node-based tools give you every knob; cloud editors need an account and an upload. Kokon is for people who want the result, on their own machine.</p>
+      <h2 class="rv d1">The easy edits of the cloud. The privacy of your own PC.</h2>
+      <p class="sec-lede rv d2">Cloud editors are simple but upload your photos and limit how much you use them. Node-based tools run locally but you build everything yourself. Kokon is simple <em>and</em> local: we make the technical choices, you make the edits.</p>
       <div class="table-wrap rv">
-        <table class="cmp-table">
-          <thead><tr><th></th><th class="us">Kokon</th><th>Node-based tools<br><span>e.g. ComfyUI</span></th><th>Cloud editors</th></tr></thead>
+        <table class="cmp-table wide">
+          <thead><tr><th></th><th class="us">Kokon</th><th>ChatGPT, Gemini<br><span>(Nano Banana)</span></th><th>Photoshop<br><span>Generative Fill</span></th><th>Node-based tools<br><span>e.g. ComfyUI</span></th></tr></thead>
           <tbody>
-            <tr><td>Setup</td><td class="us">One installer</td><td>Python environment, custom nodes, workflows</td><td>Account</td></tr>
-            <tr><td>Your photos stay on your computer</td><td class="us">Yes</td><td>Yes</td><td>No, they are uploaded</td></tr>
-            <tr><td>Cost</td><td class="us">Free</td><td>Free</td><td>Credits or subscription</td></tr>
-            <tr><td>Edit with one sentence</td><td class="us">Yes</td><td>After building a workflow</td><td>Yes</td></tr>
-            <tr><td>Paint an area, change only that</td><td class="us">Built in</td><td>With an inpainting workflow</td><td>Some</td></tr>
-            <tr><td>Settings to tune</td><td class="us">None (Fast, Balanced, Quality)</td><td>Many</td><td>Few</td></tr>
-            <tr><td>NVIDIA, AMD, Intel, Apple Silicon</td><td class="us">Yes (AMD, Intel, Mac in beta)</td><td>Depends on the setup</td><td>Any browser</td></tr>
-            <tr><td>Local MCP server for AI agents</td><td class="us">Built in, no API key</td><td>Third-party</td><td>Paid API</td></tr>
+            <tr><td>Your photos stay on your computer</td><td class="us">Yes</td><td>No, they are uploaded</td><td>No, generated in Adobe's cloud</td><td>Yes</td></tr>
+            <tr><td>Cost and limits</td><td class="us">Free, no limits: it's your GPU</td><td>Daily limits, or a subscription</td><td>Subscription and generative credits</td><td>Free</td></tr>
+            <tr><td>Works offline</td><td class="us">Yes, after setup</td><td>No</td><td>No</td><td>Yes</td></tr>
+            <tr><td>Setup</td><td class="us">One installer, the model downloads itself</td><td>An account</td><td>Creative Cloud</td><td>Python, custom nodes, model files, workflows</td></tr>
+            <tr><td>Who picks the model and settings</td><td class="us">Kokon: a tested model, tuned for your GPU</td><td>The service</td><td>Adobe</td><td>You</td></tr>
+            <tr><td>Edit with one sentence</td><td class="us">Yes</td><td>Yes</td><td>A short prompt for a selection</td><td>After building a workflow</td></tr>
+            <tr><td>Paint an area, change only that</td><td class="us">Built in</td><td>Partly</td><td>Yes</td><td>With an inpainting workflow</td></tr>
+            <tr><td>Local MCP server for AI agents</td><td class="us">Built in, no API key</td><td>Paid API</td><td>No</td><td>Third-party</td></tr>
           </tbody>
         </table>
       </div>
+      <p class="honest rv">Fair to say: cloud models run on data-center GPUs, so they can be faster and stronger on some edits. Kokon uses Qwen-Image 2.1, which leads the open-weights image-editing rankings, and runs it on the computer you already have.</p>
     </div>
   </section>
 
@@ -424,9 +480,18 @@
         <article class="card rv d1">
           <h3><svg><use href="#apple"/></svg>macOS<span class="beta">BETA</span></h3>
           <div class="rows">
-            <div class="row"><span>System</span><span>macOS 26 or newer</span></div>
+            <div class="row"><span>System</span><span>macOS 15 Sequoia or newer</span></div>
             <div class="row"><span>Chip</span><span>Apple M1 or newer (Pro, Max or Ultra recommended)</span></div>
             <div class="row"><span>Memory</span><span>32 GB recommended · 16 GB works, more slowly</span></div>
+            <div class="row"><span>Disk</span><span>About 15 GB for the models</span></div>
+          </div>
+        </article>
+        <article class="card rv d2">
+          <h3><svg><use href="#linux"/></svg>Linux<span class="beta">BETA</span></h3>
+          <div class="rows">
+            <div class="row"><span>System</span><span>x86-64: Ubuntu 22.04, Debian 12, Mint 21, Fedora 40 or newer</span></div>
+            <div class="row"><span>NVIDIA</span><span>12 GB VRAM or more, proprietary driver; 8 GB<span class="beta">BETA</span></span></div>
+            <div class="row"><span>AMD, Intel Arc</span><span>12 GB or more, through Vulkan (Mesa)</span></div>
             <div class="row"><span>Disk</span><span>About 15 GB for the models</span></div>
           </div>
         </article>
@@ -452,7 +517,9 @@
       <p class="kicker rv">FAQ</p>
       <h2 class="rv d1">Questions.</h2>
       <div class="faq rv d2">
-        <details><summary>Is it really free?</summary><p>Yes. Kokon is open source under the GNU AGPL-3.0 license. No account, no credits, no subscription. It uses your own GPU, so there is nothing to pay for.</p></details>
+        <details><summary>Is it really free?</summary><p>Yes. Kokon is open source under the GNU AGPL-3.0 license. No account, no credits, no subscription, no daily limit. It uses your own GPU, so there is nothing to pay for. The images are for non-commercial use, because of the model's license (see below).</p></details>
+        <details><summary>Is Kokon a local alternative to Nano Banana or ChatGPT image editing?</summary><p>For editing photos with a sentence, yes: "remove the people", "make it a snowy night", "change the sign to say…". The difference is where it runs. Kokon runs on your own GPU, so your photos are never uploaded and there are no limits or subscriptions. Cloud models run on data-center GPUs and can be faster or stronger on some edits; Kokon uses Qwen-Image 2.1, which leads the open-weights image-editing rankings. More in <a href="offline-alternative-to-nano-banana/" style="text-decoration:underline">Kokon vs Nano Banana</a>.</p></details>
+        <details><summary>Can I choose a different model?</summary><p>Kokon makes that choice for you, on purpose. We test the open image models and ship the best one as the default, tuned for your graphics card, so you never have to compare checkpoints, samplers or settings. Today that is Qwen-Image 2.1 Turbo. When a better open model comes out and wins our tests, an update brings it. If you already have the same model files on disk (for example from ComfyUI), setup can use them instead of downloading them again, and you can add your own LoRAs.</p></details>
         <details><summary>How do I run Qwen-Image 2.1 locally without ComfyUI?</summary><p>Install Kokon and let its setup download the model. Kokon runs Qwen-Image 2.1 through stable-diffusion.cpp, a native engine, so there is no Python, no ComfyUI and no workflow to build. The step-by-step guide is at kokon.app/qwen-image-2-1-local.</p></details>
         <details><summary>Which model does it use?</summary><p>Qwen-Image 2.1 Turbo, the official 8-step version of Qwen&#x27;s image model, which both creates and edits images and leads the open-weights image-editing rankings.</p></details>
         <details><summary>Does it work on AMD or Intel GPUs?</summary><p>Yes, in beta, through the Vulkan engine on Windows with 12 GB of VRAM or more. On NVIDIA it uses CUDA; on Apple Silicon Macs it uses Metal.</p></details>
@@ -467,8 +534,12 @@
             <li>Open <strong>System Settings &rarr; Privacy &amp; Security</strong> and scroll down to <strong>Security</strong>. Next to &ldquo;Kokon&rdquo; was blocked to protect your Mac, click <strong>Open Anyway</strong> and confirm with your password or Touch ID.<img class="settings" src="assets/mac/open-anyway.webp" width="970" height="360" alt="System Settings, Privacy and Security: &ldquo;Kokon&rdquo; was blocked to protect your Mac, with the Open Anyway button highlighted" loading="lazy"></li>
             <li>Open Kokon again and click <strong>Open</strong>. You only do this once; in-app updates don&#39;t trigger it again.</li>
           </ol>
+          <p>If macOS instead only says <strong>The application &ldquo;Kokon&rdquo; can&#39;t be opened</strong>, with just an <strong>OK</strong> button, and Privacy &amp; Security shows no <em>Open Anyway</em>: open <strong>Terminal</strong>, run <code>xattr -dr com.apple.quarantine /Applications/Kokon.app</code>, then open Kokon as usual. This removes the &ldquo;downloaded from the internet&rdquo; flag from Kokon only.</p>
         </details>
         <details><summary>How do I write good prompts for Qwen-Image 2.1?</summary><p>Describe the scene, not just the subject: who, doing what, where, in what light. Never write &ldquo;no X&rdquo; (it adds X), put text in quotes, and for edits name the exact thing to change. The <a href="prompt-guide/" style="text-decoration:underline">prompt guide</a> shows each rule with a vague and a clear prompt side by side.</p></details>
+        <details><summary>Does it run on Linux?</summary><p>Yes, in beta, on x86-64: a .deb for Ubuntu, Debian and Mint and an .rpm for Fedora, from the <a href="https://github.com/GabrieleLozupone/kokon/releases/latest" rel="noopener" style="text-decoration:underline">latest release</a>. Install it with <code>sudo apt install ./Kokon_&lt;version&gt;_amd64.deb</code> or <code>sudo dnf install ./Kokon-&lt;version&gt;-1.x86_64.rpm</code>. NVIDIA cards need the proprietary driver; AMD and Intel cards use Vulkan. A headless server with the interface in your browser, then Docker, come next.</p></details>
+        <details><summary>What is Prompt+?</summary><p>An optional helper next to the prompt box. Write a short idea in any language and Prompt+ writes a detailed English prompt from it (looking at your photo for edits), then makes the image; the result keeps both prompts. It runs on Qwen3-VL, the text encoder Qwen-Image 2.1 already loads, inside Kokon&#x27;s own build of stable-diffusion.cpp, so there is no second model to download. It adds about 2 seconds per image on an RTX 5070 Ti.</p></details>
+        <details><summary>Can I use LoRAs?</summary><p>Yes, in beta: your own LoRA files made for Qwen-Image 2.1 (.safetensors). Load them in Settings &rarr; LoRA and turn them on for each project with the LoRA button next to the prompt, up to 3 at a time. LoRAs for older Qwen-Image versions don&#x27;t work with 2.1. Tested on Windows so far; there is no LoRA catalog yet, because the popular LoRAs we tested didn&#x27;t improve on what Turbo does with a good prompt.</p></details>
         <details><summary>Does it work offline?</summary><p>Yes. After setup has downloaded the models, everything runs offline.</p></details>
       </div>
     </div>
@@ -482,6 +553,7 @@
       <div class="ctas rv d3">
         <a class="btn primary" href="https://github.com/GabrieleLozupone/kokon/releases/latest" rel="noopener" data-dl="windows"><svg fill="currentColor"><use href="#win"/></svg>Download for Windows</a>
         <a class="btn ghost" href="https://github.com/GabrieleLozupone/kokon/releases/latest" rel="noopener" data-dl="mac"><svg fill="currentColor"><use href="#apple"/></svg>Download for macOS <span class="tag">BETA</span></a>
+        <a class="btn ghost" href="https://github.com/GabrieleLozupone/kokon/releases/latest" rel="noopener"><svg fill="currentColor"><use href="#linux"/></svg>Download for Linux <span class="tag">BETA</span></a>
         <a class="btn ghost" href="https://github.com/GabrieleLozupone/kokon" rel="noopener"><svg fill="currentColor"><use href="#github"/></svg>Star on GitHub</a>
       </div>
       <a class="maker rv d3" href="https://gabrielelozupone.github.io/" rel="author">
@@ -498,8 +570,13 @@
     <span>Designed and built by <a class="me" href="https://gabrielelozupone.github.io/" rel="author">Gabriele Lozupone</a>, with the help of Claude Code.</span>
     <nav aria-label="Links">
       <a href="https://github.com/GabrieleLozupone/kokon" rel="noopener">GitHub</a>
+      <a href="local-ai-photo-editor/">Local AI photo editor</a>
+      <a href="offline-alternative-to-nano-banana/">Offline Nano Banana alternative</a>
+      <a href="comfyui-alternative/">Simple ComfyUI alternative</a>
+      <a href="remove-objects-from-photos-offline/">Remove objects offline</a>
       <a href="qwen-image-2-1-local/">Run Qwen-Image locally</a>
       <a href="mcp-image-generation/">MCP image generation</a>
+      <a href="press/">Press kit</a>
       <a href="prompt-guide/">Prompt guide</a>
       <a href="https://github.com/GabrieleLozupone/kokon/releases" rel="noopener">Releases</a>
       <a href="https://github.com/GabrieleLozupone/kokon/blob/master/LICENSE" rel="noopener">License</a>

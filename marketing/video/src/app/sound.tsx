@@ -3,7 +3,7 @@
 // marketing/audio/make_sfx.py), placed on the frames where things happen. Every level is here,
 // so the mix can be tuned in one place.
 import { Html5Audio, Sequence, staticFile } from "remotion";
-import { CUES, cueFrames, cueSpan, FPS, type Cue } from "./timeline";
+import { CUES, cueFrames, cueSpan, FPS, LAUNCH_VOICE, type Cue } from "./timeline";
 
 const LEVEL = {
   music: 0.62,
@@ -55,7 +55,7 @@ function Say({ c }: { c: Cue }) {
   return (
     <Sequence from={c.at} durationInFrames={n} layout="none" name={`voice ${c.line}.${c.from}`}>
       <Html5Audio
-        src={staticFile(`voice/${String(c.line).padStart(2, "0")}.wav`)}
+        src={staticFile(`${(c.set ?? LAUNCH_VOICE).dir}/${String(c.line).padStart(2, "0")}.wav`)}
         trimBefore={Math.round(a * FPS)}
         volume={(f) => LEVEL.voice * Math.min(1, f / 2, (n - f) / 2)}
       />
@@ -63,18 +63,18 @@ function Say({ c }: { c: Cue }) {
   );
 }
 
-export const Voice = () => (
+export const Voice = ({ cues = CUES }: { cues?: Cue[] }) => (
   <>
-    {CUES.map((c) => (
+    {cues.map((c) => (
       <Say key={`${c.line}.${c.from}`} c={c} />
     ))}
   </>
 );
 
 /** 1 with no voice, DUCK.level while the voice speaks, with smooth ramps around each cue. */
-function duck(f: number): number {
+function duck(f: number, cues: Cue[]): number {
   let d = 0;
-  for (const c of CUES) {
+  for (const c of cues) {
     const a = c.at;
     const b = c.at + cueFrames(c);
     const v = f < a ? 1 - (a - f) / DUCK.attack : f > b ? 1 - (f - b) / DUCK.release : 1;
@@ -83,7 +83,8 @@ function duck(f: number): number {
   return 1 - (1 - DUCK.level) * d;
 }
 
-/** Music for the whole film, under the voice, fading out over the last `fadeOut` frames. */
-export function Music({ frames, fadeOut = 45 }: { frames: number; fadeOut?: number }) {
-  return <Html5Audio src={staticFile("music.m4a")} volume={(f) => LEVEL.music * duck(f) * Math.min(1, Math.max(0, (frames - f) / fadeOut))} />;
+/** Music for the whole film, under the voice (`cues`), fading out over the last `fadeOut` frames.
+ * `src` and `from` (seconds into the file) pick the track and where it starts. */
+export function Music({ frames, fadeOut = 45, cues = CUES, src = "music.m4a", from = 0 }: { frames: number; fadeOut?: number; cues?: Cue[]; src?: string; from?: number }) {
+  return <Html5Audio src={staticFile(src)} trimBefore={Math.round(from * FPS)} volume={(f) => LEVEL.music * duck(f, cues) * Math.min(1, Math.max(0, (frames - f) / fadeOut))} />;
 }

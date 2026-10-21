@@ -9,14 +9,17 @@
 <h3 align="center">Edit photos by describing the change, on your own computer.</h3>
 
 <p align="center">
-  One installer for Windows and Mac, no Python, no cloud. Powered by Qwen-Image 2.1, and ready for your AI agent.
+  Like Nano Banana, but private, offline and without limits. One installer for Windows, Mac and Linux:
+  we pick the best open model and set it up for your GPU, you brush, type and get the result.
+  No Python, no ComfyUI, no cloud.
 </p>
 
 <p align="center">
   <a href="https://github.com/GabrieleLozupone/kokon/releases/latest"><img src="https://img.shields.io/github/v/release/GabrieleLozupone/kokon?style=flat-square&labelColor=333&color=6b6b6b&label=release&cacheSeconds=3600&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjQzI5N0ZGIiBzdHJva2Utd2lkdGg9IjIuNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTIuNiAyLjZBMiAyIDAgMCAwIDExLjIgMkg0YTIgMiAwIDAgMC0yIDJ2Ny4yYTIgMiAwIDAgMCAuNiAxLjRsOC43IDguN2EyLjQgMi40IDAgMCAwIDMuNCAwbDYuNi02LjZhMi40IDIuNCAwIDAgMCAwLTMuNHoiLz48Y2lyY2xlIGN4PSI3LjUiIGN5PSI3LjUiIHI9IjEuMiIgZmlsbD0iI0MyOTdGRiIvPjwvc3ZnPg%3D%3D" alt="Latest release"></a>
   <a href="https://github.com/GabrieleLozupone/kokon/releases"><img src="https://img.shields.io/github/downloads/GabrieleLozupone/kokon/total?style=flat-square&labelColor=333&color=6b6b6b&cacheSeconds=3600&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjM0ZCOTUwIiBzdHJva2Utd2lkdGg9IjIuNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTIgM3YxMiIvPjxwYXRoIGQ9Im03IDEwIDUgNSA1LTUiLz48cGF0aCBkPSJNNCAyMWgxNiIvPjwvc3ZnPg%3D%3D" alt="Downloads"></a>
   <img src="assets/readme/badges/windows.svg" alt="Windows 10 and 11">
-  <img src="assets/readme/badges/macos.svg" alt="macOS 26 or newer">
+  <img src="assets/readme/badges/macos.svg" alt="macOS 15 or newer">
+  <img src="assets/readme/badges/linux.svg" alt="Linux, .deb and .rpm">
   <br>
   <img src="assets/readme/badges/nvidia.svg" alt="NVIDIA, 12 GB of VRAM or more">
   <img src="assets/readme/badges/amd.svg" alt="AMD, 12 GB of VRAM or more, beta">
@@ -42,7 +45,7 @@
 
 https://github.com/user-attachments/assets/8851c580-99b9-432a-82be-b6d42fa9a749
 
-<p align="center"><a href="https://youtu.be/ulMVqrhrn-w">Watch in 4K on YouTube</a></p>
+<p align="center"><a href="https://youtu.be/y2NAJkZ4vH0">Watch in 4K on YouTube</a> · <a href="https://youtu.be/qGiGXasJJNI">What's new in 0.10 (42 s)</a></p>
 
 <p align="center">
   <a href="https://github.com/GabrieleLozupone/kokon/releases/latest"><picture>
@@ -53,15 +56,35 @@ https://github.com/user-attachments/assets/8851c580-99b9-432a-82be-b6d42fa9a749
     <source media="(prefers-color-scheme: dark)" srcset="assets/readme/download-macos-beta-dark.svg">
     <img src="assets/readme/download-macos-beta-light.svg" alt="Download for macOS (Apple Silicon, beta)" height="52">
   </picture></a>
-  <a href="#roadmap"><picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/download-linux-dark.svg">
-    <img src="assets/readme/download-linux-light.svg" alt="Linux: coming soon" height="52">
+  <a href="https://github.com/GabrieleLozupone/kokon/releases/latest"><picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/download-linux-beta-dark.svg">
+    <img src="assets/readme/download-linux-beta-light.svg" alt="Download for Linux (x86-64, beta)" height="52">
   </picture></a>
   <br>
   <sub>Free and open source · about 12 GB of models downloaded on first run · nothing leaves your computer</sub>
 </p>
 
 ---
+
+## Like Nano Banana, but on your own computer
+
+Cloud editors made "edit a photo with a sentence" normal, but they upload your photos and limit how much you
+use them. Node-based tools run locally, but you build everything yourself. Kokon is simple **and** local:
+we make the technical choices (model, files, steps, memory), you make the edits.
+
+| | **Kokon** | ChatGPT, Gemini (Nano Banana) | Photoshop Generative Fill | ComfyUI |
+| --- | :---: | :---: | :---: | :---: |
+| Your photos stay on your computer | ✅ | ❌ uploaded | ❌ Adobe's cloud | ✅ |
+| Free, no limits | ✅ it's your GPU | daily limits or subscription | subscription + credits | ✅ |
+| Works offline | ✅ after setup | ❌ | ❌ | ✅ |
+| Setup | one installer | an account | Creative Cloud | Python, nodes, model files |
+| Who picks the model and settings | Kokon, tested for your GPU | the service | Adobe | you |
+| Edit with one sentence | ✅ | ✅ | short prompt for a selection | after building a workflow |
+
+Fair to say: cloud models run on data-center GPUs, so they can be faster and stronger on some edits. Kokon runs
+Qwen-Image 2.1, which leads the open-weights image-editing rankings, on the computer you already have. You need
+a 12 GB graphics card (8 GB in beta) or an Apple Silicon Mac, and the images are for non-commercial use because
+of the model's license.
 
 ## Why Kokon
 
@@ -70,7 +93,8 @@ https://github.com/user-attachments/assets/8851c580-99b9-432a-82be-b6d42fa9a749
     <td width="33%" valign="top">
       <h3>✍️ Just describe it</h3>
       “Remove all the people from the beach.” “Make it golden hour.” Kokon picks the mode, the
-      resolution and the memory settings for you. There are no sliders to learn.
+      resolution and the memory settings for you. There are no sliders to learn. Only have a short
+      idea? Prompt+ writes the detailed prompt for you, in any language.
     </td>
     <td width="33%" valign="top">
       <h3>🔒 Private by design</h3>
@@ -130,8 +154,21 @@ seeds and times are in [marketing/showcase/PROMPTS.md](marketing/showcase/PROMPT
   administrator rights.
 - **Mac (Apple Silicon, beta):** `Kokon_<version>_aarch64.dmg`. Open it and drag Kokon to
   Applications. The first time, macOS blocks it because the app is not notarized by Apple:
-  open System Settings → Privacy & Security and click **Open Anyway**
-  ([details](#macos-says-kokon-cannot-be-opened)).
+  open System Settings → Privacy & Security and click **Open Anyway**, or run one Terminal
+  command if there is no such button ([details](#macos-says-kokon-cannot-be-opened)).
+- **Linux (x86-64, beta):** `Kokon_<version>_amd64.deb` for Ubuntu, Debian and Mint, or
+  `Kokon-<version>-1.x86_64.rpm` for Fedora. Install it with your package manager, which also
+  pulls in the few libraries it needs:
+
+  ```bash
+  sudo apt install ./Kokon_<version>_amd64.deb      # Ubuntu 22.04+, Debian 12+, Mint 21+
+  sudo dnf install ./Kokon-<version>-1.x86_64.rpm   # Fedora 40+
+  ```
+
+  For NVIDIA cards you need the proprietary driver (the CUDA runtime comes with Kokon). AMD and
+  Intel cards use Mesa's Vulkan driver, installed on most desktops already. If apt prints
+  "Download is performed unsandboxed as root", that's harmless (apt can't read your home
+  folder); copy the .deb to `/tmp` first to avoid it.
 
 **2. Set up models.** On first launch Kokon shows your graphics card (or your Mac's chip and
 memory), recommends a preset and downloads everything it needs. The download resumes if it is
@@ -157,20 +194,33 @@ whole thing takes a few minutes, and the setup screen shows what Kokon can do wh
 | | Minimum | Recommended |
 | --- | --- | --- |
 | **Chip** | Apple M1 or newer (Intel Macs are not supported) | M-series Pro, Max or Ultra (the GPU cores set the speed) |
-| **macOS** | 26 Tahoe | latest |
+| **macOS** | 15 Sequoia | latest |
 | **Unified memory** | 16 GB: works, but slowly (lightest mode, about 1 megapixel) | 32 GB or more (also gets native 2K) |
 | **Disk** | 15 GB free | 25 GB free |
 | **Time per image** | About 4 minutes for a 1 MP image on a 16 GB M2 Pro | Faster on Max/Ultra chips with more memory |
+
+**Linux (beta)**
+
+| | Minimum | Recommended |
+| --- | --- | --- |
+| **Distribution** | x86-64: Ubuntu 22.04, Debian 12, Mint 21, Fedora 40 (or newer) | the latest Ubuntu LTS or Fedora |
+| **GPU** | As on Windows: NVIDIA 12 GB (8 GB in beta) with the proprietary driver · AMD / Intel 12 GB+ through Vulkan (beta) | NVIDIA, 16 GB+ VRAM |
+| **RAM** | 16 GB | 32 GB |
+| **Disk** | 15 GB free | 25 GB free on an SSD |
 
 Kokon measures your machine's speed with the first image and shows realistic time estimates
 from then on.
 
 > [!NOTE]
 > NVIDIA cards run on the CUDA engine, the fastest and tested path. AMD and Intel cards use the
-> **Vulkan engine (beta)**: it works on NVIDIA, but nobody has tried it on a real AMD or Intel
-> card yet, so please [report how it goes](https://github.com/GabrieleLozupone/kokon/issues).
+> **Vulkan engine (beta)**. First user report on AMD: an RX 9060 XT 16 GB on Windows made a 16:9
+> 1080p image at Balanced in about 80 s (the first image after start, model loading included),
+> with edits quicker after that. Intel is still untested, so please
+> [report how it goes](https://github.com/GabrieleLozupone/kokon/issues).
 > Vulkan is slower than CUDA, and its first image takes longer. Macs use the **Metal engine
-> (beta)**, tested so far on a 16 GB M2 Pro. Details in [docs/platforms.md](docs/platforms.md).
+> (beta)**, tested so far on a 16 GB M2 Pro. On Linux Kokon ships its own CUDA and Vulkan builds
+> of the same engine, tested so far on an RTX 5070 Ti under WSL. Details in
+> [docs/platforms.md](docs/platforms.md) and [docs/linux.md](docs/linux.md).
 
 <details>
 <summary><b>Model presets: what gets downloaded</b></summary>
@@ -221,6 +271,9 @@ files are not tested by Kokon; you can switch to the official files at any time 
 | A brushed area + an action | **Inpaint**: Change, Remove, Replace or Add | Remove needs no prompt |
 | Dragged edges | **Expand** the photo (outpainting) | Or type pixel or percent values |
 | Any result | **Upscale** to 2×, 4K, the source size or a custom width | With the upscaler model, in seconds |
+| Any result | **Colour-grade** it with a LUT | Eight built-in looks (Neutral takes out a yellow cast) or your own `.cube` files, live preview with intensity |
+| A short idea, in any language | **Prompt+** writes the detailed prompt first | You watch it being written; for edits it looks at your photo. Runs on the model Kokon already has: no extra download, a few seconds more |
+| Your own LoRA files | **Apply them** to a project (beta) | Qwen-Image 2.1 LoRAs (`.safetensors`) loaded in Settings → LoRA, up to 3 at once, each with its strength |
 
 **New to prompts?** The [prompt guide](https://kokon.app/prompt-guide/) shows good and bad prompts side by side, with real results.
 
@@ -229,13 +282,15 @@ files are not tested by Kokon; you can switch to the official files at any time 
 </p>
 
 Every result can be edited again, varied, used as a reference, upscaled, saved, copied or
-opened in Explorer or Finder. A few things make that loop fast:
+opened in Explorer, Finder or your file manager. A few things make that loop fast:
 
 - **Before/after**: compare with Slider, Flicker or Changes, or hold <kbd>B</kbd> to see the original.
 - **Undo/redo between versions** with <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd> (<kbd>⌘</kbd> on a Mac).
   Undo returns to the version the current one came from, and nothing is ever deleted.
 - **Gallery**: every image keeps its full recipe (prompt, seed, settings, pipeline) and reopens
   with one click. The recipe is also embedded in the PNG.
+- **Clean up in one go**: press **Select** (or <kbd>Ctrl</kbd>/<kbd>⌘</kbd>-click, <kbd>Shift</kbd>-click
+  for a range) to remove several projects or delete several gallery images at once.
 - **Quality presets**: **Fast** (the default, ~1 MP), **Balanced** (~1.5K) and **Quality**
   (native 2K). All run Qwen's official 8-step Turbo model with its own schedule, so you never
   need to tune steps or guidance.
@@ -256,6 +311,36 @@ and runs a single diffusion pass. When the result has to be larger than what the
 it is enlarged with an AI upscaler instead of a plain resize. For brushed edits, Kokon marks the area on
 a second reference image so the model knows exactly where to work. Without that, Qwen-Image 2.1
 cannot see the mask.
+
+With **Prompt+** on, the planner first asks the model's own text encoder (Qwen3-VL, already loaded
+to read your prompt) to write a detailed English prompt, looking at your photo for edits. It runs
+inside stable-diffusion.cpp, so there is no second language model in memory. The image then uses
+that prompt, and the result keeps both yours and the written one.
+
+### The engine
+
+Kokon runs on [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) by leejet.
+Prompt+ needed something it doesn't have: a way for the Qwen3-VL text encoder, already loaded for
+the image, to write text. The easy route was a second language model next to it, but another 5 GB
+model doesn't fit beside Qwen-Image 2.1 on 8–12 GB cards or on most Macs. So since 0.10 Kokon runs
+its own build of stable-diffusion.cpp, from
+[our fork](https://github.com/GabrieleLozupone/stable-diffusion.cpp/tree/kokon), on Windows,
+macOS and Linux. It is upstream plus a few additions:
+
+- **Text generation on the loaded text encoder:** a decoding loop with a KV cache, sampling, the
+  chat template with image tokens, and a `/sdcpp/v1/text_gen` endpoint in sd-server. With greedy
+  decoding it writes the same tokens as llama.cpp on the same GGUF.
+- **Room on small cards:** while it writes, the diffusion model and the VAE wait in RAM if the GPU
+  is short of memory, and come back in about half a second for the image. Prompt+ fits within
+  8 GB (tested on an 8 GB-capped card).
+- **Speed:** the decoding step is reused from token to token and, on NVIDIA, replayed as a CUDA
+  graph: about 127 tokens/s on an RTX 5070 Ti (llama.cpp: 133–145), so a prompt takes 1–2 s.
+
+The image side is upstream's code, and our changes leave its images bit-identical. We proposed
+the text generation upstream ([#2155](https://github.com/leejet/stable-diffusion.cpp/issues/2155));
+leejet prefers to keep text generation out of stable-diffusion.cpp, since llama.cpp already does
+it, which is fair. So it lives in our fork, which we keep close to upstream's master. Kokon still
+works with an official stable-diffusion.cpp release, just without Prompt+.
 
 Want the details? The [engineering notes](docs/engineering-notes.md) cover the architecture,
 the measured backend settings and the reasons behind each default.
@@ -394,17 +479,19 @@ window, or restart the service. **Save as…** still writes a copy wherever you 
 
 ## How it compares
 
-Kokon does one thing: editing photos with Qwen-Image 2.1, with as little setup as possible.
-If you want full control over every node, ComfyUI is the better tool.
+Against other local tools. Kokon does one thing: photo editing with the best open model we've tested
+(today Qwen-Image 2.1), with nothing to set up. If you want full control over every node, ComfyUI is the
+better tool.
 
 | | **Kokon** | ComfyUI + Qwen workflow | Krita AI Diffusion | Other Qwen web UIs |
 | --- | :---: | :---: | :---: | :---: |
-| Install | One installer (`.exe` / `.dmg`) | Python environment + nodes | Krita + plugin + ComfyUI | Python or ComfyUI |
+| Install | One installer (`.exe` / `.dmg` / `.deb` / `.rpm`) | Python environment + nodes | Krita + plugin + ComfyUI | Python or ComfyUI |
 | Picks size and memory settings for you | ✅ | ❌ | partly | partly |
 | Brush edits the model can see | ✅ | depends on the workflow | ✅ | rarely |
 | MCP server for AI agents | ✅ | community nodes | ❌ | ❌ |
 | AMD / Intel GPUs | beta (Vulkan) | ✅ | ✅ | varies |
 | Apple Silicon Macs | beta (Metal) | ✅ | ✅ | varies |
+| Linux | beta (`.deb` / `.rpm`) | ✅ | ✅ | ✅ |
 | Custom pipelines, node graphs | ❌ | ✅ | partly | ❌ |
 | Painting and layers | ❌ | ❌ | ✅ | ❌ |
 
@@ -417,6 +504,11 @@ If you want full control over every node, ComfyUI is the better tool.
 SmartScreen shows this for new apps that don't have a download history yet. Click
 **More info → Run anyway**. You can check the installer against the SHA-256 hash listed in the
 release notes, or [build it yourself](#build-from-source).
+
+If the installer **does nothing at all** (the cursor spins for a second, then no window and no
+process), Windows blocked it silently, usually through Smart App Control on fresh Windows 11
+installs. Right-click the downloaded `.exe` → **Properties**, tick **Unblock** at the bottom of the
+General tab, click **OK** and run it again.
 
 </details>
 
@@ -439,6 +531,16 @@ it the first time. You only do this once; in-app updates don't trigger it again.
 
 3. Open Kokon again and click **Open** in the last prompt.
 
+If macOS instead only says **The application “Kokon” can't be opened**, with just an **OK**
+button, and Privacy & Security shows no *Open Anyway*: open **Terminal** and run
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Kokon.app
+```
+
+then open Kokon as usual. This removes the "downloaded from the internet" flag from Kokon only;
+Gatekeeper stays on for everything else.
+
 You can also [build it yourself](#build-from-source).
 
 </details>
@@ -454,18 +556,27 @@ General.
 </details>
 
 <details>
-<summary><b>Does it work on AMD or Intel GPUs, or on a Mac?</b></summary>
+<summary><b>Does it work on AMD or Intel GPUs, on a Mac or on Linux?</b></summary>
 <br>
 
 AMD and Intel: in beta. The setup screen installs stable-diffusion.cpp's Vulkan build for
-them, which uses the graphics driver you already have. It works on NVIDIA cards, but it has not
-been verified on a real AMD or Intel card yet; integrated graphics are not supported. Please
+them, which uses the graphics driver you already have. A user's RX 9060 XT 16 GB made a 1080p
+image at Balanced in about 80 s (first image, model loading included); Intel Arc is still
+untested, and integrated graphics are not supported. Please
 [open an issue](https://github.com/GabrieleLozupone/kokon/issues) with your card and how it went.
 
-Mac: yes, in beta, on Apple Silicon (M1 or newer) with macOS 26. It runs on a 16 GB Mac in a
-lighter mode, but slowly (about 4 minutes per 1-megapixel image on an M2 Pro); 32 GB or more
-and a Pro, Max or Ultra chip are recommended. See the [requirements](#requirements) and
-[docs/platforms.md](docs/platforms.md).
+Mac: yes, in beta, on Apple Silicon (M1 or newer) with macOS 15 Sequoia or newer. It runs on a
+16 GB Mac in a lighter mode, but slowly (about 4 minutes per 1-megapixel image on an M2 Pro);
+32 GB or more and a Pro, Max or Ultra chip are recommended. See the [requirements](#requirements)
+and [docs/platforms.md](docs/platforms.md).
+
+Linux: yes, in beta, on x86-64 with a `.deb` (Ubuntu, Debian, Mint) or an `.rpm` (Fedora). NVIDIA
+cards run Kokon's own CUDA build of the engine, AMD and Intel cards its Vulkan build. A headless
+server with the interface in your browser, and a Docker image, come next
+([#15](https://github.com/GabrieleLozupone/kokon/issues/15)).
+
+If the Kokon window stays blank on Linux, start it with `WEBKIT_DISABLE_DMABUF_RENDERER=1 kokon`
+(a known WebKitGTK issue; Kokon already does this by itself on NVIDIA drivers).
 
 </details>
 
@@ -584,13 +695,19 @@ or macOS version and the log from `KokonData/logs` (see the table above).
 - [x] MCP server and local HTTP API
 - [x] Before/after, version undo, private mode, HEIC and HDR
 - [x] macOS on Apple Silicon (beta, Metal)
-- [x] One-click in-app updates on Windows and Mac
+- [x] One-click in-app updates on Windows, Mac and Linux
+- [x] Linux (`.deb` and `.rpm`, beta)
+- [x] Colour LUTs: built-in looks and your own `.cube` files
 - [x] Qwen's official 8-step Turbo model for every preset
+- [x] Prompt+: the prompt enhancer on the model Kokon already has (0.10.0)
+- [x] Your own LoRA files, per project (0.10.0, beta)
 - [ ] AMD and Intel GPUs through Vulkan (beta now; works on NVIDIA, to verify on AMD/Intel)
 - [ ] Background removal and transparent cutouts
 - [ ] Batch edits: one instruction for a whole folder
+- [ ] Curated LoRAs tested with Kokon, installed in one click
+- [ ] Headless server with the interface in the browser, then Docker
+  ([#15](https://github.com/GabrieleLozupone/kokon/issues/15))
 - [ ] Plugins for Krita, GIMP and Photoshop through the local API
-- [ ] Linux
 
 Have an idea? [Start a discussion](https://github.com/GabrieleLozupone/kokon/discussions) or 👍 an existing one.
 
@@ -611,7 +728,7 @@ npx tauri dev                     # run the desktop app in development
 powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # installer
 ```
 
-**Mac (Apple Silicon, macOS 26+):** Xcode Command Line Tools, Rust and Node 22+.
+**Mac (Apple Silicon, macOS 15+):** Xcode Command Line Tools, Rust and Node 22+.
 
 ```bash
 bash scripts/dev/mac-dev.sh --check   # check the prerequisites
@@ -619,7 +736,16 @@ bash scripts/dev/mac-dev.sh           # build and run the app in development
 bash scripts/build-release-mac.sh     # Kokon.app + .dmg in dist-release/
 ```
 
-Publishing a release (signed in-app updates for both platforms) is described in
+**Linux (x86-64):** Rust (stable, via rustup), Node 22+ and Tauri's
+[system packages](https://v2.tauri.app/start/prerequisites/#linux). Build on the oldest distribution
+you want to support (releases are built on Ubuntu 22.04).
+
+```bash
+bash scripts/build-release-linux.sh --setup   # once: system packages
+bash scripts/build-release-linux.sh           # .deb + .rpm in dist-release/
+```
+
+Publishing a release (signed in-app updates for every platform) is described in
 [docs/releasing.md](docs/releasing.md).
 
 </details>
@@ -674,7 +800,8 @@ Model weights and the upscaler are downloaded from their authors and keep their 
 (see the [FAQ](#faq)).
 
 Kokon builds on [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) by
-leejet, [Qwen-Image 2.1](https://huggingface.co/Qwen/Qwen-Image-2.1) and its Turbo model by the
+leejet (since 0.10 through [our fork](https://github.com/GabrieleLozupone/stable-diffusion.cpp/tree/kokon),
+kept close to upstream), [Qwen-Image 2.1](https://huggingface.co/Qwen/Qwen-Image-2.1) and its Turbo model by the
 Qwen team, DogukanUrker's Turbo GGUF conversions, [Tauri](https://tauri.app) and
 the upscalers by Nmkd (Superscale-SP), Philip Hofmann (4xNomos2 MoSR) and Kim2091 (UltraSharp).
 Thank you.

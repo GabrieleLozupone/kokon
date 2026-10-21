@@ -1,0 +1,13 @@
+# Short links for each channel, so Cloudflare Web Analytics shows where visitors came from (?ref=).
+/yt  /?ref=youtube   302
+/tt  /?ref=tiktok    302
+/ig  /?ref=instagram 302
+/x   /?ref=x         302
+/li  /?ref=linkedin  302
+/ph  /?ref=producthunt 302
+/rd  /?ref=reddit    302
+/fb  /?ref=facebook  302
+/bs  /?ref=bluesky   302
+/th  /?ref=threads   302
+/hn  /?ref=hackernews 302
+/gh  /?ref=github    302

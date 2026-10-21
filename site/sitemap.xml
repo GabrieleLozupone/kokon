@@ -2,12 +2,12 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:video="http://www.google.com/schemas/sitemap-video/1.1" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
   <url>
     <loc>https://kokon.app/</loc>
-    <lastmod>2026-10-11</lastmod>
+    <lastmod>2026-10-21</lastmod>
     <video:video>
-      <video:thumbnail_loc>https://kokon.app/assets/kokon-poster.jpg?v=2</video:thumbnail_loc>
+      <video:thumbnail_loc>https://kokon.app/assets/kokon-poster.jpg?v=3</video:thumbnail_loc>
       <video:title>Kokon: edit photos by describing the change, on your own GPU</video:title>
       <video:description>Kokon in use: creating an image from a sentence, painting an area to remove a scooter, adding a cat, and six more edits made with Qwen-Image 2.1 on a local GPU.</video:description>
-      <video:content_loc>https://kokon.app/assets/kokon.mp4?v=2</video:content_loc>
+      <video:content_loc>https://kokon.app/assets/kokon.mp4?v=3</video:content_loc>
       <video:duration>85</video:duration>
     </video:video>
   </url>
@@ -23,4 +23,9 @@
     <image:image><image:loc>https://kokon.app/assets/prompt-guide/street-multi.webp</image:loc></image:image>
   </url>
   <url><loc>https://kokon.app/mcp-image-generation/</loc><lastmod>2026-10-10</lastmod></url>
+  <url><loc>https://kokon.app/local-ai-photo-editor/</loc><lastmod>2026-10-21</lastmod></url>
+  <url><loc>https://kokon.app/offline-alternative-to-nano-banana/</loc><lastmod>2026-10-21</lastmod></url>
+  <url><loc>https://kokon.app/comfyui-alternative/</loc><lastmod>2026-10-21</lastmod></url>
+  <url><loc>https://kokon.app/remove-objects-from-photos-offline/</loc><lastmod>2026-10-21</lastmod></url>
+  <url><loc>https://kokon.app/press/</loc><lastmod>2026-10-21</lastmod></url>
 </urlset>

@@ -23,7 +23,7 @@ npx tauri dev                     # run the desktop app in development
 powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # installer
 ```
 
-**Mac (Apple Silicon, macOS 26+):** Xcode Command Line Tools, Rust and Node 22+.
+**Mac (Apple Silicon, macOS 15+):** Xcode Command Line Tools, Rust and Node 22+.
 
 ```bash
 bash scripts/dev/mac-dev.sh --check   # check the prerequisites

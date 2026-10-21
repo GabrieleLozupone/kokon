@@ -2,6 +2,8 @@
 
 export type Mode = "auto" | "generate" | "edit" | "inpaint" | "outpaint" | "multi_reference" | "upscale";
 export type ResolvedMode = Exclude<Mode, "auto">;
+/** What made a saved result: a generation mode, or a colour LUT applied to an image. */
+export type RecordMode = ResolvedMode | "lut";
 /** What an inpaint does in the painted area. */
 export type InpaintAction = "edit" | "remove" | "replace" | "add";
 /** Presets of the Turbo model (8 steps, no CFG): ~1 MP, ~1.5K, native 2K. */
@@ -57,6 +59,10 @@ export interface GenerationRequest {
   upscale?: UpscaleSpec | null;
   /** Private mode: kept out of the gallery and the output folder, deleted when it ends. */
   private?: boolean;
+  /** Prompt enhancer: the model's language model rewrites the prompt first (new images, edits, combines). */
+  enhance?: boolean;
+  /** LoRA ids to use (the app always sends its list; omitted = none, as for MCP). */
+  loras?: string[] | null;
 }
 
 export interface WorkingCanvas { source: Size; content: Size; canvas: Size; content_offset: [number, number]; scale: number }
@@ -83,6 +89,9 @@ export interface Plan {
   optimized_for_vram: boolean;
   /** Calibrated to this machine after its first image; 0 = not measured yet. */
   estimated_seconds: number;
+  /** Part of that time the upscaler takes (0..1; known even when the estimate is 0; absent in
+   * plans of older versions). */
+  upscale_share?: number;
   upscaler: string | null;
   /** Upscaler tile size in px (0 in plans of older versions). */
   upscale_tile?: number;
@@ -111,8 +120,13 @@ export interface PipelineRecord {
 export interface GenerationRecord {
   id: string;
   created_at: string;
-  mode: ResolvedMode;
+  mode: RecordMode;
+  /** The prompt the image was made from (the prompt enhancer's when it ran). */
   prompt: string;
+  /** The user's own prompt, when the prompt enhancer rewrote it. */
+  original_prompt?: string | null;
+  /** LoRAs the image was made with. */
+  loras?: AppliedLora[];
   negative_prompt: string;
   seed: number;
   width: number;
@@ -141,7 +155,32 @@ export interface GenerationRecord {
   pipeline?: PipelineRecord | null;
 }
 
-export type JobStatus = "queued" | "starting_backend" | "preparing" | "running" | "saving" | "done" | "failed" | "cancelled";
+/** A LoRA as an image used it. */
+export interface AppliedLora { id: string; name: string; weight: number; trigger_words?: string }
+
+/** One of the user's LoRAs (Settings → LoRA); Kokon's prepared copy is `<dir>/<id>.safetensors`. */
+export interface LoraItem {
+  id: string;
+  name: string;
+  /** The file the user picked. */
+  source: string;
+  weight: number;
+  triggerWords: string;
+  onByDefault: boolean;
+  size: number;
+  warning: string | null;
+  notes: string[];
+  addedAt: string;
+  /** Kokon's copy is still in its LoRA folder. */
+  available: boolean;
+}
+
+/** A .cube LUT in Kokon's list (the user's, most recently used first, then Kokon's presets). */
+export interface LutEntry { name: string; title: string | null; kind: "1d" | "3d"; size: number; builtin: boolean }
+/** How a "lut" result was made (in its `request`). */
+export interface LutInfo { name: string; title?: string | null; intensity: number }
+
+export type JobStatus = "queued" | "starting_backend" | "preparing" | "enhancing_prompt" | "running" | "saving" | "done" | "failed" | "cancelled";
 export type BackendStage = "preparing" | "encoding_images" | "encoding_prompt" | "generating" | "upscaling" | "refining" | "decoding" | "finishing";
 
 export interface JobView {
@@ -156,6 +195,8 @@ export interface JobView {
   started_at: string | null;
   finished_at: string | null;
   prompt: string;
+  /** The prompt enhancer's text: growing while "enhancing_prompt", then the prompt in use. */
+  enhanced_prompt?: string | null;
   plan: Plan | null;
   seed: number | null;
   results: GenerationRecord[];
@@ -181,7 +222,13 @@ export type ServerState = "stopped" | "starting" | "ready" | "error";
 
 export interface StatusResponse {
   service: { version: string; pid: number; uptime_s: number };
-  server: { state: ServerState; owned: boolean; pid: number | null; port: number; model: string | null; model_loaded: boolean; error: AppErrorBody | null };
+  server: {
+    state: ServerState; owned: boolean; pid: number | null; port: number; model: string | null; model_loaded: boolean; error: AppErrorBody | null;
+    /** The loaded engine can write prompts (prompt enhancer); null while no model is loaded. */
+    text_generation?: boolean | null;
+    /** The engine can run an upscaler model (null: not running). */
+    upscale?: boolean | null;
+  };
   profile: { id: string; display_name: string; source: ProfileSource };
   gpu: { name: string; vendor: string; unified: boolean; memory_total_mib: number; memory_used_mib: number; memory_free_mib: number; driver_version: string } | null;
   active_job: JobView | null;
@@ -233,6 +280,8 @@ export interface AppConfig {
   vramReserveGib: number;
   flashAttention: boolean;
   sageAttention: boolean;
+  /** The card is too old for SageAttention (before RTX 30 / compute capability 8.0); detected, read-only. */
+  sageUnsupported?: boolean;
   vaeTileSize: number;
   prefixCacheType: string;
   eagerLoad: boolean;
@@ -253,6 +302,9 @@ export interface AppConfig {
   hardwarePreset: string;
   /** Plan as if the GPU had this much VRAM (MiB); 0 = detected. */
   vramOverrideMib: number;
+  /** Prompt enhancer instructions for new images and for edits; "" = the built-in ones. */
+  enhancerT2iPrompt?: string;
+  enhancerEditPrompt?: string;
   ui: Record<string, unknown>;
 }
 

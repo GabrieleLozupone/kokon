@@ -2,7 +2,7 @@
 // public/img. Everything a scene shows goes through the app's own components.
 import { emptyComposer, type Composer } from "../../../../src/lib/logic";
 import { getState, type SessionItem, type State } from "../mocks/store";
-import type { GenerationRecord, GenerationRequest, InpaintAction, JobView, ResolvedMode } from "../../../../src/lib/types";
+import type { GenerationRecord, GenerationRequest, InpaintAction, JobView, LoraItem, ResolvedMode } from "../../../../src/lib/types";
 
 export const SIZES: Record<string, [number, number]> = {
   street: [2752, 1536],
@@ -26,6 +26,10 @@ export const SIZES: Record<string, [number, number]> = {
 export const PROMPTS = {
   street:
     "A sunny cobblestone street in a small Italian coastal town, a pastel yellow café with lemon trees, a red vintage scooter parked in front, warm late-morning light, 35mm",
+  /** What the user types with Prompt+ on, and the prompt Prompt+ writes from it (the record keeps both). */
+  idea: "sunny italian street, café, red scooter",
+  enhanced:
+    "A 35mm photograph of a sunny cobblestone street in a small Italian coastal town. On the left, a pastel yellow café with green wooden shutters has small round tables and wicker chairs on the pavement, with lemon trees in terracotta pots beside the door. A red vintage scooter stands parked in front of the café, angled toward the viewer, its chrome catching the light. The narrow street climbs gently into the background between warm stone houses with flower boxes on the windows. Warm late-morning sunlight comes from the upper right, casting soft diagonal shadows across the grey cobblestones and lighting the café's facade, with a strip of clear blue sky above the rooftops.",
   remove: "the red scooter",
   add: "a ginger cat sitting on the cobblestones, looking at the camera",
   winter: "Make it a snowy winter night, warm light glowing from the cabin windows, stars in the sky",
@@ -151,8 +155,11 @@ export const PROJECTS: State["projects"] = [
 export function appState(patch: Partial<State> = {}): State {
   return {
     ...getState(),
-    connected: false, // no plan previews (they would need the service)
+    connected: true, // the status capsule reads "Ready"; plan previews never resolve (mocks/api.ts)
     server: { state: "ready", owned: true, error: null },
+    // The loaded engine can write prompts: the composer shows Prompt+.
+    status: { server: { text_generation: true } } as unknown as State["status"],
+    loras: [],
     session: [],
     selected: null,
     projectId: "current",
@@ -170,3 +177,22 @@ export function appState(patch: Partial<State> = {}): State {
     ...patch,
   };
 }
+
+/** The app with Settings open on the LoRA (beta) tab (Settings also reads the service's version). */
+export const settingsState = (patch: Partial<State> = {}): State =>
+  appState({ overlay: "settings", settingsTab: "lora", loras: [LORA], status: { server: { text_generation: true }, service: { version: "0.10.0" } } as unknown as State["status"], ...patch });
+
+/** A LoRA the user has loaded in Settings → LoRA (beta): a stand-in name, no real file. */
+export const LORA: LoraItem = {
+  id: "film-look",
+  name: "Film look",
+  source: String.raw`C:\Users\you\Downloads\film-look.safetensors`,
+  weight: 0.7,
+  triggerWords: "analog film photo",
+  onByDefault: false,
+  size: 84_200_000,
+  warning: null,
+  notes: [],
+  addedAt: "2026-10-20T09:00:00Z",
+  available: true,
+};

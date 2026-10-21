@@ -67,7 +67,7 @@ h1 .soft { color: var(--text-3); }
 .fine { margin-top: 18px; font-size: 13.5px; color: var(--text-3); }
 
 .showreel { position: relative; margin: 72px auto 0; max-width: 1120px; }
-.showreel .frame { position: relative; z-index: 101; /* above the page grain (body::before): a translucent layer over a playing video greys it in Chrome */ border-radius: 22px; overflow: hidden; background: #000 url("assets/kokon-poster.jpg?v=2") center / cover; box-shadow: 0 0 0 1px var(--line-hi), 0 60px 160px rgba(0,0,0,0.75), 0 0 120px rgba(247,246,242,0.06); aspect-ratio: 16 / 9; }
+.showreel .frame { position: relative; z-index: 101; /* above the page grain (body::before): a translucent layer over a playing video greys it in Chrome */ border-radius: 22px; overflow: hidden; background: #000 url("kokon-poster.jpg?v=3") center / cover; box-shadow: 0 0 0 1px var(--line-hi), 0 60px 160px rgba(0,0,0,0.75), 0 0 120px rgba(247,246,242,0.06); aspect-ratio: 16 / 9; }
 .showreel video { width: 100%; height: 100%; object-fit: cover; }
 .reel-link { margin: 18px 0 0; text-align: center; font-size: 14px; }
 .reel-link a { color: var(--text-3); text-decoration: underline; text-underline-offset: 3px; }
@@ -162,6 +162,7 @@ h2 { font-size: clamp(36px, 5.6vw, 68px); line-height: 1.04; letter-spacing: -0.
 /* Requirements */
 .req { margin-top: 48px; display: grid; gap: 16px; grid-template-columns: 1fr; }
 @media (min-width: 900px) { .req { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 1180px) { .req { grid-template-columns: 1fr 1fr 1fr; } }
 .req .card { min-height: 0; }
 .req h3 { display: flex; align-items: center; gap: 12px; }
 .req h3 svg { width: 26px; height: 26px; fill: var(--text); }
@@ -240,6 +241,9 @@ footer a:hover { color: var(--text); }
 .cmp-table td:first-child { color: var(--text-2); width: 30%; }
 .cmp-table td { color: var(--text-3); }
 .cmp-table .us { color: var(--text); font-weight: 560; background: rgba(255,255,255,0.035); }
+.cmp-table.wide { min-width: 900px; font-size: 14.5px; }
+.cmp-table.wide td:first-child { width: 20%; }
+.cmp-table.wide th, .cmp-table.wide td { padding: 14px 16px; }
 .cmp-table thead .us { color: var(--paper); }
 
 /* Article pages (guides) */
@@ -270,5 +274,11 @@ footer a:hover { color: var(--text); }
 .article pre { margin: 14px 0 0; padding: 16px 18px; border-radius: 14px; background: #0f0f0f; box-shadow: inset 0 0 0 1px var(--line); overflow-x: auto; }
 .article pre code { padding: 0; background: none; font-size: 13.5px; line-height: 1.6; color: #d6d6d6; }
 .note { font-size: 15px !important; color: var(--text-3) !important; }
+.article .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 40px 0 0; }
+.article .pair figure { margin: 0; }
+.article .pair figure img { box-shadow: 0 0 0 1px var(--line-hi), 0 20px 60px rgba(0,0,0,0.5); }
+.article .fact-list { list-style: none; padding-left: 0; }
+.article .fact-list li { padding: 10px 0; border-top: 1px solid var(--line); margin: 0; }
+@media (max-width: 640px) { .article .pair { grid-template-columns: 1fr; } }
 .cta-box { margin: 72px 0 40px; padding: 36px; border-radius: var(--radius); background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02)); box-shadow: inset 0 0 0 1px var(--line); }
 .cta-box h2 { margin: 0 !important; }

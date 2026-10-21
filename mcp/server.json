@@ -3,7 +3,7 @@
   "name": "io.github.GabrieleLozupone/kokon",
   "title": "Kokon",
   "description": "Generate and edit images offline with Qwen-Image 2.1 on your GPU. Needs the Kokon desktop app.",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "websiteUrl": "https://kokon.app",
   "repository": {
     "url": "https://github.com/GabrieleLozupone/kokon",
@@ -22,7 +22,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "kokon-mcp",
-      "version": "0.9.1",
+      "version": "0.10.0",
       "runtimeHint": "npx",
       "transport": { "type": "stdio" },
       "environmentVariables": [

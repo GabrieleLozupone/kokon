@@ -1,30 +1,14 @@
-/* The app follows the system theme; videos are rendered in its dark theme. */
-:root {
-  --bg: #161616;
-  --surface: #222222;
-  --surface-2: #2c2c2c;
-  --surface-3: #383838;
-  --border: #2c2c2c;
-  --text: #ececec;
-  --text-2: #a3a3a3;
-  --text-3: #6f6f6f;
-  --invert-bg: #ececec;
-  --invert-text: #111111;
-  --scrim: rgba(22, 22, 22, 0.85);
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 28px rgba(0, 0, 0, 0.45);
-  --checker: #1f1f1f;
-  --sidebar: #1d1d1d;
-  color-scheme: dark;
-}
+/* Videos are rendered in the app's dark theme (data-theme="dark", set by AppWindow.tsx). */
+:root { --sidebar: transparent; }
 html, body, #root { height: auto; }
 body { background: #000; }
-/* No CSS animations in rendered frames: they would not follow the frame clock. */
-.kokon-window *, .kokon-window *::before, .kokon-window *::after { animation-play-state: paused !important; transition: none !important; }
+/* CSS animations follow the frame clock: paused, at --vt seconds (set per frame by AppWindow,
+   100 s + the scene's time), so loops run with the film and one-off entrances have finished.
+   Transitions would not follow the clock: off. */
+.kokon-window *, .kokon-window *::before, .kokon-window *::after { animation-play-state: paused !important; animation-delay: calc(var(--vt, 100) * -1s) !important; transition: none !important; }
 
-.kokon-window { position: relative; overflow: hidden; border-radius: 12px; background: var(--bg); color: var(--text); font-family: var(--font);
+.kokon-window { position: relative; overflow: hidden; border-radius: 12px; background: var(--ground); color: var(--text); font-family: var(--font);
   box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 40px 120px rgba(0,0,0,0.6), 0 12px 40px rgba(0,0,0,0.5); display: flex; flex-direction: column; }
-.win-titlebar { height: 34px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 0 0 12px; background: #1b1b1b; color: #cfcfcf; font-size: 12.5px; }
-.win-titlebar .win-icon { width: 16px; height: 16px; border-radius: 4px; background: #f7f6f2; display: grid; place-items: center; }
-.win-titlebar .spacer { flex: 1; }
-.win-titlebar .ctl { width: 46px; height: 34px; display: grid; place-items: center; color: #9a9a9a; }
 .kokon-window .app { flex: 1; min-height: 0; height: auto; }
+/* The silk thread round the composer shows while the prompt has focus, which a video can't give it. */
+.kokon-window.silk .composer::before { opacity: 1; }

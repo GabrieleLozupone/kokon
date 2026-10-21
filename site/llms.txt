@@ -1,22 +1,27 @@
 # Kokon
 
-> Kokon is a free, open-source desktop app for editing and creating photos with AI on your own computer. You describe the change in plain words ("remove the scooter", "make it a snowy night") and Qwen-Image 2.1 does it locally on your GPU. There is nothing to set up: one installer detects the hardware, downloads and verifies the right model, and picks the resolution and the VRAM/RAM split for every job. Nothing is uploaded.
+> Kokon is a free, open-source desktop app for editing and creating photos with AI on your own computer, like Nano Banana or ChatGPT image editing but private, offline and without limits. Kokon picks and sets up the model for you. You describe the change in plain words ("remove the scooter", "make it a snowy night") and Qwen-Image 2.1 does it locally on your GPU. There is nothing to set up: one installer detects the hardware, downloads and verifies the right model, and picks the resolution and the VRAM/RAM split for every job. Nothing is uploaded.
 
-Key facts (version 0.9.3, October 2026):
+Key facts (version 0.10.0, October 2026):
 
 - Model: Qwen-Image 2.1 Turbo (official 8-step version, 4-bit GGUF) with Qwen3-VL 8B as the text encoder, run through stable-diffusion.cpp. About 12 GB of models, downloaded once and checked with SHA-256.
-- Platforms: Windows 10/11 with an NVIDIA GPU (12 GB VRAM or more, CUDA; 8 GB in beta, about 1-megapixel images). AMD and Intel Arc (12 GB+) through Vulkan, beta. Apple Silicon Macs on macOS 26 (Metal), beta: 16 GB works slowly, 32 GB recommended. No Linux build yet.
+- Platforms: Windows 10/11 with an NVIDIA GPU (12 GB VRAM or more, CUDA; 8 GB in beta, about 1-megapixel images). AMD and Intel Arc (12 GB+) through Vulkan, beta. Apple Silicon Macs on macOS 15 or newer (Metal), beta: 16 GB works slowly, 32 GB recommended. Linux x86-64 (.deb for Ubuntu/Debian/Mint, .rpm for Fedora; CUDA or Vulkan), beta.
 - Speed: RTX 5070 Ti about 24 s per edit at 1.5K and 36 s for a new image at native 2K; RTX 5070 12 GB about 12 s per 1-megapixel image; M2 Pro about 4 minutes per image.
-- Features: create from text, edit with a sentence, paint an area and Change/Remove/Replace/Add only there, combine several images ("image 1", "image 2"), expand beyond the borders (outpainting), AI upscaling, versions with undo and before/after compare, private mode, works offline after setup.
+- Features: Prompt+ (a few words in any language become a detailed prompt, written by the Qwen3-VL text encoder already loaded, inside Kokon's own build of stable-diffusion.cpp, so no second model), your own Qwen-Image 2.1 LoRAs (beta, tested on Windows), create from text, edit with a sentence, paint an area and Change/Remove/Replace/Add only there, combine several images ("image 1", "image 2"), expand beyond the borders (outpainting), AI upscaling, versions with undo and before/after compare, private mode, works offline after setup.
 - For AI agents: built-in MCP server (generate_image, edit_image, inpaint_image, outpaint_image, upscale_image, ...) and a local HTTP API. `npx -y kokon-mcp`; listed in the official MCP Registry as io.github.GabrieleLozupone/kokon.
 - License: the app is AGPL-3.0. The Qwen-Image 2.1 weights are under the Qwen Research License, which does not allow commercial use.
-- Not yet: Linux; code signing (Windows SmartScreen and macOS Gatekeeper warn on first run).
+- Not yet: a headless server / Docker image (planned); code signing (Windows SmartScreen and macOS Gatekeeper warn on first run).
 - Made by Gabriele Lozupone, an AI researcher. Independent project, not affiliated with Alibaba or the Qwen team.
 
 ## Pages
 
 - [Home](https://kokon.app/): what Kokon does, examples, requirements, FAQ
-- [Run Qwen-Image 2.1 locally](https://kokon.app/qwen-image-2-1-local/): step-by-step setup on Windows and Mac without Python or ComfyUI, speed, troubleshooting
+- [Free local AI photo editor](https://kokon.app/local-ai-photo-editor/): why edit photos with AI locally, what Kokon can do (remove, relight, text, replace, restyle, expand), requirements, honest limits
+- [Offline alternative to Nano Banana](https://kokon.app/offline-alternative-to-nano-banana/): Kokon vs Nano Banana / ChatGPT image editing: what's the same, what's different, when the cloud is still better
+- [Simple ComfyUI alternative](https://kokon.app/comfyui-alternative/): what Kokon decides for you (model, files, steps, VRAM), reusing ComfyUI model files, when to stay with ComfyUI
+- [Remove objects from photos offline](https://kokon.app/remove-objects-from-photos-offline/): step-by-step object and people removal on your own GPU
+- [Press kit](https://kokon.app/press/): one-line and short descriptions, key facts, videos, images, logos
+- [Run Qwen-Image 2.1 locally](https://kokon.app/qwen-image-2-1-local/): step-by-step setup on Windows, Mac and Linux without Python or ComfyUI, speed, troubleshooting
 - [Prompt guide](https://kokon.app/prompt-guide/): how to write prompts for Qwen-Image 2.1, with vague vs clear examples (negative prompts, text in images, edit prompts)
 - [Free local image generation for AI agents (MCP)](https://kokon.app/mcp-image-generation/): use Kokon from Claude Code, Cursor or any MCP client
 
@@ -25,4 +30,5 @@ Key facts (version 0.9.3, October 2026):
 - [GitHub repository](https://github.com/GabrieleLozupone/kokon): source, README, issues
 - [Latest release](https://github.com/GabrieleLozupone/kokon/releases/latest): Windows installer and Mac app
 - [npm package kokon-mcp](https://www.npmjs.com/package/kokon-mcp): MCP server launcher
-- [Demo video](https://www.youtube.com/watch?v=ulMVqrhrn-w): 85 seconds
+- [Demo video](https://www.youtube.com/watch?v=y2NAJkZ4vH0): 85 seconds
+- [What's new in 0.10](https://www.youtube.com/watch?v=qGiGXasJJNI): 42 seconds

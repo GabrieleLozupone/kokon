@@ -4,7 +4,7 @@
 #   bash scripts/dev/mac-dev.sh            # build and start the app
 #   bash scripts/dev/mac-dev.sh --check    # only check the prerequisites
 #
-# Needs: macOS 26+, Xcode Command Line Tools, Rust (rustup), Node.js 22+.
+# Needs: macOS 15+ (Sequoia), Xcode Command Line Tools, Rust (rustup), Node.js 22+.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 ROOT="$(pwd)"
@@ -16,7 +16,7 @@ ok() { echo "✓ $1"; }
 [ "$(uname -s)" = Darwin ] || fail "This script is for macOS."
 [ "$(uname -m)" = arm64 ] || fail "Kokon on Mac needs Apple Silicon (M1 or newer)."
 MACOS="$(sw_vers -productVersion)"
-[ "${MACOS%%.*}" -ge 26 ] || fail "macOS $MACOS: the stable-diffusion.cpp build needs macOS 26 (Tahoe) or newer."
+[ "${MACOS%%.*}" -ge 15 ] || fail "macOS $MACOS: Kokon needs macOS 15 (Sequoia) or newer."
 ok "macOS $MACOS on $(sysctl -n machdep.cpu.brand_string), $(( $(sysctl -n hw.memsize) / 1073741824 )) GB unified memory"
 xcode-select -p >/dev/null 2>&1 || fail "Xcode Command Line Tools missing: run  xcode-select --install"
 ok "Xcode Command Line Tools"

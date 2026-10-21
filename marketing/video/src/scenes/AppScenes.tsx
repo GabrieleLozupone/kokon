@@ -10,7 +10,9 @@ import { FullImage } from "../app/FullImage";
 import { imageBox, InpaintOverlay, strokePoints } from "../app/InpaintOverlay";
 import { Backdrop, type Cam, Camera, camAt, camSpeed, Caption, DepthOfField, Dissolve, inOut, kf, Pointer, prog, typed, typingDone, Vignette } from "../app/motion";
 import { Send, Sfx } from "../app/sound";
-import { CREATE, LENGTH, REGION, sceneCues, sentenceAt } from "../app/timeline";
+import { CREATE, FPS, GPU_WORDS, LENGTH, REGION, sceneCues, sentenceAt } from "../app/timeline";
+import { CardMotionContext, type CardMotion } from "../mocks/card";
+import { Hatch } from "../mocks/Cocoon";
 import type { State } from "../mocks/store";
 
 const inpaintReq = (prompt: string, from: string, action: "remove" | "add") => ({
@@ -22,22 +24,21 @@ const inpaintReq = (prompt: string, from: string, action: "remove" | "add") => (
   advanced: {},
   inpaint_action: action,
 });
-const STREET = gen("street", "generate", PROMPTS.street);
-const REMOVED = gen("street-removed", "inpaint", PROMPTS.remove, "street", { request: inpaintReq(PROMPTS.remove, "street", "remove") });
-const CAT = gen("street-cat", "inpaint", PROMPTS.add, "street-removed", { request: inpaintReq(PROMPTS.add, "street-removed", "add") });
+// Made with Prompt+ from a few words: the record keeps the written prompt and the user's own.
+export const STREET = gen("street", "generate", PROMPTS.enhanced, undefined, { original_prompt: PROMPTS.idea, request: { prompt: PROMPTS.idea, mode: "generate", images: [], quality: "quality", resolution: "auto", advanced: {}, enhance: true } });
+export const REMOVED = gen("street-removed", "inpaint", PROMPTS.remove, "street", { request: inpaintReq(PROMPTS.remove, "street", "remove") });
+export const CAT = gen("street-cat", "inpaint", PROMPTS.add, "street-removed", { request: inpaintReq(PROMPTS.add, "street-removed", "add") });
 const STREET_PROJECT = { id: "current", title: "Italian street café", updatedAt: Date.now() - 20_000, cover: "gen:street", count: 1 };
 const withProject = (count: number, cover: string): State["projects"] => [{ ...STREET_PROJECT, count, cover }, ...PROJECTS];
 const proj = (n: number, cover: string) => ({ projects: withProject(n, cover), projectId: "current" });
 
-const SEND: [number, number] = [1232, 857];
+export const SEND: [number, number] = [1232, 857];
 /** The composer, close: a macro shot past the window's bottom edge, sharp on the composer only. */
-const COMPOSER_CAM: Cam = { x: 850, y: 742, s: 1.8 };
-const COMPOSER_FOCUS: [number, number] = [520, 830];
+const COMPOSER_CAM: Cam = { x: 850, y: 630, s: 1.8 };
+const COMPOSER_FOCUS: [number, number] = [690, 1010];
 /** The empty project's composer is shorter and lower: centre it. */
-const PROMPT_CAM: Cam = { x: 850, y: 650, s: 1.7 };
-/** Composer shots look at the window from slightly below and to the side. */
-const ANGLE = { x: 16, y: -14 };
-const PROMPT_FOCUS: [number, number] = [780, 1000];
+export const PROMPT_CAM: Cam = { x: 850, y: 615, s: 1.7 };
+const PROMPT_FOCUS: [number, number] = [800, 1050];
 /** Where the stage image sits once a result is selected (window px), to fly into it. */
 const STAGE_IMG = { x: 850, y: 319, w: 820 };
 
@@ -45,7 +46,7 @@ const STAGE_IMG = { x: 850, y: 319, w: 820 };
 const stepAt = (f: number, start: number, every: number) => Math.max(0, Math.min(8, Math.floor((f - start) / every) + 1));
 
 /** Big centred words that rise in with the voice and leave with the next ones. */
-function Words({ items, end }: { items: { text: string; at: number }[]; end: number }) {
+export function Words({ items, end }: { items: { text: string; at: number }[]; end: number }) {
   const f = useCurrentFrame();
   return (
     <>
@@ -70,94 +71,143 @@ function Words({ items, end }: { items: { text: string; at: number }[]; end: num
 const Tag = ({ text, start, end }: { text: string; start: number; end: number }) => <Caption title={text} start={start} end={end} y={930} size={48} />;
 
 // ---------------------------------------------------------------------------------------
-// Create: the window arrives, a sentence is typed, the image is made, and the camera flies
-// into it. "No cloud. No account. No subscription." over the finished picture.
+// Create: the window arrives and a few words are typed; Prompt+ on, Send. Cut to the card:
+// Prompt+ writes the full prompt, the percentage takes over the cocoon, the image hatches out
+// of the logo, then fills the frame. "No cloud. No account. No subscription." over it.
 // ---------------------------------------------------------------------------------------
 export const CREATE_FRAMES = LENGTH.create;
 
+/** The card in two still shots: the whole card while Prompt+ writes (a slow push), then, from
+ * the percentage on, closer, with the logo where the full-frame logo the image hatches from
+ * sits (same centre and size, measured), so the cut between them reads as one logo. */
+export const CARD_CAM: Cam = { x: 852, y: 360, s: 1.55 };
+const CARD_CAM_END = 1.6;
+export const LOGO_CAM: Cam = { x: 848, y: 364, s: 1.756 };
+export const PILL: [number, number] = [840, 853];
+
+/** When things happen in a Prompt+ shot (scene frames): typing, the Prompt+ pill, Send, the
+ * prompt being written and leaving, the logo forming, the hatch. Create uses CREATE; the 0.10
+ * update video its own. */
+export type PromptPlusTimes = Pick<typeof CREATE, "ask" | "pill" | "send" | "job" | "write" | "written" | "leave" | "form" | "done" | "hatch"> & { typeCps?: number };
+
+/** The job's percentage at scene frame `f`: the image starts while Prompt+ is still on screen. */
+const pctFor = (C: PromptPlusTimes) => (f: number) => kf(f, [[C.write, 0], [C.form, 92], [C.done, 100]]);
+
+/** The job card's clock at scene frame `f`. */
+export function promptPlusCard(f: number, C: PromptPlusTimes): CardMotion {
+  const pct = pctFor(C);
+  // Prompt+ writes the whole prompt between `write` and `written` (sped up, like the image).
+  const cps = (PROMPTS.enhanced.length * FPS) / (C.written - C.write);
+  return {
+    t: Math.max(0, f - C.job) / FPS,
+    pctAt: (t) => pct(C.job + t * FPS),
+    chars: Math.max(0, f - C.write) * (cps / FPS),
+    cps,
+    leave: prog(f, C.leave, 21, (x) => x),
+    hatchMs: f >= C.hatch ? ((f - C.hatch) * 1000) / FPS : null,
+  };
+}
+
+/** The window at scene frame `t`: the words typed, the job with Prompt+ writing, then the image. */
+export function promptPlusView(t: number, C: PromptPlusTimes, card: CardMotion, size: { width: number; height: number } = { width: 1440, height: 900 }) {
+  const base = appState();
+  const cpsType = C.typeCps ?? 32;
+  const request = { prompt: PROMPTS.idea, mode: "generate" as const, images: [], quality: "quality" as const, resolution: "auto" as const, advanced: {}, enhance: true };
+  let state: State;
+  const composer = { ...base.composer, enhance: t >= C.pill };
+  if (t < C.job) {
+    state = appState({ composer: { ...composer, prompt: typed(PROMPTS.idea, t, C.ask + 2, cpsType) } });
+  } else if (t < C.hatch) {
+    const pct = pctFor(C)(t);
+    const j = jobItem("j-street", "generate", PROMPTS.idea, "street", undefined, Math.min(8, Math.floor((pct / 100) * 8)));
+    const writing = t < C.write + 40;
+    // The prompt is written while the image is being made; it stays on screen until it leaves.
+    const job = { ...j.job, status: writing ? ("enhancing_prompt" as const) : j.job.status, step: writing ? null : j.job.step, enhanced_prompt: t < C.leave + 21 ? PROMPTS.enhanced : null };
+    state = appState({ session: [{ ...j.item, request }], selected: "j-street", jobs: { "j-street": job }, composer, ...proj(1, "gen:street") });
+  } else {
+    state = appState({ session: [genItem(STREET)], selected: "street", composer, ...proj(1, "gen:street") });
+  }
+  return <AppWindow state={state} {...size} card={card} />;
+}
+
 export function Create() {
   const f = useCurrentFrame();
-  const base = appState();
   const cues = sceneCues("create");
-  const T0 = CREATE.ask;
-  const T1 = typingDone(PROMPTS.street, T0, 80);
-  const SEND_AT = CREATE.send;
-  const JOB = SEND_AT + 2;
-  const DONE = CREATE.done;
-  const FLY = CREATE.flyIn;
-  const FULL = FLY + 22;
-
-  const view = (t: number) => {
-    let state: State;
-    if (t < JOB) {
-      state = appState({ composer: { ...base.composer, prompt: typed(PROMPTS.street, t, T0, 80) } });
-    } else if (t < DONE) {
-      const j = jobItem("j-street", "generate", PROMPTS.street, "street", undefined, stepAt(t, JOB + 6, 6));
-      state = appState({ session: [j.item], selected: "j-street", jobs: { "j-street": j.job }, ...proj(1, "gen:street") });
-    } else {
-      state = appState({ session: [genItem(STREET)], selected: "street", ...proj(1, "gen:street") });
-    }
-    return <AppWindow state={state} width={1440} height={900} busy={t >= JOB && t < DONE} />;
-  };
+  const C = CREATE;
+  const T0 = C.ask + 2;
+  const T1 = typingDone(PROMPTS.idea, T0, 32);
+  const card = promptPlusCard(f, C);
+  const view = (t: number) => promptPlusView(t, C, card);
 
   const enter = prog(f, 0, 34);
-  const camKeys: [number, Cam][] = [
+  const typingCam = camAt(f, [
     [0, { x: 720, y: 450, s: 1.02 }],
     [40, { x: 720, y: 450, s: 1.1 }],
     [92, PROMPT_CAM],
-    [SEND_AT, { ...PROMPT_CAM, s: 1.86 }],
-    [SEND_AT + 30, { x: 850, y: 330, s: 1.3 }],
-    [FLY, { x: 850, y: 325, s: 1.34 }],
-    [FULL, { x: STAGE_IMG.x, y: STAGE_IMG.y, s: 1920 / STAGE_IMG.w }],
-  ];
-  const at = (t: number) => camAt(t, camKeys);
-  const cam = at(f);
-  // Sharp on the composer while typing; the whole window once the image is being made.
-  const dof = prog(f, 70, 20) * (1 - prog(f, SEND_AT + 2, 16));
+    [C.send, { ...PROMPT_CAM, s: 1.86 }],
+  ]);
+  const onCard = f >= C.job;
+  const cam = !onCard ? typingCam : f >= C.closer ? LOGO_CAM : { ...CARD_CAM, s: CARD_CAM.s + (CARD_CAM_END - CARD_CAM.s) * prog(f, C.job, C.closer - C.job, (x) => x) };
+  // Sharp on the composer while typing; the whole window on the card.
+  const dof = onCard ? 0 : prog(f, 70, 20);
   const app = (
-    <Camera cam={cam} tilt={(1 - enter) * 16} lift={(1 - enter) * 260} opacity={enter} free={f > 60 && f < SEND_AT + 30} turn={{ x: ANGLE.x * dof, y: ANGLE.y * dof }} blur={f > FLY ? camSpeed(f, at) * 0.12 : 0}>
-      <Dissolve frame={f} cuts={[JOB, DONE]} view={view} dur={10} />
-      <Pointer
-        path={[
-          [56, 980, 700],
-          [88, 640, 812],
-          [112, 1080, 880],
-          [SEND_AT - 16, 1120, 880],
-          [SEND_AT - 2, SEND[0], SEND[1]],
-          [SEND_AT + 24, 1260, 700],
-        ]}
-        clicks={[90, SEND_AT]}
-        hideBefore={56}
-        hideAfter={SEND_AT + 26}
-      />
+    <Camera cam={cam} tilt={(1 - enter) * 16} lift={(1 - enter) * 260} opacity={enter} free={f > 60 && !onCard}>
+      {view(f)}
+      {!onCard && (
+        <Pointer
+          path={[
+            [56, 980, 700],
+            [88, 640, 812],
+            [112, 900, 880],
+            [C.pill - 2, PILL[0], PILL[1]],
+            [C.send - 12, 1120, 880],
+            [C.send - 1, SEND[0], SEND[1]],
+          ]}
+          clicks={[90, C.pill, C.send]}
+          hideBefore={56}
+        />
+      )}
     </Camera>
   );
-  const full = prog(f, FULL - 6, 8, inOut);
-  const words = cues.find((c) => c.from === 2)!;
+  // Once the card has formed the logo: a hard cut to the same logo filling the frame, and the
+  // image hatches out of it full frame (the app's hatching, on the frame instead of the stage).
+  const full = f >= C.hatch ? 1 : 0;
+  const words = cues.find((c) => c.from === 3)!;
+  // The captions follow the voice: "Prompt Plus writes the full prompt," then "and your graphics
+  // card makes it."
+  const prompting = cues.find((c) => c.from === 1)!;
+  const writesAt = sentenceAt(prompting, 2);
+  const gpuAt = writesAt + Math.round(GPU_WORDS * FPS);
   return (
     <AbsoluteFill>
       <Backdrop />
-      {dof > 0.01 ? <DepthOfField focus={PROMPT_FOCUS} blur={7 * dof}>{app}</DepthOfField> : app}
-      {f >= FULL - 6 && (
-        <div style={{ position: "absolute", inset: 0, opacity: full }}>
-          <FullImage before="street" push={1 + prog(f, FULL, LENGTH.create - FULL, (x) => x) * 0.06} dim={0.25 * prog(f, CREATE.promises - 8, 12)} />
+      {!full && (dof > 0.01 ? <DepthOfField focus={PROMPT_FOCUS} blur={7 * dof}>{app}</DepthOfField> : app)}
+      {full > 0 && (
+        // Its own stacking context: the hatch layers (z-index 1-2) stay under the words.
+        <div style={{ position: "absolute", inset: 0, isolation: "isolate" }}>
+          <CardMotionContext.Provider value={card}>
+            <Hatch aspect={1920 / 1080} fill>
+              <FullImage before="street" push={1 + prog(f, C.full, LENGTH.create - C.full, (x) => x) * 0.05} dim={0.25 * prog(f, C.promises - 8, 12)} />
+            </Hatch>
+          </CardMotionContext.Provider>
         </div>
       )}
-      <Vignette strength={prog(f, JOB, 12) * (1 - full)} />
-      <Caption title="Made on your own GPU." sub="Qwen-Image 2.1 Turbo · 2752×1536 in 38 s on an RTX 5070 Ti (sped up here)" start={JOB + 8} end={FLY} size={48} />
+      <Vignette strength={onCard && f < C.closer ? 0.7 : 0} />
+      <Tag text="Prompt+ writes the prompt." start={writesAt} end={gpuAt - 2} />
+      <Caption title="Made on your own GPU." sub="Qwen-Image 2.1 Turbo · Prompt+ ~2 s, then 2752×1536 in 38 s on an RTX 5070 Ti (sped up here)" start={gpuAt} end={C.hatch} y={930} size={48} />
       <Words
         items={[
-          { text: "No cloud.", at: sentenceAt(words, 2) },
-          { text: "No account.", at: sentenceAt(words, 3) },
-          { text: "No subscription.", at: sentenceAt(words, 4) },
+          { text: "No cloud.", at: sentenceAt(words, 3) },
+          { text: "No account.", at: sentenceAt(words, 4) },
+          { text: "No subscription.", at: sentenceAt(words, 5) },
         ]}
         end={LENGTH.create - 4}
       />
       <Sfx name="click" at={90} />
       <Sfx name="typing" at={T0} dur={T1 - T0} />
-      <Send at={SEND_AT} />
-      <Sfx name="reveal" at={DONE} variant={0} />
-      <Sfx name="whoosh" at={FLY - 4} gain={0.8} />
+      <Sfx name="click" at={C.pill} />
+      <Send at={C.send} />
+      <Sfx name="reveal" at={C.hatch + 6} variant={0} />
     </AbsoluteFill>
   );
 }
@@ -222,7 +272,7 @@ export function Region() {
     const cam = { ...COMPOSER_CAM, s: COMPOSER_CAM.s + t * 0.0006 };
     return (
       <DepthOfField focus={COMPOSER_FOCUS}>
-        <Camera cam={cam} free turn={ANGLE}>
+        <Camera cam={cam} free>
           <AppWindow state={state} width={1440} height={900} />
           <Pointer
             path={[
@@ -268,7 +318,7 @@ export function Region() {
       {(f >= R.removeCut && f < R.removeShot) || (f >= R.addCut && f < R.addShot) ? (
         <>
           <Vignette strength={0.55} side="top" reach={0.6} />
-          <Vignette strength={1} reach={0.42} />
+          <Vignette strength={0.6} reach={0.15} />
         </>
       ) : null}
       <Tag text="Paint." start={R.paint} end={R.removeCut} />

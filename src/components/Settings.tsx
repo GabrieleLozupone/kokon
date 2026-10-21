@@ -1,20 +1,24 @@
-import { Activity, Copy, Cpu, Download, FolderOpen, HardDrive, RefreshCw, RotateCcw, Settings2, Trash2, X } from "lucide-react";
+import { Activity, Copy, Cpu, Download, FolderOpen, HardDrive, Layers, RefreshCw, RotateCcw, Settings2, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { api } from "../lib/api";
 import { native } from "../lib/native";
-import { getState, openModelSetup, refreshStatus, setState, startTour, toastError, toastInfo } from "../lib/store";
+import { getState, openModelSetup, refreshStatus, setState, startTour, toastError, toastInfo, useStore } from "../lib/store";
 import { formatBytes } from "../lib/logic";
 import { setThemeChoice, themeChoice, type ThemeChoice } from "../lib/theme";
+import { LoraSettings } from "./LoraSettings";
 import { UpscalerControls } from "./Upscalers";
 import { WHATS_NEW_VERSION } from "./WhatsNew";
 import type { AppConfig, Check, ModelProfile, ModelsStatus, SetupReport, TextEncoderPlacement } from "../lib/types";
 import { IconButton, Seg, Switch } from "./ui";
 import { autoCheckEnabled, checkForUpdate } from "../lib/updates";
 
-type Tab = "general" | "models" | "performance" | "diagnostics";
+const REPO_URL = "https://github.com/GabrieleLozupone/kokon";
 
-function PathField(props: { label: string; value: string; onChange: (v: string) => void; folder?: boolean; extensions?: string[] }) {
+type Tab = "general" | "models" | "lora" | "performance" | "diagnostics";
+const TABS: Tab[] = ["general", "models", "lora", "performance", "diagnostics"];
+
+function PathField(props: { label: string; value: string; onChange: (v: string) => void; folder?: boolean; extensions?: string[]; open?: boolean }) {
   return (
     <label className="field">
       <span>{props.label}</span>
@@ -29,8 +33,40 @@ function PathField(props: { label: string; value: string; onChange: (v: string) 
         >
           Browse
         </button>
+        {props.open && (
+          <button className="btn" title="Open this folder" onClick={() => native.openFolder(props.value).catch(toastError)}>
+            <FolderOpen size={14} /> Open
+          </button>
+        )}
       </div>
     </label>
+  );
+}
+
+/** One of the prompt enhancer's instructions: the user's text, or the built-in one ("" saved). */
+function EnhancerPrompt(props: { label: string; help: string; value: string; builtin: string | null; max: number; onChange: (v: string) => void }) {
+  const custom = props.value.trim() !== "" && props.value.trim() !== props.builtin?.trim();
+  return (
+    <div className="field">
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ flex: 1 }}>
+          {props.label} <span className="muted">· {custom ? "your instructions" : "built-in"}</span>
+        </span>
+        <button className="btn" disabled={!custom} onClick={() => props.onChange("")} title="Go back to Kokon's built-in instructions">
+          <RotateCcw size={13} /> Restore default
+        </button>
+      </div>
+      <textarea
+        className="input"
+        rows={9}
+        spellCheck={false}
+        maxLength={props.max}
+        value={props.value || props.builtin || ""}
+        placeholder={props.builtin === null ? "Loading…" : ""}
+        onChange={(e) => props.onChange(e.target.value.trim() === props.builtin?.trim() ? "" : e.target.value)}
+      />
+      <span className="muted">{props.help}</span>
+    </div>
   );
 }
 
@@ -77,7 +113,7 @@ function Diagnostics() {
         >
           <RotateCcw size={14} /> {busy ? "Restarting…" : "Restart server"}
         </button>
-        <button className="btn" onClick={async () => native.openFolder(`${await native.dataFolder()}\\logs`).catch(toastError)}>
+        <button className="btn" onClick={async () => native.openFolder(await native.dataFolder().then((d) => `${d}${d.includes("\\") ? "\\" : "/"}logs`)).catch(toastError)}>
           <FolderOpen size={14} /> Logs
         </button>
       </div>
@@ -87,7 +123,12 @@ function Diagnostics() {
 }
 
 export function Settings() {
-  const [tab, setTab] = useState<Tab>("general");
+  // Opened on a tab by `openSettings` (e.g. the LoRA badge), else General.
+  const [tab, setTab] = useState<Tab>(() => {
+    const t = getState().settingsTab as Tab | null;
+    return t && TABS.includes(t) ? t : "general";
+  });
+  useEffect(() => setState({ settingsTab: null }), []);
   const [cfg, setCfg] = useState<AppConfig | null>(null);
   const [devices, setDevices] = useState<[string, string][]>([]);
   const [upscaler, setUpscaler] = useState<Check | null>(null);
@@ -96,9 +137,12 @@ export function Settings() {
   const [legacy, setLegacy] = useState<{ files: string[]; bytes: number } | null>(null);
   const [dirty, setDirty] = useState(false);
   const [theme, setTheme] = useState(themeChoice);
+  const [enhancerDefaults, setEnhancerDefaults] = useState<{ t2i: string; edit: string; max_chars: number } | null>(null);
+  const textGeneration = useStore((s) => s.status?.server.text_generation);
 
   useEffect(() => {
     api.config().then(setCfg, toastError);
+    api.enhancerDefaults().then(setEnhancerDefaults, () => {});
     api.setup().then(
       (r: SetupReport) => {
         setDevices(r.devices);
@@ -195,6 +239,7 @@ export function Settings() {
   const nav: [Tab, string, React.ReactNode][] = [
     ["general", "General", <Settings2 size={16} key="g" />],
     ["models", "Models", <HardDrive size={16} key="m" />],
+    ["lora", "LoRA (beta)", <Layers size={16} key="l" />],
     ["performance", "Performance", <Cpu size={16} key="p" />],
     ["diagnostics", "Diagnostics", <Activity size={16} key="d" />],
   ];
@@ -209,7 +254,7 @@ export function Settings() {
             </button>
           ))}
           <span style={{ flex: 1 }} />
-          {tab !== "diagnostics" && (
+          {tab !== "diagnostics" && tab !== "lora" && (
             <button className="btn primary" style={{ justifyContent: "center" }} disabled={!dirty} onClick={save}>
               Save
             </button>
@@ -225,7 +270,7 @@ export function Settings() {
 
           {tab === "general" && (
             <>
-              <PathField label="Save images to" value={cfg.outputDir} folder onChange={(v) => set({ outputDir: v })} />
+              <PathField label="Save images to" value={cfg.outputDir} folder open onChange={(v) => set({ outputDir: v })} />
               <div className="field">
                 <span>Appearance</span>
                 <Seg<ThemeChoice>
@@ -280,6 +325,41 @@ export function Settings() {
                   Start
                 </button>
               </div>
+              <div className="field-row">
+                <span>Kokon is open source: code, issues and discussions are on GitHub</span>
+                <button className="btn" onClick={() => native.openLink(REPO_URL).catch(toastError)}>
+                  Open GitHub
+                </button>
+              </div>
+
+              <h4 style={{ margin: "14px 0 0", fontSize: 14, fontWeight: 600 }}>Prompt enhancer</h4>
+              <span className="muted" style={{ marginTop: -8 }}>
+                With Enhance on (next to the prompt), the model's own language model rewrites your prompt before making the image, following these instructions. It
+                always writes in English.
+                {textGeneration === false && " The inference engine in use cannot write prompts: Enhance appears with an engine that can."}
+              </span>
+              <div className="setting-card" style={{ alignItems: "flex-start" }}>
+                <span className="muted">
+                  Kokon was tested only with its built-in instructions. Your own can make results worse, or make the model answer with something that is not a prompt; Restore
+                  default brings the built-in ones back.
+                </span>
+              </div>
+              <EnhancerPrompt
+                label="New images"
+                help="Used when creating an image from the prompt alone."
+                value={cfg.enhancerT2iPrompt ?? ""}
+                builtin={enhancerDefaults?.t2i ?? null}
+                max={enhancerDefaults?.max_chars ?? 20000}
+                onChange={(v) => set({ enhancerT2iPrompt: v })}
+              />
+              <EnhancerPrompt
+                label="Edits"
+                help="Used when editing or combining images; the model sees the images."
+                value={cfg.enhancerEditPrompt ?? ""}
+                builtin={enhancerDefaults?.edit ?? null}
+                max={enhancerDefaults?.max_chars ?? 20000}
+                onChange={(v) => set({ enhancerEditPrompt: v })}
+              />
             </>
           )}
 
@@ -493,10 +573,13 @@ export function Settings() {
                 <Switch on={cfg.flashAttention} onChange={(v) => set({ flashAttention: v })} />
               </div>
               {cfg.gpuBackend === "cuda" && (
-                <div className="field-row">
-                  <span>SageAttention (faster sampling)</span>
-                  <Switch on={cfg.sageAttention} onChange={(v) => set({ sageAttention: v })} />
-                </div>
+                <>
+                  <div className="field-row">
+                    <span>SageAttention (faster sampling)</span>
+                    <Switch on={cfg.sageAttention && !cfg.sageUnsupported} disabled={cfg.sageUnsupported} onChange={(v) => set({ sageAttention: v })} />
+                  </div>
+                  {cfg.sageUnsupported && <span className="muted" style={{ marginTop: -10 }}>Needs an RTX 30 series or newer card; off on this one.</span>}
+                </>
               )}
               <label className="field-row">
                 <span>VAE tile size (px, 0 = off)</span>
@@ -552,6 +635,7 @@ export function Settings() {
             </>
           )}
 
+          {tab === "lora" && <LoraSettings />}
           {tab === "diagnostics" && <Diagnostics />}
         </div>
       </div>

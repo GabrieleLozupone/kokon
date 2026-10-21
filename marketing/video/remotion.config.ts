@@ -23,6 +23,15 @@ Config.overrideWebpackConfig((c) => {
     });
   return {
     ...c,
+    module: {
+      ...c.module,
+      rules: [
+        // Vite's "?raw" (the mark's SVG source, inlined by the wordmark) as webpack's asset/source.
+        ...(c.module?.rules ?? []).map((r) => (r && typeof r === "object" && r.type === "asset/resource" ? { ...r, resourceQuery: { not: [/raw/] } } : r)),
+        { resourceQuery: /raw/, type: "asset/source" },
+        { test: /\.tsx?$/, include: app, enforce: "pre" as const, use: path.resolve(root, "loaders/vite-glob.cjs") },
+      ],
+    },
     resolve: {
       ...c.resolve,
       alias: {
@@ -46,6 +55,8 @@ Config.overrideWebpackConfig((c) => {
       swap(/^(\.\.?\/)+(lib\/)?api$/, "api.ts"),
       swap(/^(\.\.?\/)+(lib\/)?native$/, "native.ts"),
       swap(/^\.\/Compare$/, "Compare.tsx"),
+      swap(/^\.\/Cocoon$/, "Cocoon.tsx"),
+      swap(/^\.\/jobMotion$/, "jobMotion.ts"),
     ],
   };
 });

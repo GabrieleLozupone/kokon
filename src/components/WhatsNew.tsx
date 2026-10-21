@@ -1,4 +1,4 @@
-import { CircleAlert, Cpu, FolderOpen, Layers, Palette, Sparkles, ZoomIn } from "lucide-react";
+import { CircleAlert, Layers, ListChecks, Paintbrush, WandSparkles, Wrench, Zap } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { formatBytes, installProgress, installStep, installTimeLeft } from "../lib/logic";
@@ -7,38 +7,38 @@ import type { GpuBackend, InstallItem, InstallStatus, ModelsStatus } from "../li
 import { KokonMark } from "./Welcome";
 
 /** The release these notes describe. Shown once to people updating from an earlier version. */
-export const WHATS_NEW_VERSION = "0.9.3";
+export const WHATS_NEW_VERSION = "0.10.0";
 
 const NEWS = [
   {
-    icon: Sparkles,
-    title: "Cleaner images",
-    text: "A new image decoder removes the fine grid pattern that showed on skin, hair and smooth areas. Same speed, same colours.",
-  },
-  {
-    icon: FolderOpen,
-    title: "Use the model files you have",
-    text: "Already downloaded Qwen-Image 2.1 for ComfyUI or another app? Point Kokon at those files instead of downloading them again.",
-  },
-  {
-    icon: ZoomIn,
-    title: "Zoom and pan",
-    text: "Zoom into images in full screen and in the inpaint editor. The painted area now shows on the image while it is being edited.",
-  },
-  {
-    icon: Cpu,
-    title: "Pick your graphics card",
-    text: "On computers with more than one GPU, setup lets you choose which one runs the model and sizes the preset for it.",
-  },
-  {
-    icon: Palette,
-    title: "Light and dark",
-    text: "Settings → General → Appearance: System, Light or Dark. Press ? for the keyboard shortcuts.",
+    icon: WandSparkles,
+    title: "Prompt+",
+    text: "Turn on Prompt+ next to Quality: from a short idea in any language, the model writes a detailed prompt first (for edits it looks at your photo). You watch it being written. No second model to download.",
   },
   {
     icon: Layers,
-    title: "Coming in 0.9.4: LoRA",
-    text: "Add LoRAs to your edits, with a weight for each. A curated list of LoRAs tested with Kokon, one click to download, and your own files too.",
+    title: "Your own LoRAs (beta)",
+    text: "Load Qwen-Image 2.1 LoRAs in Settings → LoRA, then turn them on for each project with the LoRA button, up to 3 at once. Tested on Windows so far: tell us how it goes on Mac and Linux.",
+  },
+  {
+    icon: Paintbrush,
+    title: "A new look",
+    text: "A calmer, deeper design in light and dark, with Kokon's own window bar. Settings is now at the bottom of the sidebar.",
+  },
+  {
+    icon: ListChecks,
+    title: "Clean up in one go",
+    text: "Press Select above your projects or in All images to remove several at once (or Ctrl/⌘-click, Shift-click for a range).",
+  },
+  {
+    icon: Zap,
+    title: "Faster on big cards",
+    text: "With 24 GB of graphics memory or more, Fast images (and Balanced from 32 GB) finish a little sooner. Thanks to giveen.",
+  },
+  {
+    icon: Wrench,
+    title: "Fixes",
+    text: "On Linux and Mac a crashed engine no longer leaves an image waiting forever (thanks to giveen). Kokon starts even if Windows reserves its ports. One percentage now covers the whole job.",
   },
 ];
 

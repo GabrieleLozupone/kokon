@@ -19,7 +19,7 @@ function engineOptions(vendor: string | null): { value: GpuBackend; label: strin
 
 function engineNote(b: GpuBackend, nvidia: boolean): string {
   if (b === "cuda") return "NVIDIA's CUDA build: the fastest and tested path. Recommended.";
-  if (b === "metal") return "Beta. Runs on the Mac's GPU through Metal. Needs macOS 26 or newer.";
+  if (b === "metal") return "Beta. Runs on the Mac's GPU through Metal. Needs macOS 15 or newer.";
   return nvidia
     ? "The same model through Vulkan: works on NVIDIA, but slower than CUDA (no SageAttention) and the first image takes longer. Useful to try the AMD / Intel path; both engines can stay installed."
     : "Beta. AMD and Intel cards run the model through Vulkan, with the graphics driver you already have. Not yet tested on a real AMD or Intel card: please report how it goes.";
@@ -389,8 +389,8 @@ export function Setup() {
 
         {setupDone && engineUpdate?.update_needed && engineMissing.length > 0 && !running && (
           <div className="setup-note">
-            This version of Kokon enlarges images with Superscale-SP by default, adds an upscaler strength slider and the experimental MoSR model. It needs the updated engine:
-            press Install to download it ({formatBytes(engineMissing.reduce((a, i) => a + Math.max(0, i.size - i.received), 0))}). Until then, images are enlarged with Lanczos.
+            This version of Kokon brings Prompt+, which needs Kokon&apos;s updated engine: press Install to download it (
+            {formatBytes(engineMissing.reduce((a, i) => a + Math.max(0, i.size - i.received), 0))}). Until then, everything else works as before and Prompt+ stays hidden.
           </div>
         )}
 

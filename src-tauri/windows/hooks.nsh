@@ -2,7 +2,8 @@
 ;  - Before installing, updating or uninstalling: stop the background processes (MCP servers,
 ;    kokon-service, sd-server) that keep Kokon's files locked. Tauri itself only closes Kokon.exe.
 ;  - After uninstalling: offer to delete the downloaded models and app data. Images in the
-;    output folder (Pictures\Kokon) are never touched.
+;    output folder (Pictures\Kokon) are never touched. The WebView's cache (hundreds of MB,
+;    rebuilt on demand) always goes; its small UI preferences go with the app data.
 
 ; This folder, captured now (inside a macro, __FILEDIR__ is the file that uses it).
 !define KOKON_HOOKS_DIR "${__FILEDIR__}"
@@ -38,6 +39,13 @@
   ${AndIf} $PassiveMode <> 1
   ${AndIfNot} ${Silent}
     SetShellVarContext current
+    ; WebView2 user data folder (named after the bundle identifier).
+    RMDir /r "$LOCALAPPDATA\app.kokon.desktop\EBWebView\Default\Cache"
+    RMDir /r "$LOCALAPPDATA\app.kokon.desktop\EBWebView\Default\Code Cache"
+    RMDir /r "$LOCALAPPDATA\app.kokon.desktop\EBWebView\Default\GPUCache"
+    ${IfNot} ${FileExists} "$LOCALAPPDATA\KokonData\*.*"
+      RMDir /r "$LOCALAPPDATA\app.kokon.desktop"
+    ${EndIf}
     ${If} ${FileExists} "$LOCALAPPDATA\KokonData\*.*"
       ${GetSize} "$LOCALAPPDATA\KokonData" "/S=0M /G=1" $0 $1 $2
       IntOp $1 $0 / 1024
@@ -49,6 +57,7 @@
       RMDir /r "$LOCALAPPDATA\KokonData"
       RMDir /r "$LOCALAPPDATA\QwenLocalStudio"
       RMDir /r "$APPDATA\Kokon"
+      RMDir /r "$LOCALAPPDATA\app.kokon.desktop"
       ${If} ${FileExists} "$LOCALAPPDATA\KokonData\*.*"
         MessageBox MB_OK|MB_ICONEXCLAMATION "Some files could not be deleted. You can delete this folder yourself:$\r$\n$LOCALAPPDATA\KokonData"
       ${EndIf}

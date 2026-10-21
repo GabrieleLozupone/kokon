@@ -28,3 +28,4 @@ __pycache__/
 /docs/launch-day-prs.md
 /docs/engineering-writeup-outline.md
 /mcp/LICENSE
+/src-tauri/binaries/kokon-*

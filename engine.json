@@ -15,5 +15,39 @@
     "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-964-1d0a58a/sd-master-1d0a58a-bin-Darwin-macOS-26.6.2-arm64.zip",
     "size": 35213648,
     "sha256": "45001839e925f98ecd18ef5251725f74cff874eeac4599f1136acba65b26911e"
+  },
+  "metal_macos15": {
+    "url": "https://github.com/GabrieleLozupone/stable-diffusion.cpp/releases/download/kokon-macos-1d0a58a/sd-master-1d0a58a-bin-Darwin-macOS-15.0-arm64.zip",
+    "size": 35215022,
+    "sha256": "d9b2d6885e0b0cdbdb5a1acd629cf0191e748c2806d3e529d4a6ae1a60bd207e"
+  },
+  "kokon": {
+    "tag": "kokon-992-dfaab76",
+    "min_app": "0.10.0",
+    "win_cuda": {
+      "url": "https://github.com/GabrieleLozupone/stable-diffusion.cpp/releases/download/kokon-992-dfaab76/sd-kokon-dfaab76-bin-win-cuda12-x64.zip",
+      "size": 343689852,
+      "sha256": "d4655d52d28cc8c60e01d11b6ef443671befad6731d68ff7bf75e56b5c324a10"
+    },
+    "win_vulkan": {
+      "url": "https://github.com/GabrieleLozupone/stable-diffusion.cpp/releases/download/kokon-992-dfaab76/sd-kokon-dfaab76-bin-win-vulkan-x64.zip",
+      "size": 29407760,
+      "sha256": "856310e71bec67a3323013d07af0cff48a73b915e2a95fe485070e9bfb8303f4"
+    },
+    "linux_cuda": {
+      "url": "https://github.com/GabrieleLozupone/stable-diffusion.cpp/releases/download/kokon-992-dfaab76/sd-kokon-dfaab76-bin-Linux-Ubuntu-22.04-x86_64-cuda12.zip",
+      "size": 352447322,
+      "sha256": "6977f8d57acdc551bdaf3471aeca3076989717f16a8464ea0bfefbccab2adc65"
+    },
+    "linux_vulkan": {
+      "url": "https://github.com/GabrieleLozupone/stable-diffusion.cpp/releases/download/kokon-992-dfaab76/sd-kokon-dfaab76-bin-Linux-Ubuntu-22.04-x86_64-vulkan.zip",
+      "size": 37904697,
+      "sha256": "3a45ef1f2c4ea128d03edbcf162017fb1b6ff8bb2a8997a957a66879ba8b3842"
+    },
+    "macos": {
+      "url": "https://github.com/GabrieleLozupone/stable-diffusion.cpp/releases/download/kokon-992-dfaab76/sd-kokon-dfaab76-bin-Darwin-macOS-15.0-universal.zip",
+      "size": 36587314,
+      "sha256": "af7e6b376cca3cf86fffafc1efb48ddfc480bbf34364f6d648a3388dc7f1b07d"
+    }
   }
 }

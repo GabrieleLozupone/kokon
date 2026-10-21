@@ -3,7 +3,7 @@
 
 import type {
   GpuBackend,
-  AppConfig, AppErrorBody, GenerationRecord, GenerationRequest, HardwareReport, InputRecord, InstallStatus, JobView, ModelFileInfo, ModelScan, ModelSlot, ModelsStatus, Plan,
+  AppConfig, AppErrorBody, GenerationRecord, GenerationRequest, HardwareReport, InputRecord, InstallStatus, JobView, LoraItem, LutEntry, ModelFileInfo, ModelScan, ModelSlot, ModelsStatus, Plan,
   ServiceEvent, SetupReport, StatusResponse, UpscalerItem,
 } from "./types";
 
@@ -89,6 +89,8 @@ export const api = {
   installStatus: () => call<InstallStatus>("/setup/install"),
   cancelInstall: () => call<InstallStatus>("/setup/install/cancel", { method: "POST" }),
   config: () => call<AppConfig>("/config"),
+  /** The prompt enhancer's built-in instructions. */
+  enhancerDefaults: () => call<{ t2i: string; edit: string; max_chars: number }>("/enhancer/defaults"),
   saveConfig: (c: AppConfig) => call<{ saved: boolean; backend_restart_needed: boolean }>("/config", { method: "PUT", body: json(c) }),
   startBackend: () => call<{ ready: boolean }>("/backend/start", { method: "POST" }),
   stopBackend: () => call<{ stopped: boolean }>("/backend/stop", { method: "POST" }),
@@ -118,6 +120,20 @@ export const api = {
   deleteGeneration: (id: string) => call<{ deleted: string }>(`/gallery/${id}`, { method: "DELETE" }),
   /** Adds the bundled example projects to the gallery (idempotent) and lists them. */
   installExamples: () => call<{ projects: { title: string; generations: string[] }[] }>("/examples", { method: "POST" }),
+  loras: () => call<{ items: LoraItem[]; dir: string; max_active: number }>("/loras"),
+  /** Checks a LoRA file against the image model and loads Kokon's copy of it. */
+  addLora: (path: string) => call<LoraItem>("/loras", { method: "POST", body: json({ path }) }),
+  updateLora: (id: string, patch: Partial<Pick<LoraItem, "name" | "weight" | "triggerWords" | "onByDefault">>) =>
+    call<LoraItem>(`/loras/${encodeURIComponent(id)}`, { method: "PATCH", body: json(patch) }),
+  /** Removes the LoRA and Kokon's copy (the user's file stays). */
+  removeLora: (id: string) => call<{ removed: string }>(`/loras/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  luts: () => call<{ items: LutEntry[] }>("/luts"),
+  /** Adds a .cube file to the list (copied into Kokon's data folder). */
+  importLut: (path: string) => call<LutEntry>("/luts/import", { method: "POST", body: json({ path }) }),
+  removeLut: (name: string) => call<{ removed: string }>(`/luts/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  /** Saves `source` with the LUT applied as a new version; `intensity` 0-1. */
+  applyLut: (name: string, source: string, intensity: number, isPrivate: boolean) =>
+    call<GenerationRecord>(`/luts/${encodeURIComponent(name)}/apply`, { method: "POST", body: json({ source, intensity, private: isPrivate }) }),
   exportGeneration: (id: string, path: string, original = false) => call<{ path: string }>(`/gallery/${id}/export`, { method: "POST", body: json({ path, overwrite: true, original }) }),
 };
 
@@ -130,6 +146,8 @@ export const urls = {
   genOriginal: (id: string) => `${base}/gallery/${id}/original?token=${token}`,
   /** Full image for a "gen:<id>" / "input:<id>" source. */
   source: (s: string) => (s.startsWith("gen:") ? urls.gen(s.slice(4)) : urls.input(s.slice(6))),
+  /** A LUT on a "gen:"/"input:" source at full strength, at most `max` px on its long side. */
+  lutPreview: (name: string, source: string, max: number) => `${base}/luts/${encodeURIComponent(name)}/preview?source=${encodeURIComponent(source)}&max=${max}&token=${token}`,
   sourceThumb: (s: string) => (s.startsWith("gen:") ? urls.genThumb(s.slice(4)) : urls.inputThumb(s.slice(6))),
 };
 

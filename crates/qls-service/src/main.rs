@@ -77,6 +77,21 @@ fn load_or_create_token(dir: &std::path::Path) -> String {
     t
 }
 
+/// The port of a kokon-service that answers its ping at the port recorded in service.json.
+async fn running_service() -> Option<u16> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let info: ServiceInfo = serde_json::from_str(&std::fs::read_to_string(service_info_path()).ok()?).ok()?;
+    let ping = async {
+        let mut s = tokio::net::TcpStream::connect(("127.0.0.1", info.port)).await.ok()?;
+        s.write_all(b"GET /api/v1/ping HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n").await.ok()?;
+        let mut buf = vec![0u8; 256];
+        let n = s.read(&mut buf).await.ok()?;
+        let head = String::from_utf8_lossy(&buf[..n]);
+        (head.starts_with("HTTP/1.") && head.split(' ').nth(1) == Some("200")).then_some(info.port)
+    };
+    tokio::time::timeout(Duration::from_secs(2), ping).await.ok().flatten()
+}
+
 pub fn service_info_path() -> PathBuf {
     data_dir().join("service.json")
 }
@@ -94,9 +109,60 @@ fn init_logging(dir: &std::path::Path) -> tracing_appender::non_blocking::Worker
     guard
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
-async fn main() {
+const HELP: &str = "\
+kokon-service — headless engine for Kokon (generation, job queue, gallery)
+
+Usage: kokon-service [--port <n>] [--persistent]
+
+Options:
+  --port <n>    Port of the local API (default: the configured service_port, 39151)
+  --persistent  Keep sd-server running after the last client disconnects
+  -h, --help    Print this help and exit
+  --version     Print the version and exit
+
+Environment:
+  QLS_DATA_DIR    Data folder: gallery, logs, models (default: the OS local app data folder)
+  QLS_CONFIG_DIR  Config folder (default: the OS config folder)
+  QLS_LOG         Log filter, e.g. info or debug (default: info)";
+
+/// `--version` and `--help` answer before the data folder, the log or the port are touched,
+/// so they work while a service is already running.
+fn cli_meta(args: &[String]) -> Option<String> {
+    if args.iter().any(|a| a == "--version") {
+        Some(format!("kokon-service {APP_VERSION}"))
+    } else if args.iter().any(|a| a == "--help" || a == "-h") {
+        Some(HELP.to_string())
+    } else {
+        None
+    }
+}
+
+/// A release build on Windows is a GUI-subsystem binary with no console of its own, so the
+/// output of `--version` would go nowhere: attach to the console that launched it (cmd,
+/// PowerShell) first. A debug build, macOS and Linux print directly.
+fn print_meta(text: &str) {
+    #[cfg(all(windows, not(debug_assertions)))]
+    unsafe {
+        unsafe extern "system" {
+            fn AttachConsole(process_id: u32) -> i32;
+        }
+        const ATTACH_PARENT_PROCESS: u32 = u32::MAX;
+        let _ = AttachConsole(ATTACH_PARENT_PROCESS);
+    }
+    println!("{text}");
+}
+
+fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if let Some(text) = cli_meta(&args) {
+        print_meta(&text);
+        return;
+    }
+    run(args)
+}
+
+#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
+async fn run(args: Vec<String>) {
     let persistent = args.iter().any(|a| a == "--persistent");
     let dir = data_dir();
     let _ = std::fs::create_dir_all(&dir);
@@ -115,15 +181,30 @@ async fn main() {
         .and_then(|p| p.parse().ok())
         .unwrap_or(cfg.service_port);
 
-    // Single instance: binding the port is the lock. Loopback only.
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    let listener = match tokio::net::TcpListener::bind(addr).await {
+    // Single instance: a kokon-service answering at the port in service.json. Loopback only.
+    let listener = match tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port))).await {
         Ok(l) => l,
         Err(e) => {
-            tracing::info!("port {port} busy ({e}); another kokon-service is probably running — exiting");
-            return;
+            if let Some(other) = running_service().await {
+                tracing::info!("port {port} busy ({e}); kokon-service is already running on port {other} — exiting");
+                return;
+            }
+            // Reserved by Windows (Hyper-V/WSL/Docker excluded ranges, "access denied") or taken
+            // by another program: any free port. Clients find it in service.json.
+            match tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await {
+                Ok(l) => {
+                    tracing::warn!("port {port} cannot be opened ({e}); using {}", l.local_addr().map(|a| a.port()).unwrap_or(0));
+                    l
+                }
+                Err(e2) => {
+                    tracing::error!("port {port} cannot be opened ({e}) and no free port either ({e2}) — exiting");
+                    return;
+                }
+            }
         }
     };
+    let addr = listener.local_addr().unwrap_or_else(|_| SocketAddr::from(([127, 0, 0, 1], port)));
+    let port = addr.port();
 
     let engine = match Engine::new(cfg, &dir) {
         Ok(e) => e,
@@ -287,5 +368,26 @@ async fn server_watch(state: Arc<AppState>) {
             ));
             state.engine.emit_server();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{cli_meta, APP_VERSION};
+
+    fn args(s: &str) -> Vec<String> {
+        s.split_whitespace().map(String::from).collect()
+    }
+
+    #[test]
+    fn version_and_help_answer_without_starting() {
+        assert_eq!(cli_meta(&args("--version")).unwrap(), format!("kokon-service {APP_VERSION}"));
+        for flag in ["--help", "-h"] {
+            let help = cli_meta(&args(flag)).unwrap();
+            for needle in ["--port", "--persistent", "QLS_DATA_DIR", "QLS_CONFIG_DIR", "QLS_LOG"] {
+                assert!(help.contains(needle), "{flag} does not mention {needle}");
+            }
+        }
+        assert!(cli_meta(&args("--persistent --port 1234")).is_none());
     }
 }

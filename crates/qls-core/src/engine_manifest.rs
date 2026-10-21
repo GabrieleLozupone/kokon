@@ -39,7 +39,7 @@ fn read_cache() -> Option<Cached> {
 
 fn apply(m: &EngineManifest, app_version: &str) {
     match catalog::apply_engine_release(m, app_version) {
-        Ok(true) => tracing::info!("engine manifest: release {} available", m.tag),
+        Ok(true) => tracing::info!("engine manifest: release {} available", m.kokon.as_ref().map_or("", |k| k.tag.as_str())),
         Ok(false) => {}
         Err(e) => tracing::warn!("engine manifest ignored: {e}"),
     }

@@ -1,10 +1,10 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { ArrowDownToLine, CircleHelp, EyeOff, PanelLeft, Redo2, Settings, SquarePen, Undo2, X } from "lucide-react";
+import { Star, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, configure } from "./lib/api";
 import { native } from "./lib/native";
 import {
-  addExampleProjects, addInputs, dismissToast, getState, isMissingModel, newProject, openModelSetup, redoVersion, refreshStatus, selectItem, setPrivateMode, setState, startEvents, startTour, submitComposer, toastError, toastInfo, undoKey, undoVersion, useStore,
+  addExampleProjects, addInputs, closeStarPrompt, dismissToast, getState, initStarPrompt, redoVersion, refreshLoras, refreshStatus, selectItem, setState, startEvents, startTour, submitComposer, toastError, toastInfo, undoVersion, useStore,
 } from "./lib/store";
 import { Composer, importPaths } from "./components/Composer";
 import { ExpandEditor } from "./components/ExpandEditor";
@@ -12,80 +12,20 @@ import { Gallery } from "./components/Gallery";
 import { InpaintEditor } from "./components/InpaintEditor";
 import { Settings as SettingsDialog } from "./components/Settings";
 import { Setup } from "./components/Setup";
-import { ProjectTitle, Sidebar } from "./components/Sidebar";
+import { Sidebar } from "./components/Sidebar";
 import { Stage } from "./components/Stage";
 import { Tour } from "./components/Tour";
-import { IconButton } from "./components/ui";
-import { shortcut } from "./lib/platform";
 import { PromptTips } from "./components/PromptTips";
 import { Shortcuts } from "./components/Shortcuts";
 import { WhatsNew, whatsNewDue } from "./components/WhatsNew";
 import { UpscalerCompare } from "./components/Upscalers";
 import { KokonMark, Welcome } from "./components/Welcome";
-import { autoCheckForUpdate, installUpdate } from "./lib/updates";
+import { BareTitleBar } from "./components/TitleBar";
+import { TopBar } from "./components/TopBar";
+import { autoCheckForUpdate } from "./lib/updates";
 
 const IMAGE_EXT = /\.(png|jpe?g|webp|bmp|gif|tiff?|heic|heif)$/i;
-
-function StatusIndicator() {
-  const connected = useStore((s) => s.connected);
-  const server = useStore((s) => s.server);
-  const busy = useStore((s) => Object.values(s.jobs).some((j) => !["done", "failed", "cancelled"].includes(j.status)));
-  let cls = "dot";
-  let text = "Connecting";
-  let title = "";
-  if (connected) {
-    switch (server.state) {
-      case "ready":
-        cls = "dot ready";
-        text = busy ? "Working" : "Ready";
-        title = server.owned ? "Model loaded" : "Using an inference server that was already running";
-        break;
-      case "starting":
-        cls = "dot busy";
-        text = "Loading model";
-        break;
-      case "error":
-        cls = "dot error";
-        text = server.error?.message ?? "Inference server error";
-        title = isMissingModel(server.error) ? "Find or download the missing file" : "Open Diagnostics";
-        break;
-      default:
-        text = "Model not loaded";
-        title = "Click to load the model now";
-    }
-  }
-  return (
-    <button
-      className="status"
-      title={title}
-      onClick={() => {
-        if (server.state === "error" && isMissingModel(server.error)) openModelSetup();
-        else if (server.state === "error") setState({ overlay: "settings" });
-        else if (server.state === "stopped" && connected) api.startBackend().then(refreshStatus, toastError);
-      }}
-    >
-      <span className={cls} />
-      <span style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{text}</span>
-    </button>
-  );
-}
-
-/** Undo / Redo between versions: back to the image the current one was made from. */
-function HistoryButtons() {
-  const canUndo = useStore((s) => undoKey(s) !== null);
-  const canRedo = useStore((s) => s.redo.length > 0);
-  if (!canUndo && !canRedo) return null;
-  return (
-    <>
-      <IconButton title={`Undo: back to the previous version (${shortcut("Z")})`} onClick={undoVersion} disabled={!canUndo}>
-        <Undo2 size={18} />
-      </IconButton>
-      <IconButton title={`Redo (${shortcut("Y")})`} onClick={redoVersion} disabled={!canRedo}>
-        <Redo2 size={18} />
-      </IconButton>
-    </>
-  );
-}
+const REPO_URL = "https://github.com/GabrieleLozupone/kokon";
 
 /** Same breathing mark as the HTML splash in index.html, so startup looks like one step;
  * a line of text appears if connecting to the local service takes a while. */
@@ -103,47 +43,12 @@ function BootSplash() {
   );
 }
 
-/** "Update" pill in the top bar once a newer release is found; one click installs it. */
-function UpdatePill() {
-  const update = useStore((s) => s.update);
-  if (!update) return null;
-  const busy = update.phase !== "available";
-  const click = async () => {
-    const running = Object.values(getState().jobs).some((j) => !["done", "failed", "cancelled"].includes(j.status));
-    const msg = `Install Kokon ${update.version} now? Kokon closes and restarts in a few seconds${running ? "; the images being made now are stopped" : ""}. Your images, settings and models stay.`;
-    if (await native.confirm(update.notes ? `${msg}
-
-What's new:
-${update.notes}` : msg, "Update Kokon")) installUpdate();
-  };
-  const label =
-    update.phase === "downloading" ? `Downloading${update.progress != null ? ` ${Math.round(update.progress * 100)}%` : "…"}` : update.phase === "installing" ? "Installing…" : `Update to ${update.version}`;
-  return (
-    <button className="update-pill" onClick={click} disabled={busy} title={`Kokon ${update.version} is available`}>
-      <ArrowDownToLine size={14} /> {label}
-    </button>
-  );
-}
-
-function PrivateToggle() {
-  const on = useStore((s) => s.privateMode);
-  const toggle = () => setPrivateMode(!on, () => native.confirm("Turn off private mode? The images made in private mode will be deleted.", "Private mode"));
-  return on ? (
-    <button className="private-pill" onClick={toggle} title="Private mode is on: images are not saved and are deleted when you turn it off or close the app. Click to turn it off.">
-      <EyeOff size={15} /> Private
-    </button>
-  ) : (
-    <IconButton title="Private mode: nothing is saved to the gallery or your Pictures folder" onClick={toggle}>
-      <EyeOff size={18} />
-    </IconButton>
-  );
-}
-
 function Toasts() {
   const toasts = useStore((s) => s.toasts);
   const [open, setOpen] = useState<string | null>(null);
   return (
     <div className="toasts" role="status">
+      <StarPrompt />
       {toasts.map((t) => (
         <div key={t.id} className="toast">
           <div className="body">
@@ -161,6 +66,35 @@ function Toasts() {
           </button>
         </div>
       ))}
+    </div>
+  );
+}
+
+/** Once, after a few images made with Kokon (store.ts): a star helps other people find it. */
+function StarPrompt() {
+  const on = useStore((s) => s.starPrompt);
+  if (!on) return null;
+  const star = () => {
+    native.openLink(REPO_URL).catch(toastError);
+    closeStarPrompt();
+  };
+  return (
+    <div className="star-prompt">
+      <div className="body">
+        <strong>Enjoying Kokon?</strong>
+        <div className="sugg">A star on GitHub helps other people find it. This is the only time we ask.</div>
+        <div className="star-actions">
+          <button className="btn primary" onClick={star}>
+            <Star size={14} /> Star on GitHub
+          </button>
+          <button className="btn ghost" onClick={closeStarPrompt}>
+            No thanks
+          </button>
+        </div>
+      </div>
+      <button onClick={closeStarPrompt} aria-label="Dismiss">
+        <X size={14} />
+      </button>
     </div>
   );
 }
@@ -205,9 +139,11 @@ export default function App() {
         startEvents();
         const cfg = await api.config();
         const st = await refreshStatus();
+        refreshLoras();
         // First launch: the welcome screen, once (Settings → General shows it again).
         const ui = (cfg.ui ?? {}) as Record<string, unknown>;
         const welcomeSeen = !!ui.welcomeSeen;
+        initStarPrompt(ui);
         // ...with example projects to look at, and the tour through the first one.
         if (!welcomeSeen && !ui.tourSeen) {
           tourPending.current = true;
@@ -316,6 +252,7 @@ export default function App() {
   if (boot !== "ok") {
     return (
       <div className="app" style={{ display: "grid", placeItems: "center" }}>
+        <BareTitleBar />
         {boot === "connecting" ? (
           <BootSplash />
         ) : (
@@ -335,33 +272,7 @@ export default function App() {
     <div className="app">
       {sidebar && !needsSetup && <Sidebar />}
       <div className="workspace">
-        <div className="topbar">
-          <div className="brand">
-            {!sidebar && !needsSetup && (
-              <>
-                <IconButton title="Show sidebar" onClick={() => setState({ sidebar: true })}>
-                  <PanelLeft size={18} />
-                </IconButton>
-                <IconButton title="New image" onClick={newProject}>
-                  <SquarePen size={18} />
-                </IconButton>
-              </>
-            )}
-            {overlay === "gallery" ? <span className="project-title">All images</span> : !needsSetup && <ProjectTitle />}
-          </div>
-          <div className="toolbar">
-            {!needsSetup && <HistoryButtons />}
-            <UpdatePill />
-            {!needsSetup && <PrivateToggle />}
-            <StatusIndicator />
-            <IconButton title="Shortcuts (?)" onClick={() => setState({ overlay: "shortcuts" })}>
-              <CircleHelp size={18} />
-            </IconButton>
-            <IconButton title="Settings" onClick={() => setState({ overlay: "settings" })}>
-              <Settings size={18} />
-            </IconButton>
-          </div>
-        </div>
+        <TopBar />
         <div className="main">
           {needsSetup ? <Setup /> : <Stage />}
           {overlay === "gallery" && <Gallery />}

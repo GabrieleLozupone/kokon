@@ -7,7 +7,7 @@
 use image::{GrayImage, Luma, Rgba, RgbaImage};
 
 use crate::error::{AppError, AppResult, ErrorCode};
-use crate::geometry::{Rect, Size};
+use crate::geometry::{Rect, Size, WorkingCanvas};
 use crate::imaging::{self, LoadedImage};
 use crate::planner::{InpaintAction, Plan, ReferenceDetail, ResolvedMode};
 use crate::sdcpp::{Guidance, ImgGenRequest, SampleParams, VaeTilingParams, b64};
@@ -157,6 +157,17 @@ pub fn effective_prompt(plan: &Plan, prompt: &str) -> String {
     }
 }
 
+/// The prompt sent for an enhanced job (text-to-image, edit, combine): the enhancer's text,
+/// wrapped for transparency when the user's own words asked for it (not the rewrite's, which
+/// may mention "transparent glass").
+pub fn enhanced_prompt(original: &str, enhanced: &str) -> String {
+    let p = enhanced.trim();
+    if wants_transparency(original) && !p.starts_with(RGBA_PREFIX) {
+        return format!("{RGBA_PREFIX} {}. {RGBA_SUFFIX}", p.trim_end_matches('.'));
+    }
+    p.to_string()
+}
+
 pub fn prepare(plan: &Plan, prompt: &str, seed: i64, images: &[LoadedImage], mask: Option<&GrayImage>, opts: &BackendOptions) -> AppResult<PreparedJob> {
     let first = plan.working;
     let mut req = ImgGenRequest {
@@ -184,6 +195,7 @@ pub fn prepare(plan: &Plan, prompt: &str, seed: i64, images: &[LoadedImage], mas
         hires: None,
         cache_mode: None,
         cache_option: None,
+        lora: Vec::new(),
         output_format: "png".into(),
         embed_image_metadata: false,
     };
@@ -223,7 +235,16 @@ pub fn prepare(plan: &Plan, prompt: &str, seed: i64, images: &[LoadedImage], mas
             let user_mask = imaging::resize_mask(user_mask, src_size.width, src_size.height);
             let region = plan.inpaint_region.unwrap_or(Rect::new(0, 0, src_size.width, src_size.height));
             let action = plan.inpaint_action.unwrap_or_default();
-            let wc = plan.references[0].canvas;
+            // The working canvas (image being painted), from the plan; image 1 for the model
+            // may be smaller (references[0], capped at 1 MP with Standard detail).
+            let wc = WorkingCanvas {
+                source: region.size(),
+                content: Size::new(plan.content.width, plan.content.height),
+                canvas: plan.working,
+                content_offset: (plan.content.x, plan.content.y),
+                scale: plan.content.width as f64 / region.width.max(1) as f64,
+            };
+            let rc = plan.references[0].canvas;
             let crop = imaging::crop(src, region);
             let content = imaging::resize(&crop, wc.content.width, wc.content.height);
             drop(crop);
@@ -259,8 +280,14 @@ pub fn prepare(plan: &Plan, prompt: &str, seed: i64, images: &[LoadedImage], mas
 
             let image1_b64 = png_b64(&pad(&image1))?;
             req.init_image = Some(image1_b64.clone());
-            req.ref_images.push(image1_b64);
+            let same = rc.canvas == wc.canvas && rc.content == wc.content && rc.content_offset == wc.content_offset;
+            req.ref_images.push(if same { image1_b64 } else { png_b64(&imaging::pad_edge(&imaging::resize(&image1, rc.content.width, rc.content.height), rc.canvas, rc.content_offset))? });
             req.ref_images.push(png_b64(&imaging::pad_edge(&guide, gc.canvas, gc.content_offset))?);
+            // Standard detail: the references are encoded at their planned sizes (image 1 ≤ 1 MP,
+            // the guide a quarter of the canvas); Full lets the server resize both to the output's area.
+            if plan.reference_detail == Some(ReferenceDetail::Standard) {
+                req.ref_image_args = Some("resize_before_vae=false".into());
+            }
             req.prompt = inpaint_prompt(action, prompt, color_name);
             req.mask_image = Some(gray_png_b64(&m_canvas)?);
             req.strength = plan.strength;
@@ -511,6 +538,15 @@ pub fn tile_png_b64(input: &RgbaImage, tile: &Tile) -> AppResult<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn enhanced_prompt_follows_the_users_words_for_transparency() {
+        assert_eq!(enhanced_prompt("un gatto", "  A tabby cat on a sill.\n"), "A tabby cat on a sill.");
+        assert_eq!(enhanced_prompt("a vase", "A transparent glass vase on oak."), "A transparent glass vase on oak.", "the rewrite's words do not ask for alpha");
+        let p = enhanced_prompt("a logo with transparent background", "A flat fox logo.");
+        assert_eq!(p, format!("{RGBA_PREFIX} A flat fox logo. {RGBA_SUFFIX}"));
+        assert_eq!(enhanced_prompt("transparent", &p), p, "not wrapped twice");
+    }
 
     #[test]
     fn prescale_and_blend() {
@@ -836,6 +872,48 @@ mod tests {
         assert!(marked > 0);
         assert!(j.request.prompt.contains("<image1>") && j.request.prompt.contains("marked in red in <image2>"));
         assert!(j.request.prompt.contains("add a red hat inside"), "{}", j.request.prompt);
+    }
+
+    #[test]
+    fn large_inpaints_give_the_model_a_1mp_image_1() {
+        let mut img = photo(3000, 2000);
+        let mut m = GrayImage::new(3000, 2000);
+        for y in 800..1000 {
+            for x in 1200..1500 {
+                m.put_pixel(x, y, Luma([255]));
+                img.pixels.put_pixel(x, y, Rgba([255, 255, 255, 255]));
+            }
+        }
+        let job = |detail: ReferenceDetail| {
+            let mut r = req("a red hat");
+            r.mask = Some("input:m".into());
+            r.quality = crate::planner::Quality::Quality;
+            r.advanced.reference_detail = Some(detail);
+            let inputs = PlanInputs {
+                image_sizes: vec![img.size()],
+                mask: Some((Size::new(3000, 2000), imaging::mask_bbox(&m, 127), imaging::mask_coverage(&m, 127))),
+                vram_total_mib: Some(32607),
+                ..Default::default()
+            };
+            let p = plan(&r, &inputs, &RecommendedSettings::default()).unwrap();
+            (prepare(&p, &r.prompt, 1, std::slice::from_ref(&img), Some(&m), &BackendOptions::default()).unwrap(), p)
+        };
+        let area = |b64: &str| {
+            let d = decode(b64);
+            d.width() as u64 * d.height() as u64
+        };
+        let (std, p) = job(ReferenceDetail::Standard);
+        let canvas = p.working.area();
+        assert!(canvas > 2_000_000, "2K inpaint: {:?}", p.working);
+        assert_eq!(area(std.request.init_image.as_ref().unwrap()), canvas, "the painted image keeps the working size");
+        assert!(area(&std.request.ref_images[0]) <= STANDARD_REFERENCE_AREA, "image 1 capped at 1 MP");
+        assert!(area(&std.request.ref_images[1]) <= canvas / 4 + canvas / 20, "guide a quarter of the canvas");
+        assert_eq!(std.request.ref_image_args.as_deref(), Some("resize_before_vae=false"), "encoded at those sizes");
+        assert_eq!(p.reference_detail, Some(ReferenceDetail::Standard));
+        // Full: as before 0.9.4 (image 1 = the painted image, the server resizes the references).
+        let (full, _) = job(ReferenceDetail::Full);
+        assert_eq!(full.request.init_image.as_ref(), Some(&full.request.ref_images[0]));
+        assert!(full.request.ref_image_args.is_none());
     }
 
     #[test]

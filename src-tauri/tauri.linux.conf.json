@@ -1,0 +1,11 @@
+{
+  "mainBinaryName": "kokon",
+  "bundle": {
+    "targets": ["deb", "rpm"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png"],
+    "linux": {
+      "deb": { "depends": ["libssl3", "libgomp1", "libvulkan1"], "section": "graphics" },
+      "rpm": { "depends": ["openssl-libs", "libgomp", "vulkan-loader"] }
+    }
+  }
+}

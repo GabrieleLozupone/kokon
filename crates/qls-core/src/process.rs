@@ -99,6 +99,10 @@ pub fn build_server_args(cfg: &AppConfig, profile: &ModelProfile) -> Vec<String>
         a.push("--hires-upscalers-dir".into());
         a.push(p(&up_dir));
     }
+    // The user's LoRAs (Kokon's copies); scanned on every request, so a LoRA loaded later
+    // needs no restart.
+    a.push("--lora-model-dir".into());
+    a.push(p(&cfg.lora_dir()));
     if cfg.gpu_backend != crate::config::GpuBackend::Metal {
         // Direct convolutions in the upscaler (it only affects UNet/ControlNet models besides,
         // never Qwen). MoSR at 1472², 768 px tiles on an RTX 5070 Ti: CUDA 3.8 s / +2.4 GB →
@@ -321,6 +325,9 @@ struct Inner {
     state: ServerState,
     owned: bool,
     pid: Option<u32>,
+    /// The server this app launched in this session. Kept so an exit is seen (and reaped)
+    /// with `try_wait`: on Linux/macOS a dropped child that dies stays a zombie under its pid.
+    child: Option<std::process::Child>,
     port: u16,
     model: Option<String>,
     started_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -350,6 +357,7 @@ impl ServerManager {
                 state: ServerState::Stopped,
                 owned: false,
                 pid: None,
+                child: None,
                 port: 0,
                 model: None,
                 started_at: None,
@@ -418,10 +426,13 @@ impl ServerManager {
     pub async fn ensure_ready(&self, cfg: &AppConfig) -> Result<Capabilities, AppError> {
         let _guard = self.start_lock.lock().await;
         let profile = cfg.profile().clone();
-        let client = SdcppClient::new(cfg.server_port);
+        // Our server may run on a fallback port (see `launch_port`); otherwise the configured one.
+        let rec = self.read_record().filter(|r| process_alive(r.pid));
+        let port = rec.as_ref().map(|r| r.port).unwrap_or(cfg.server_port);
+        let client = SdcppClient::new(port);
 
         if let Ok(caps) = client.capabilities(Duration::from_secs(3)).await {
-            let rec = self.read_record().filter(|r| r.port == cfg.server_port && process_alive(r.pid));
+            let rec = rec.filter(|r| r.port == port);
             if caps.model_matches(&profile.diffusion_model) && caps.supports_img_gen() {
                 let owned = rec.is_some();
                 if let Some(r) = &rec
@@ -433,7 +444,10 @@ impl ServerManager {
                     g.state = ServerState::Ready;
                     g.owned = owned;
                     g.pid = rec.as_ref().map(|r| r.pid);
-                    g.port = cfg.server_port;
+                    if g.child.as_ref().map(|c| c.id()) != g.pid {
+                        g.child = None;
+                    }
+                    g.port = port;
                     g.model = Some(caps.model.name.clone());
                     g.error = None;
                     g.caps = Some(caps.clone());
@@ -443,30 +457,21 @@ impl ServerManager {
                 });
                 return Ok(caps);
             }
-            // Wrong model on our port.
             if let Some(r) = rec {
                 tracing::info!("restarting owned sd-server (pid {}) for a different model", r.pid);
                 kill_pid(r.pid);
                 let _ = std::fs::remove_file(self.record_path());
                 wait_port_free(&client, Duration::from_secs(15)).await;
             } else {
-                let e = AppError::new(
-                    ErrorCode::ServerStartFailed,
-                    format!("Port {} is used by another stable-diffusion.cpp server with a different model ({}).", cfg.server_port, caps.model.name),
-                )
-                .suggest("Stop that server or choose another port in Settings.");
-                self.set_state(|g| {
-                    g.state = ServerState::Error;
-                    g.error = Some(e.clone());
-                });
-                return Err(e);
+                // Someone else's server with another model: ours starts on a free port.
+                tracing::info!("port {port} is used by another stable-diffusion.cpp server ({}); starting ours on another port", caps.model.name);
             }
         }
 
-        self.spawn_and_wait(cfg, &profile, &client).await
+        self.spawn_and_wait(cfg, &profile).await
     }
 
-    async fn spawn_and_wait(&self, cfg: &AppConfig, profile: &ModelProfile, client: &SdcppClient) -> Result<Capabilities, AppError> {
+    async fn spawn_and_wait(&self, cfg: &AppConfig, profile: &ModelProfile) -> Result<Capabilities, AppError> {
         let fail = |e: AppError| {
             self.set_state(|g| {
                 g.state = ServerState::Error;
@@ -483,14 +488,34 @@ impl ServerManager {
         if let Some(d) = log_path.parent() {
             std::fs::create_dir_all(d).map_err(|e| fail(AppError::io("create the log folder", d, e)))?;
         }
-        if log_path.exists() {
-            let _ = std::fs::rename(&log_path, log_path.with_extension("prev.log"));
+        let mut port = launch_port(cfg.server_port).ok_or_else(|| fail(port_unavailable_error(cfg.server_port)))?;
+        // sd-server exits with code 0 and no log line when it cannot listen (a port reserved
+        // between our check and its bind): one more try on another free port.
+        for attempt in 0..2 {
+            match self.launch(cfg, profile, &exe, &log_path, port).await {
+                Ok(caps) => return Ok(caps),
+                Err(Launch::Failed(e)) => return Err(fail(e)),
+                Err(Launch::NotListening) if attempt == 0 => {
+                    tracing::warn!("sd-server exited without listening on port {port}; retrying on another port");
+                    port = free_port().ok_or_else(|| fail(port_unavailable_error(port)))?;
+                }
+                Err(Launch::NotListening) => break,
+            }
         }
-        let file = std::fs::File::create(&log_path).map_err(|e| fail(AppError::io("create the server log", &log_path, e)))?;
-        let args = build_server_args(cfg, profile);
+        Err(fail(port_unavailable_error(port)))
+    }
+
+    async fn launch(&self, cfg: &AppConfig, profile: &ModelProfile, exe: &Path, log_path: &Path, port: u16) -> Result<Capabilities, Launch> {
+        let fail = Launch::Failed;
+        if log_path.exists() {
+            let _ = std::fs::rename(log_path, log_path.with_extension("prev.log"));
+        }
+        let file = std::fs::File::create(log_path).map_err(|e| fail(AppError::io("create the server log", log_path, e)))?;
+        let run_cfg = AppConfig { server_port: port, ..cfg.clone() };
+        let args = build_server_args(&run_cfg, profile);
         tracing::info!("starting {} {}", exe.display(), args.join(" "));
 
-        let mut cmd = std::process::Command::new(&exe);
+        let mut cmd = std::process::Command::new(exe);
         cmd.args(&args)
             .current_dir(&cfg.sdcpp_dir)
             .stdin(std::process::Stdio::null())
@@ -505,25 +530,33 @@ impl ServerManager {
             fail(AppError::new(ErrorCode::ServerStartFailed, "Could not launch sd-server.exe.").detail(e.to_string()))
         })?;
         let pid = child.id();
-        let rec = OwnedRecord { pid, port: cfg.server_port, model: profile.model_name(), log: log_path.clone() };
+        let rec = OwnedRecord { pid, port, model: profile.model_name(), log: log_path.to_path_buf() };
         let _ = std::fs::write(self.record_path(), serde_json::to_string(&rec).unwrap_or_default());
         self.set_state(|g| {
             g.state = ServerState::Starting;
             g.owned = true;
             g.pid = Some(pid);
-            g.port = cfg.server_port;
+            if let Some(mut old) = g.child.take() {
+                let _ = old.try_wait(); // reap a crashed predecessor
+            }
+            g.port = port;
             g.error = None;
             g.caps = None;
             g.started_at = Some(chrono::Utc::now());
         });
-        self.start_tail(&log_path, false);
+        self.start_tail(log_path, false);
 
+        let client = SdcppClient::new(port);
         let started = Instant::now();
         loop {
             if let Ok(Some(status)) = child.try_wait() {
                 tokio::time::sleep(Duration::from_millis(300)).await;
                 let tail = self.log.tail(40).join("\n");
                 let _ = std::fs::remove_file(self.record_path());
+                // Code 0 before answering = `svr.listen` failed (it logs "listening on" first).
+                if status.success() {
+                    return Err(Launch::NotListening);
+                }
                 return Err(fail(translate_startup_failure(&format!("{tail}\n(exit status {status})"))));
             }
             if let Ok(caps) = client.capabilities(Duration::from_secs(2)).await {
@@ -531,8 +564,8 @@ impl ServerManager {
                     g.state = ServerState::Ready;
                     g.model = Some(caps.model.name.clone());
                     g.caps = Some(caps.clone());
+                    g.child = Some(child);
                 });
-                // The Child handle is dropped; the process keeps running and is tracked by pid.
                 return Ok(caps);
             }
             if started.elapsed() > Duration::from_secs(900) {
@@ -543,6 +576,11 @@ impl ServerManager {
             }
             tokio::time::sleep(Duration::from_millis(750)).await;
         }
+    }
+
+    /// The port of the server in use; it can differ from the configured one (`launch_port`).
+    pub fn port(&self) -> u16 {
+        self.inner.lock().unwrap().port
     }
 
     /// Stops the server if this app owns it. Never touches servers it did not start.
@@ -568,6 +606,7 @@ impl ServerManager {
             g.state = ServerState::Stopped;
             g.owned = false;
             g.pid = None;
+            g.child = None;
             g.caps = None;
             g.started_at = None;
         });
@@ -576,9 +615,16 @@ impl ServerManager {
 
     /// Whether the owned process is still alive (false for external servers).
     pub fn owned_alive(&self) -> Option<bool> {
-        let g = self.inner.lock().unwrap();
+        let mut g = self.inner.lock().unwrap();
         if !g.owned {
             return None;
+        }
+        // A server launched in this session: `try_wait` sees (and reaps) an exit. One reused
+        // from an earlier session is not our child, so it is checked by pid.
+        if let Some(child) = g.child.as_mut()
+            && let Ok(status) = child.try_wait()
+        {
+            return Some(status.is_none());
         }
         g.pid.map(process_alive)
     }
@@ -645,6 +691,36 @@ async fn wait_port_free(client: &SdcppClient, timeout: Duration) {
     while t.elapsed() < timeout && client.capabilities(Duration::from_millis(500)).await.is_ok() {
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
+}
+
+enum Launch {
+    Failed(AppError),
+    /// Exited with code 0 before answering: the port could not be opened.
+    NotListening,
+}
+
+/// The configured port when it can be opened, otherwise a free one. Windows reserves port
+/// ranges for Hyper-V, WSL and Docker (`netsh interface ipv4 show excludedportrange
+/// protocol=tcp`), different at every boot; binding a reserved port fails with "access denied".
+fn launch_port(configured: u16) -> Option<u16> {
+    match std::net::TcpListener::bind(("127.0.0.1", configured)) {
+        Ok(_) => Some(configured),
+        Err(e) => {
+            let p = free_port();
+            tracing::warn!("port {configured} cannot be opened ({e}); using {p:?}");
+            p
+        }
+    }
+}
+
+/// A port the system reports free right now.
+pub fn free_port() -> Option<u16> {
+    std::net::TcpListener::bind(("127.0.0.1", 0)).and_then(|l| l.local_addr()).map(|a| a.port()).ok()
+}
+
+fn port_unavailable_error(port: u16) -> AppError {
+    AppError::new(ErrorCode::ServerStartFailed, format!("The inference server could not open a network port on this computer (last tried: {port})."))
+        .suggest("Windows can reserve ports for Hyper-V, WSL or Docker. Restart the computer, or set another port in Settings → Performance.")
 }
 
 pub fn process_alive(pid: u32) -> bool {
@@ -925,6 +1001,17 @@ mod tests {
     }
 
     #[test]
+    fn launch_port_falls_back_when_the_port_cannot_be_opened() {
+        let taken = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let busy = taken.local_addr().unwrap().port();
+        let p = launch_port(busy).unwrap();
+        assert_ne!(p, busy);
+        assert!(std::net::TcpListener::bind(("127.0.0.1", p)).is_ok(), "the fallback is free");
+        let free = free_port().unwrap();
+        assert_eq!(launch_port(free), Some(free), "a free configured port is kept");
+    }
+
+    #[test]
     fn parser_ignores_lines_before_a_job() {
         let mut p = ProgressParser::default();
         assert!(p.feed("  |==>   | 1/20 - 2.0s/it").is_none());
@@ -950,5 +1037,35 @@ CPU	Apple M2 Pro
         assert!(parse_device_list(out).iter().any(|(n, _)| n.to_ascii_lowercase() == cfg.effective_device()));
         let out = "ggml_vulkan: Found 1 Vulkan devices:\nggml_vulkan: 0 = AMD Radeon RX 7800 XT (AMD proprietary driver) | uma: 0 | fp16: 1\nVulkan0\tAMD Radeon RX 7800 XT\nCPU\tAMD Ryzen 7 7700\n";
         assert_eq!(parse_device_list(out)[0], ("Vulkan0".into(), "AMD Radeon RX 7800 XT".into()));
+    }
+
+    /// Regression: on Linux a crashed sd-server stayed a zombie under its pid, so the job
+    /// poll loop never saw it exit and waited forever.
+    #[cfg(unix)]
+    #[test]
+    fn owned_alive_sees_a_launched_server_exit() {
+        // `sleep` under the name sd-server, so `process_alive` recognizes it.
+        let dir = std::env::temp_dir().join(format!("qls-owned-alive-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join("sd-server");
+        std::fs::copy("/bin/sleep", &exe).unwrap();
+        let mut child = std::process::Command::new(&exe).arg("30").spawn().unwrap();
+        let pid = child.id();
+        child.kill().unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+        // The bug itself: on Linux the zombie keeps its name under its pid. macOS reports no name
+        // for a zombie, so there it never looked alive; the checks below hold on both.
+        if cfg!(target_os = "linux") {
+            assert!(process_alive(pid), "the dead, unreaped server still looks alive by pid (zombie)");
+        }
+        let m = ServerManager::new(dir.clone());
+        m.set_state(|g| {
+            g.owned = true;
+            g.pid = Some(pid);
+            g.child = Some(child);
+        });
+        assert_eq!(m.owned_alive(), Some(false), "try_wait sees the exit");
+        assert!(!process_alive(pid), "and reaps it");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

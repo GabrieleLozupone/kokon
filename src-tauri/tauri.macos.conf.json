@@ -1,7 +1,40 @@
 {
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Kokon",
+        "width": 1320,
+        "height": 880,
+        "minWidth": 960,
+        "minHeight": 660,
+        "center": true,
+        "visible": false,
+        "dragDropEnabled": true,
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 18,
+          "y": 28
+        }
+      }
+    ]
+  },
   "bundle": {
-    "targets": ["app", "dmg"],
-    "icon": ["icons/macos/32x32.png", "icons/macos/128x128.png", "icons/macos/128x128@2x.png", "icons/macos/icon.icns"],
-    "macOS": { "minimumSystemVersion": "26.0", "signingIdentity": "-" }
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "icon": [
+      "icons/macos/32x32.png",
+      "icons/macos/128x128.png",
+      "icons/macos/128x128@2x.png",
+      "icons/macos/icon.icns"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "15.0",
+      "signingIdentity": "-"
+    }
   }
 }

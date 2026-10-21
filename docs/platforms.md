@@ -1,16 +1,20 @@
 # Platforms: engines, requirements and what is verified
 
-Kokon runs Qwen-Image 2.1 through stable-diffusion.cpp. Each platform uses a prebuilt engine
-from the same pinned release ([master-929-3f8527a](https://github.com/leejet/stable-diffusion.cpp/releases/tag/master-929-3f8527a)),
-so model behaviour is identical everywhere; only speed and memory differ.
+Kokon runs Qwen-Image 2.1 through stable-diffusion.cpp. Since 0.10 every platform uses Kokon's own
+build from one release of the fork ([kokon-992-dfaab76](https://github.com/GabrieleLozupone/stable-diffusion.cpp/releases/tag/kokon-992-dfaab76):
+upstream b13a482 plus text generation for Prompt+, branch `kokon`, workflow `kokon.yml`), so model
+behaviour is identical everywhere; only speed and memory differ. The image side is upstream's code.
+`engine.json` (key `kokon`) can move every platform to a newer release without an app update; see
+the engine section of [engineering-notes.md](engineering-notes.md). Apps up to 0.9.4 used upstream's
+releases (Windows, macOS 26) and the `kokon-linux` / `kokon-macos` builds (Linux, macOS 15).
 
-| Platform | Engine | Status |
+| Platform | Engine (kokon-992-dfaab76) | Status |
 | --- | --- | --- |
-| Windows + NVIDIA | CUDA 12 build | ✅ verified (RTX 5070 Ti 16 GB, RTX 5070 12 GB) |
-| Windows + AMD / Intel | Vulkan build (30 MB, uses the driver's Vulkan runtime) | 🟡 beta: works on NVIDIA (RTX 5070 Ti, 2K/20 steps, slower than CUDA); AMD / Intel to verify |
-| macOS + Apple Silicon | Metal build (universal binary, shaders embedded) | 🟡 beta: packaged 0.9.0 runs on an M2 Pro 16 GB (Turbo: ~1 MP in ~4 min 20 s, lightest mode) |
-| Windows + AMD via ROCm | ROCm build | ✗ not planned: open crashes (#2008), DLL conflicts (#2012), black images with k-quants (#1385) |
-| Linux | Vulkan / CUDA builds exist | later |
+| Windows + NVIDIA | CUDA 12.8 build with CUDA graphs (runtime DLLs from upstream's `cudart-sd-bin-win-cu12-x64.zip`) | ✅ verified (RTX 5070 Ti 16 GB, RTX 5070 12 GB) |
+| Windows + AMD / Intel | Vulkan build (29 MB, uses the driver's Vulkan runtime) | 🟡 beta: works on NVIDIA (RTX 5070 Ti, 2K/20 steps, slower than CUDA); first AMD user report: RX 9060 XT 16 GB, 16:9 1080p Balanced ~80 s on the first image (incl. model load), no errors; Intel to verify |
+| macOS + Apple Silicon | Metal build, macOS 15.0+, universal binary, shaders embedded (Macs on 26 use it too) | 🟡 beta: packaged 0.9.0 runs on an M2 Pro 16 GB (Turbo: ~1 MP in ~4 min 20 s, lightest mode) |
+| Windows + AMD via ROCm | ROCm build (published by the workflow, not used by Kokon) | ✗ not planned: open crashes (#2008), DLL conflicts (#2012), black images with k-quants (#1385) |
+| Linux x86-64 (.deb / .rpm) | CUDA 12.8 (CUDA graphs) and Vulkan builds on Ubuntu 22.04 (glibc 2.35); CUDA runtime still from `kokon-linux-1d0a58a` | 🟡 beta from 0.9.4: CUDA verified on an RTX 5070 Ti under WSL; Vulkan loads on Ubuntu 22.04/24.04, Debian 12, Fedora 40/42. Details in [linux.md](linux.md) |
 
 ## How the app sizes itself (all platforms)
 
@@ -27,7 +31,7 @@ budget (largest working size per quality level). Nothing is tuned per platform.
 
 ## Windows: AMD and Intel (Vulkan, beta)
 
-- Engine: `sd-master-3f8527a-bin-win-vulkan-x64.zip`, installed into `<sdcpp>\engine-vulkan`,
+- Engine: `sd-kokon-dfaab76-bin-win-vulkan-x64.zip`, installed into `<sdcpp>\engine-vulkan`,
   next to the CUDA build (switching engines needs no re-download).
 - Launch: `--backend vulkan0`, flash attention, q8_0 prefix cache. No SageAttention (CUDA only).
 - Requirements: a discrete GPU with **12 GB+ VRAM** (RX 6700 XT 12 GB / 7700 XT and up,
@@ -49,7 +53,10 @@ pass. Kokon uses CFG 1, which is one pass per step.
 | | Minimum | Recommended |
 | --- | --- | --- |
 | **Chip** | Apple M1 or newer (Intel Macs: no) | M-series Pro / Max / Ultra |
-| **macOS** | 26 Tahoe (the engine binary's minimum) | latest |
+| **macOS** | 15 Sequoia (Kokon's engine build; upstream's needs 26) | latest |
+
+The Mac paragraphs below that say "our exact engine build" or "the same engine build" mean the
+upstream release Kokon used up to 0.9.4 (master-929); the measurements were taken on it.
 | **Unified memory** | 16 GB: works, but slowly (lightest mode, ~1 MP, ~4–5 min on an M2 Pro) | 32 GB+ (everything stays loaded, Quality 2K) |
 | **Disk** | 15 GB free | 25 GB on the internal SSD |
 
