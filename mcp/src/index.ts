@@ -6,6 +6,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { handlers, schemas, toErrorResult, type ToolContext, type ToolResult } from "./tools.js";
 import { ServiceClient } from "./service.js";
+import { helpText } from "./help.js";
 import pkg from "../package.json" with { type: "json" };
 
 // Bundled in by esbuild: the one place to bump is package.json (see docs/releasing.md).
@@ -99,6 +100,10 @@ for (const name of Object.keys(schemas) as (keyof typeof schemas)[]) {
 async function main() {
   if (process.argv.includes("--version")) {
     process.stdout.write(`kokon-mcp ${VERSION}\n`);
+    return;
+  }
+  if (process.argv.includes("--help") || process.argv.includes("-h")) {
+    process.stdout.write(helpText(VERSION));
     return;
   }
   const transport = new StdioServerTransport();
