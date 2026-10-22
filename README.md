@@ -433,24 +433,19 @@ Invoke-RestMethod -Method Post "http://127.0.0.1:$($i.port)/api/v1/generate" -He
   -ContentType 'application/json' -Body '{"prompt":"a lighthouse at dusk, 16:9","quality":"fast"}'
 ```
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET | `/ping` | Liveness (no auth) |
-| GET | `/status` | Server state, model, GPU/VRAM, active job, queue |
-| POST | `/generate`, `/edit`, `/inpaint`, `/outpaint`, `/upscale` | Simple operations; wait for the result unless `?wait=false` |
-| POST | `/jobs` | Full request (see `GenerationRequest` in `planner.rs`) |
-| GET | `/jobs/{id}`, `/jobs/{id}/wait?timeout=60` | Job status / long-poll |
-| POST | `/jobs/{id}/cancel` | Cancel |
-| POST | `/plan` | Dry run: resolved mode, working/output size, notes |
-| GET | `/events` | Server-sent events (jobs, server, gallery) |
-| GET | `/gallery`, `/gallery/{id}`, `/gallery/{id}/image` | Gallery |
-| POST | `/image-info` | Size, aspect, type, embedded generation metadata |
+On macOS (or any shell with `curl`):
 
-Simple-operation fields: `prompt`, `image` / `images[]`, `mask`, `action`
-(`edit|remove|replace|add`, inpainting), `width`, `height`, `aspect_ratio`, `quality`
-(`fast|balanced|quality`), `seed`, `output_path`, `preserve_dimensions`, `private`,
-`left/right/top/bottom` + `units` (`pixels|percent`) for outpainting, `scale` for upscaling.
-Full requests (`/jobs`) also accept `"mode": "upscale"` with `"upscale": {"scale" | "width"/"height"}`.
+```bash
+INFO="$HOME/Library/Application Support/KokonData/service.json"
+TOKEN=$(sed -n 's/.*"token" *: *"\([^"]*\)".*/\1/p' "$INFO")
+PORT=$(sed -n 's/.*"port" *: *\([0-9]*\).*/\1/p' "$INFO")
+curl -s -X POST "http://127.0.0.1:$PORT/api/v1/generate" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"prompt":"a lighthouse at dusk, 16:9","quality":"fast"}'
+```
+
+The full route list (status, jobs, gallery, inputs, models, LoRAs, LUTs and the internal routes), the
+gallery query parameters and the request fields are in [docs/http-api.md](docs/http-api.md).
 
 </details>
 
