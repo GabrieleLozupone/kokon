@@ -107,9 +107,14 @@ public enum Bench {
             // The same numbers for tools/compare_bench.py, which writes a pull request's tables from two reports.
             let json = (out as NSString).deletingPathExtension + ".json"
             let summary = Bench.summary(chip: chip, paths: paths, reference: reference, rows: rows, quick: quick)
-            try JSONSerialization.data(withJSONObject: summary, options: [.prettyPrinted, .sortedKeys])
-                .write(to: URL(fileURLWithPath: json))
-            print("(written to \(out) and \(json))")
+            // Never fails the bench: the report above is what testers and the app need.
+            if JSONSerialization.isValidJSONObject(summary),
+               let data = try? JSONSerialization.data(withJSONObject: summary, options: [.prettyPrinted, .sortedKeys]),
+               (try? data.write(to: URL(fileURLWithPath: json))) != nil {
+                print("(written to \(out) and \(json))")
+            } else {
+                print("(written to \(out); \(json) could not be written)")
+            }
         }
     }
 
@@ -160,7 +165,7 @@ public enum Bench {
                         quick: Bool) -> [String: Any] {
         let runs: [[String: Any]] = rows.map { row in
             var run = row.filter { ["name", "image1", "image2", "step", "vae", "peak", "parts", "shares"].contains($0.key) }
-            if let a = reference["velocity"] as? String, let b = row["velocity"] as? String, let e = Bench.relativeError(b, a) {
+            if let a = reference["velocity"] as? String, let b = row["velocity"] as? String, let e = Bench.relativeError(b, a), e.isFinite {
                 run["velocityError"] = e
             }
             if let a = reference["image"] as? String, let b = row["image"] as? String, let d = Bench.levels(b, a) {
