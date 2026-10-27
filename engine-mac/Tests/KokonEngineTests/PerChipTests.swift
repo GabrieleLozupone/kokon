@@ -47,8 +47,11 @@ final class PerChipTests: XCTestCase {
         XCTAssertEqual(Chip.generation(of: "Apple M10"), 10)
         XCTAssertNil(Chip.generation(of: "Intel(R) Core(TM) i9"))
         let here = Chip.current
-        XCTAssertGreaterThan(here.gpuFamily, 6)
         XCTAssertGreaterThan(here.performanceCores, 0)
+        // A virtual Mac (GitHub's runners) has a paravirtual GPU that reports no Apple family.
+        if MTLCreateSystemDefaultDevice()?.name.contains("Paravirtual") != true {
+            XCTAssertGreaterThan(here.gpuFamily, 6)
+        }
     }
 
     /// The first evaluation's shares from the cost model: on any chip they add up and keep each unit in its range.
