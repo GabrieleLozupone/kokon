@@ -428,8 +428,10 @@ public final class QwenPipeline {
             return (out, w, h)
         }
         let rgba = try decodeImage(data)
-        let gray = (0..<(rgba.width * rgba.height)).map { p in
-            UInt8((77 * Int(rgba.rgba[p * 4]) + 150 * Int(rgba.rgba[p * 4 + 1]) + 29 * Int(rgba.rgba[p * 4 + 2])) >> 8)
+        let gray = (0..<(rgba.width * rgba.height)).map { p -> UInt8 in
+            // In parts: Xcode 26's compiler times out on the whole expression.
+            let r: Int = 77 * Int(rgba.rgba[p * 4]), g: Int = 150 * Int(rgba.rgba[p * 4 + 1]), b: Int = 29 * Int(rgba.rgba[p * 4 + 2])
+            return UInt8((r + g + b) >> 8)
         }
         return (gray, rgba.width, rgba.height)
     }

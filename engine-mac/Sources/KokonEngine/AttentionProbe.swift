@@ -93,8 +93,11 @@ extension Probe {
             return try MetalContext.finish(commands, "flash")
         }
         let gpuError = error { i, c in f(ob)[(offset + i) * stride + c] }
-        print(String(format: "GPU %@%@, 32 heads: %.1f ms, %.2f ms/head, %.2f TFLOP/s; head 0 rel %.1e", kernel, packed ? " (with packing)" : "",
-                     gpu * 1e3, gpu * 1e3 / Double(heads), 4 * Double(queries) * Double(keys) * Double(d) * Double(heads) / gpu / 1e12, gpuError))
+        // In parts: Xcode 26's compiler times out on the whole expression.
+        let flops: Double = 4 * Double(queries) * Double(keys) * Double(d) * Double(heads)
+        let note = packed ? " (with packing)" : ""
+        print(String(format: "GPU %@%@, 32 heads: %.1f ms, %.2f ms/head, %.2f TFLOP/s; head 0 rel %.1e", kernel, note,
+                     gpu * 1e3, gpu * 1e3 / Double(heads), flops / gpu / 1e12, gpuError))
         }
         if ProcessInfo.processInfo.environment["KOKON_PROBE_GPU_ONLY"] == "1" { return }
 
