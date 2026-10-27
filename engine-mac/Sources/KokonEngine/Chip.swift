@@ -7,6 +7,9 @@ import Metal
 public struct Chip: Sendable, CustomStringConvertible {
     /// `machdep.cpu.brand_string`, e.g. "Apple M2 Pro".
     public let name: String
+    /// `hw.model`, e.g. "Mac14,12": tells a fanless MacBook Air from a Mac mini with the same chip, which matters
+    /// for timings (the Air slows down when warm).
+    public let model: String
     /// 1 for M1 … 5 for M5, from the name; nil for a name the engine does not know (a newer chip: treated as the
     /// newest known one where a path depends on it).
     public let generation: Int?
@@ -32,6 +35,7 @@ public struct Chip: Sendable, CustomStringConvertible {
             return sysctlbyname(key, &value, &size, nil, 0) == 0 ? Int(value) : 0
         }
         name = sysctl("machdep.cpu.brand_string")
+        model = sysctl("hw.model")
         generation = Chip.generation(of: name)
         performanceCores = number("hw.perflevel0.physicalcpu")
         efficiencyCores = number("hw.perflevel1.physicalcpu")

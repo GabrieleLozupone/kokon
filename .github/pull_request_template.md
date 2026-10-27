@@ -10,6 +10,7 @@
 - [ ] `npm test` (UI logic)
 - [ ] `cd mcp && npm test` (only if `mcp/` changed)
 - [ ] Tried it in the app (`npx tauri dev`), if it changes behavior or the UI
+- [ ] `engine-mac/` changed: `swift test`, and the report from [engine-mac/AGENTS.md](https://github.com/GabrieleLozupone/kokon/blob/master/engine-mac/AGENTS.md#the-pull-request-report) below
 
 ## Notes
 

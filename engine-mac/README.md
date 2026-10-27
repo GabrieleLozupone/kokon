@@ -24,6 +24,8 @@ swift test                                   # no model needed
 .build/release/kokon-engine-mac check-na     # the Metal 4 matrix product against MPS
 .build/release/kokon-engine-mac check-ane8   # the int8 Neural Engine programs against the fp16 one
 bash tools/ab.sh snapshot base; bash tools/ab.sh run 2 "base|base|X=1" "new|new|X=1" -- time-dit <dit.gguf> 64 32
+bash tools/testset.sh 3 "base|base|" "new|new|"   # the fixed test set of an engine PR (see AGENTS.md)
+python3 -I tools/compare_bench.py baseline-report.json kokon-bench-report.json   # two bench reports → PR tables
                                              # alternated A/B of build snapshots and settings (steps, page-ins)
 ```
 

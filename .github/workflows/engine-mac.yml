@@ -1,0 +1,30 @@
+name: Mac engine
+
+# Builds kokon-engine-mac and runs `swift test` (no model) on pull requests that touch engine-mac/.
+# GitHub's macOS runners are virtual machines: Metal is paravirtualized and the Neural Engine is likely missing, so
+# tests that need real hardware may fail or skip there; the maintainer's `swift test` on a Mac stays the reference.
+on:
+  pull_request:
+    paths: ["engine-mac/**", ".github/workflows/engine-mac.yml"]
+  push:
+    branches: [master]
+    paths: ["engine-mac/**", ".github/workflows/engine-mac.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    # The engine uses the macOS 26 SDK (Metal 4, Apple10): it needs Xcode 26.
+    runs-on: macos-26
+    defaults:
+      run:
+        working-directory: engine-mac
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: swift --version && xcodebuild -version
+      - name: Build
+        run: swift build -c release
+      - name: Test
+        run: swift test

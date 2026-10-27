@@ -41,6 +41,9 @@ Kokon app (Tauri 2 + React, src-tauri/ + src/)    kokon-mcp (mcp/, stdio)    scr
 
 Module map and the measured facts behind each default: [docs/engineering-notes.md](docs/engineering-notes.md).
 
+Working on the Mac engine (`engine-mac/`): read [engine-mac/AGENTS.md](engine-mac/AGENTS.md) first: optimize for
+your own Mac without changing other chips, how to measure, and the report every engine PR carries.
+
 ## Build and test
 
 Setup, prerequisites and the full commands are in [CONTRIBUTING.md](CONTRIBUTING.md). In short:

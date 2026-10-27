@@ -104,7 +104,12 @@ public enum Bench {
         print("\n" + report)
         if let out {
             try report.write(toFile: out, atomically: true, encoding: .utf8)
-            print("(written to \(out))")
+            // The same numbers for tools/compare_bench.py, which writes a pull request's tables from two reports.
+            let json = (out as NSString).deletingPathExtension + ".json"
+            let summary = Bench.summary(chip: chip, paths: paths, reference: reference, rows: rows, quick: quick)
+            try JSONSerialization.data(withJSONObject: summary, options: [.prettyPrinted, .sortedKeys])
+                .write(to: URL(fileURLWithPath: json))
+            print("(written to \(out) and \(json))")
         }
     }
 
@@ -116,7 +121,7 @@ public enum Bench {
             "",
             "- Chip: \(chip.name), \(chip.gpuCores) GPU cores (GPU family Apple\(chip.gpuFamily)\(chip.supportsMetal4 ? ", Metal 4" : "")), "
                 + "\(chip.performanceCores) performance + \(chip.efficiencyCores) efficiency cores, \(Int(chip.memoryGB.rounded())) GB",
-            "- macOS \(chip.macOS); engine \(EngineVersion.string)",
+            "- Mac \(chip.model), macOS \(chip.macOS); engine \(EngineVersion.string)",
             "- Paths selected: " + (paths.isEmpty ? "none chip-specific (the M2 path)" : paths.map(\.0).joined(separator: "; ")),
             "- Shares after the run (1024²): \(rows.first?["shares"] as? String ?? "?")",
             "",
@@ -147,6 +152,27 @@ public enum Bench {
                   + "every image). Accuracy at 512² against the engine's fp32 GPU path"
                   + (quick ? "; --quick: one image per run." : ".")]
         return lines.joined(separator: "\n")
+    }
+
+    /// The report's numbers as JSON: the Mac, the paths, and per run its times, peak memory and accuracy (the files
+    /// the children wrote are read here, before they are deleted).
+    static func summary(chip: Chip, paths: [(String, String, String)], reference: [String: Any], rows: [[String: Any]],
+                        quick: Bool) -> [String: Any] {
+        let runs: [[String: Any]] = rows.map { row in
+            var run = row.filter { ["name", "image1", "image2", "step", "vae", "peak", "parts", "shares"].contains($0.key) }
+            if let a = reference["velocity"] as? String, let b = row["velocity"] as? String, let e = Bench.relativeError(b, a) {
+                run["velocityError"] = e
+            }
+            if let a = reference["image"] as? String, let b = row["image"] as? String, let d = Bench.levels(b, a) {
+                run["imageMeanLevels"] = d.mean
+                run["imageMaxLevels"] = d.max
+            }
+            return run
+        }
+        return ["chip": chip.name, "model": chip.model, "gpuCores": chip.gpuCores, "gpuFamily": chip.gpuFamily,
+                "performanceCores": chip.performanceCores, "efficiencyCores": chip.efficiencyCores,
+                "memoryGB": Int(chip.memoryGB.rounded()), "macOS": chip.macOS, "engine": EngineVersion.string,
+                "paths": paths.map(\.0), "quick": quick, "runs": runs]
     }
 
     /// ‖a − b‖ / ‖b‖ of two files of floats.

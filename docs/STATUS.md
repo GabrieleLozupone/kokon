@@ -1,6 +1,6 @@
 # Status
 
-**Updated 2026-10-26.** What is in progress, what comes next, and where help is welcome. Kept current at the end
+**Updated 2026-10-27.** What is in progress, what comes next, and where help is welcome. Kept current at the end
 of every task (see [AGENTS.md](../AGENTS.md#keeping-docsstatusmd-current)); GitHub is the source of truth.
 
 ## Current version: [0.11.1](https://github.com/GabrieleLozupone/kokon/releases/tag/v0.11.1) (2026-10-26)
@@ -48,6 +48,8 @@ Windows, macOS (Apple Silicon, 15+) and Linux (`.deb`, `.rpm`). Installed copies
   `bash engine-mac/tools/bench.sh` there, gives a report to paste in
   [Discussion #43](https://github.com/GabrieleLozupone/kokon/discussions/43) (M1, M3, M4 and M5 Macs are the most
   useful; see [engine-mac/README.md](../engine-mac/README.md#testing-on-your-mac-bench)).
+- Mac engine optimizations for your own Mac (the chip you develop on, nothing changed on the others): rules,
+  measuring and the pull request report in [engine-mac/AGENTS.md](../engine-mac/AGENTS.md).
 - Model proposals that meet the switch rule: [Discussion #35](https://github.com/GabrieleLozupone/kokon/discussions/35).
 
 ## Recently shipped

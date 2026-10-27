@@ -1303,6 +1303,8 @@ A row with a path off that is faster than the default means that path should not
 | `time-dit <dit> 64 32` | DiT evaluations at 1024² with 32 text rows, plus the timeline per operation and the time between operations |
 | `time-vae`, `time-matvec` | the VAE's time and memory; the decode's products in GB/s |
 | `tools/ab.sh` | **alternated A/B** of build snapshots and settings: `ab.sh snapshot base`, then `ab.sh run 2 "base\|base\|X=1" "new\|new\|X=1" -- time-dit …` |
+| `tools/testset.sh` | the fixed test set of an engine pull request through `ab.sh`: 1024², 1344×768 and an edit, same prompts and seeds for everyone |
+| `tools/compare_bench.py` | two `bench` reports (the `.json` written next to each) → the before/after tables of a pull request |
 
 Why alternated: a Mac's speed drifts with temperature, other apps and page cache. Running A, B, A, B… in rounds and
 comparing medians is the only way a 1 % change can be trusted. Every "kept" change in this guide was decided that way.
