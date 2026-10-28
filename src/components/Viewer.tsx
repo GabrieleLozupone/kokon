@@ -61,6 +61,27 @@ export function FullscreenButton({ content, hint, onOpen }: { content?: ReactNod
   );
 }
 
+/** Chrome on Android redraws only part of the page after leaving full screen: the rest keeps the
+ * full-screen layout until a reload. Once the window has its size back (the address bar slides in
+ * over several resizes), the page is put on a layer of its own for two frames, which makes the
+ * browser draw all of it again. */
+function repaintAfterFullscreen() {
+  const root = document.getElementById("root");
+  if (!root) return;
+  let timer = 0;
+  const repaint = () => {
+    window.removeEventListener("resize", settle);
+    root.style.opacity = "0.999";
+    requestAnimationFrame(() => requestAnimationFrame(() => (root.style.opacity = "")));
+  };
+  const settle = () => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(repaint, 250);
+  };
+  window.addEventListener("resize", settle);
+  timer = window.setTimeout(repaint, 400);
+}
+
 /** The full-screen view as a portal, for parents that own it (see `FullscreenButton`). */
 export function Fullscreen(props: { children: ReactNode; hint?: string; onClose: () => void; nav?: ViewerNav }) {
   return createPortal(<FullscreenShell {...props} />, document.body);
@@ -200,7 +221,7 @@ function FullscreenShell({ children, hint, onClose, nav }: { children: ReactNode
       .catch(() => {});
     return () => {
       alive = false;
-      if (!wasFull) native.setFullscreen(false).catch(() => {});
+      if (!wasFull) native.setFullscreen(false).then(inBrowser ? repaintAfterFullscreen : undefined).catch(() => {});
     };
   }, []);
 
