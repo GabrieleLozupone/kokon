@@ -107,13 +107,18 @@ extension PerChipTests {
 }
 
 extension PerChipTests {
-    /// The release made visible at once (`KOKON_FLUSH_READY`): chosen on the M5 Pro only, where it was measured.
+    /// The release made visible at once (`KOKON_FLUSH_READY`): chosen by measuring this Mac, once per process.
     func testFlushReleaseSelection() throws {
         guard ProcessInfo.processInfo.environment["KOKON_FLUSH_READY"] == nil else { throw XCTSkip("KOKON_FLUSH_READY is set") }
-        XCTAssertTrue(Coexecutor.flushReleaseSelected(chipName: "Apple M5 Pro"))
-        for name in ["Apple M1", "Apple M2 Pro", "Apple M3 Max", "Apple M4 Pro", "Apple M5", "Apple M5 Max", "Apple M6 Pro", ""] {
-            XCTAssertFalse(Coexecutor.flushReleaseSelected(chipName: name), name)
-        }
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        if device.name.contains("Paravirtual") { throw XCTSkip("a virtual GPU's timing says nothing") }
+        let context = try MetalContext()
+        let start = CACurrentMediaTime()
+        let late = Coexecutor.signalArrivesLate(context)
+        let seconds = CACurrentMediaTime() - start
+        print("\(Chip.current): signals arrive \(late ? "late (flush on)" : "on time (flush off)"), measured in \(Int(seconds * 1000)) ms")
+        XCTAssertEqual(Coexecutor.flushReleaseSelected(context), late)
+        XCTAssertLessThan(seconds, 0.5)
     }
 
     /// With the flush, the CPU sees the release while the GPU's work after it is still running, not at the command

@@ -19,8 +19,8 @@ public enum Bench {
     struct Run { let name: String; let environment: [String: String] }
 
     /// The experimental paths this Mac selects, as (what, the setting that turns it off).
-    static func selectedPaths(device: MTLDevice) -> [(String, String, String)] {
-        let chip = Chip.current
+    static func selectedPaths(context: MetalContext) -> [(String, String, String)] {
+        let (chip, device) = (Chip.current, context.device)
         var paths: [(String, String, String)] = []
         if Coexecutor.int8Selected(chip), #available(macOS 26, *) {
             paths.append(("int8 products on the Neural Engine (M3/M4 path)", "KOKON_ANE_INT8", "0"))
@@ -28,11 +28,11 @@ public enum Bench {
         if NeuralAccelerators.selected(device: device), NeuralAccelerators.make(device: device) != nil {
             paths.append(("GPU products on Metal 4 tensor operations (the M5's neural accelerators; shader cores before)", "KOKON_NA", "0"))
         }
-        if Coexecutor.flushReleaseSelected(chipName: chip.name) {
-            paths.append(("each product released to the AMX and the Neural Engine at once (M5 Pro path)", "KOKON_FLUSH_READY", "0"))
+        if Coexecutor.flushReleaseSelected(context) {
+            paths.append(("each product released to the AMX and the Neural Engine at once (this Mac's signals arrive late)", "KOKON_FLUSH_READY", "0"))
         }
         if QwenDiT.directAttention(device: device) {
-            paths.append(("attention reading K/V straight from memory (Apple9+ path)", "KOKON_ATTENTION_DIRECT", "0"))
+            paths.append(("attention reading K/V straight from memory", "KOKON_ATTENTION_DIRECT", "0"))
         }
         return paths
     }
@@ -49,7 +49,7 @@ public enum Bench {
     public static func run(encoder: String, dit: String, vae: String, quick: Bool, out: String?) throws {
         let context = try MetalContext()
         let chip = Chip.current
-        let paths = selectedPaths(device: context.device)
+        let paths = selectedPaths(context: context)
         print("kokon-engine-mac bench: \(chip)")
         print("selected: " + (paths.isEmpty ? "the M2 path (nothing chip-specific)" : paths.map(\.0).joined(separator: "; ")))
         let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("kokon-bench-\(ProcessInfo.processInfo.processIdentifier)")
@@ -58,9 +58,10 @@ public enum Bench {
 
         var runs = [Run(name: "default (paths above)", environment: [:])]
         for path in paths { runs.append(Run(name: "\(path.1)=\(path.2)", environment: [path.1: path.2])) }
-        // The opt-in int8 Neural Engine path where it may pay (libnnc's M3/M4 path; less accurate everywhere).
+        // The opt-in int8 Neural Engine path where it may pay (libnnc's M3/M4 path; less accurate everywhere). Not `w8`:
+        // its images come out black in a whole generation on every Mac (README, "int8 weights alone").
         if (chip.generation ?? 5) >= 3, #available(macOS 26, *) {
-            for mode in ["w8", "1"] { runs.append(Run(name: "KOKON_ANE_INT8=\(mode)", environment: ["KOKON_ANE_INT8": mode])) }
+            runs.append(Run(name: "KOKON_ANE_INT8=1", environment: ["KOKON_ANE_INT8": "1"]))
         }
 
         // `PROGRESS k/N <what>` before each child, for Kokon's Benchmark button (stdout is a pipe there).
@@ -257,5 +258,5 @@ public enum Bench {
 
 /// The engine's version in reports (the bench script adds the commit).
 public enum EngineVersion {
-    public static let string = ProcessInfo.processInfo.environment["KOKON_ENGINE_VERSION"] ?? "0.1 (experimental)"
+    public static let string = ProcessInfo.processInfo.environment["KOKON_ENGINE_VERSION"] ?? "0.1.1 (experimental)"
 }

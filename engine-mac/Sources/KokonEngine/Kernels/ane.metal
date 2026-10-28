@@ -11,6 +11,14 @@ using namespace metal;
 // The product runs in tiles of at most 4 096 × 4 096 (one Core ML program each, the Neural Engine's fast range);
 // tiles along K are summed here in fp32.
 
+// A few milliseconds of arithmetic per thread and nothing else: the GPU work around the probe's signal
+// (`Coexecutor.signalArrivesLate`).
+kernel void spin(device float *o [[buffer(0)]], constant uint &n [[buffer(1)]], uint i [[thread_position_in_grid]]) {
+    float x = float(i);
+    for (uint k = 0; k < n; k++) x = fma(x, 1.0000001f, 0.5f);
+    o[i] = x;
+}
+
 // fp32 -> fp16 (check-ane).
 kernel void pack_half(device const float *src [[buffer(0)]], device half *dst [[buffer(1)]],
                       constant uint &count [[buffer(2)]], uint i [[thread_position_in_grid]]) {

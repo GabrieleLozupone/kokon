@@ -545,7 +545,7 @@ impl Engine {
         self.emit_server();
         let report = mb::report_path(&self.data_dir);
         let args = mb::bench_args(cfg.profile(), &report, quick);
-        let envs = vec![("KOKON_ENGINE_VERSION".to_string(), format!("0.1 (experimental), Kokon {APP_VERSION}"))];
+        let envs = vec![("KOKON_ENGINE_VERSION".to_string(), format!("0.1.1 (experimental), Kokon {APP_VERSION}"))];
         let command = mb::BenchCommand { exe: cfg.server_exe(), args, envs, report, quick };
         let (e1, e2) = (self.clone(), self.clone());
         let r = self.mac_bench.start(

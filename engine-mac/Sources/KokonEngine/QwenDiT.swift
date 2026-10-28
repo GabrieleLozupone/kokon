@@ -924,16 +924,14 @@ public final class QwenDiT {
     struct PackParams { var keys, paddedKeys, stride, heads: UInt32 }
     /// The target's attention (not causal) on K and V packed first to fp16, heads first: 1024², 32 heads, M2 Pro
     /// (`probe-attention`, 2026-10-25): 91.0 ms with the packing against 95.2 for `flash_attention_half`, the same
-    /// accuracy. Apple9+ GPUs (M3 and later) read the packed K and V straight from memory (`flash_attention_direct`),
-    /// as MFA's and libnnc's tables do there; on the M2 Pro that variant takes 142 ms. Not yet measured on an M3+.
+    /// accuracy. `flash_attention_direct` reads the packed K and V straight from memory, as MFA's and libnnc's tables
+    /// do on Apple9+ GPUs; it was the default there until the bench reports of Discussion #43 (2026-10-27) found it
+    /// slower on every one: a step at 1024², direct against packed, M3 Max 5.45 → 4.83 s, M4 Pro 7.27 → 5.96,
+    /// M4 Max 4.57 → 3.88, M5 Pro 5.79 → 5.34 (on the M2 Pro 142 ms against 91 for the attention alone). Off by default
+    /// on every chip; `KOKON_ATTENTION_DIRECT=1` to try it.
     lazy var packedKernel = QwenDiT.directAttention(device: context.device) ? "flash_attention_direct" : "flash_attention_packed"
-    /// `flash_attention_direct` on Apple9+ GPUs; `KOKON_ATTENTION_DIRECT=0` / `=1` to choose.
     static func directAttention(device: MTLDevice) -> Bool {
-        switch ProcessInfo.processInfo.environment["KOKON_ATTENTION_DIRECT"] {
-        case "0": return false
-        case "1": return true
-        default: return device.supportsFamily(.apple9)
-        }
+        ProcessInfo.processInfo.environment["KOKON_ATTENTION_DIRECT"] == "1"
     }
 
     /// Queries `[queries, queries + count)` against keys `[0, keys)`, into the same rows of `attended`. The target's

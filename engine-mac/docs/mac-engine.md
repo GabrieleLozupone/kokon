@@ -653,10 +653,13 @@ read it. That is why there are two reserves and two sets of Neural Engine progra
 the next wait the command buffer encodes, or at its end: GPU work of 3 × 20 ms with a signal after each, the CPU saw
 them at 60 / 60 / 60 ms, and with a wait after each signal at 20 / 40 / 60. In the sequence above the first wait comes
 after the GPU's rows, so there the AMX and the Neural Engine started only when the GPU was done, and the timeline read
-the GPU's rows as ~1 ms (the balancer then gave the AMX nothing and the CPU no heads). On that chip `release` encodes a
+the GPU's rows as ~1 ms (the balancer then gave the AMX nothing and the CPU no heads). An M2 Max on macOS 26.2 showed
+the same; the Macs on macOS 27 did not. So the engine measures it at every start (`Coexecutor.signalArrivesLate`,
+~50 ms: ~20 ms of GPU work, a signal, ~20 ms more, and when the CPU sees it), and where it is late `release` encodes a
 wait on `ready` right after its signal, on a value already reached ([chapter 26](#26-per-chip-paths),
-`KOKON_FLUSH_READY`). `PerChipTests` checks on every Mac that the flushed release reaches the CPU before the command
-buffer's end.
+`KOKON_FLUSH_READY`). Where signals arrive on time the wait is not free (M2 Pro, macOS 27.2: an evaluation 6.83 →
+7.00 s), so it is not used there. `PerChipTests` checks on every Mac that the flushed release reaches the CPU before
+the command buffer's end.
 
 ## 14. The Neural Engine in detail
 
@@ -839,9 +842,10 @@ fp32: 94 ms against 120 for the fp32 kernel. The velocity stays within 6 · 10�
 keys padded to 64, in 1.1 ms. Each threadgroup then reads half the bytes, contiguous and unconverted:
 `flash_attention_packed`, 91 ms against 95.
 
-**On M3 and later** (Apple9+ GPUs) the engine picks `flash_attention_direct`: each SIMD group reads the packed K and V
-straight from memory, with no threadgroup tiles and no barriers, as Metal FlashAttention's tables prefer on those GPUs.
-On the M2 Pro it takes 142 ms, so it is chosen only from Apple9 on. Not yet measured on an M3 or later.
+**`flash_attention_direct`** (`KOKON_ATTENTION_DIRECT=1`): each SIMD group reads the packed K and V straight from
+memory, with no threadgroup tiles and no barriers, as Metal FlashAttention's tables prefer on Apple9+ GPUs. It was the
+default from Apple9 on until engine 0.1.1; the bench reports showed it slower on every M3, M4 and M5 measured
+(a step at 1024² in the bench reports of [Discussion #43](https://github.com/GabrieleLozupone/kokon/discussions/43): M3 Max 5.45 → 4.83 s without it, M4 Pro 7.27 → 5.96, M4 Max 4.57 → 3.88, M5 Pro 5.79 → 5.34), and on the M2 Pro it takes 142 ms against 91. Off on every chip.
 
 A note in the kernel's comments that cost a day: with SIMD-group barriers only, the lanes' writes to threadgroup memory
 were sometimes not seen by the loads that followed (1 run in 4 wrong). The kernel uses threadgroup barriers.
@@ -1271,9 +1275,9 @@ any Mac.**
 | Path | Chosen | M2 Pro result | Switch |
 |---|---|---|---|
 | **GPU rows on Metal 4 tensor operations** (`na_matmul`, MetalPerformancePrimitives' `matmul2d`): on the M5 the GPU cores' matrix units, before it the shader cores | wherever Metal 4 runs | 6.3 vs MPS 5.6 TFLOP/s, bit for bit the same; an evaluation 7.57 → 7.48 s | `KOKON_NA=0` |
-| **Attention reading K/V from memory** (`flash_attention_direct`) | Apple9+ GPUs (M3 and later) | 142 ms vs 91 (so not on M2) | `KOKON_ATTENTION_DIRECT=0/1` |
+| **Attention reading K/V from memory** (`flash_attention_direct`) | off on every chip (since 0.1.1) | slower on every Mac measured (M2 Pro 142 ms vs 91; M3 Max, M4 Pro, M4 Max, M5 Pro: 8–18 % per step) | `KOKON_ATTENTION_DIRECT=1` |
 | **int8 products on the Neural Engine** (libnnc's M3/M4 path) | opt-in on every chip | a tile 10.1 → 7.0 ms, but 15–50× the error | `KOKON_ANE_INT8=1` or `w8` |
-| **Each product released at once** (`Coexecutor.release`: a wait on `ready` right after its signal, so the CPU sees it before the GPU's own rows) | the M5 Pro only (`Chip.name`) | not selected (M5 Pro: an evaluation 5.50–5.89 → 4.44–4.46 s) | `KOKON_FLUSH_READY=0/1` |
+| **Each product released at once** (`Coexecutor.release`: a wait on `ready` right after its signal, so the CPU sees it before the GPU's own rows) | where signals arrive late, measured at every start (`signalArrivesLate`: M5 Pro on macOS 26.6, M2 Max on 26.2) | M5 Pro: an evaluation 5.50–5.89 → 4.44–4.46 s; where on time it costs ~2.5 % (M2 Pro, macOS 27.2) | `KOKON_FLUSH_READY=0/1` |
 | **Starting shares** scaled by the chip's estimated units | always | — | `KOKON_BALANCE=0` keeps the defaults |
 
 Only the M2 Pro has measured these. `bench` exists to measure them on the Macs we do not have.
@@ -1452,8 +1456,8 @@ All are environment variables read once at start. Defaults are what users run.
 | `KOKON_WEIGHTS` | fp16 | `fp32`: unpack weights to fp32 (checks) |
 | `KOKON_ACTIVATIONS` | fp16 | `fp32`: fp32 inputs to the GPU's and AMX's products (checks) |
 | `KOKON_ATTENTION` | fp16 packed kernel | `fp32`: fp32 kernel; `graph`: MPSGraph; `unpacked`: no K/V packing |
-| `KOKON_ATTENTION_DIRECT` | on from Apple9 | `0`/`1`: choose the direct-load attention |
-| `KOKON_FLUSH_READY` | on the M5 Pro | `0`/`1`: a wait right after each release, so the AMX and the Neural Engine see it at once |
+| `KOKON_ATTENTION_DIRECT` | off | `1`: the direct-load attention |
+| `KOKON_FLUSH_READY` | where signals arrive late (measured at start) | `0`/`1`: a wait right after each release, so the AMX and the Neural Engine see it at once |
 | `KOKON_FUSED_CAST`, `KOKON_FUSED_PACK`, `KOKON_FUSED_RESIDUAL`, `KOKON_SHARED_ROWS` | on | `0`: the separate passes, for comparison |
 | `KOKON_PREFIX_CACHE` | fp16 or q8 | `0`: off; `fp32`, `fp16`, `q8`: choose the format |
 | `KOKON_PREFIX_CACHE_MB` | 1536 below 32 GB, memory/8 above | the cache's limit |

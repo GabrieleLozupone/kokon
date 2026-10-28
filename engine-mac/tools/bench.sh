@@ -11,4 +11,4 @@ here="$(cd "$(dirname "$0")/.." && pwd)"
 (cd "$here" && swift build -c release 2>&1 | tail -1)
 commit="$(git -C "$here" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 out="$PWD/kokon-bench-report.md"
-KOKON_ENGINE_VERSION="0.1 (experimental), commit $commit" "$here/.build/release/kokon-engine-mac" bench --out "$out" "$@"
+KOKON_ENGINE_VERSION="0.1.1 (experimental), commit $commit" "$here/.build/release/kokon-engine-mac" bench --out "$out" "$@"

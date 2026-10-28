@@ -1,6 +1,7 @@
 import Accelerate
 import Foundation
 import Metal
+import QuartzCore
 
 /// **One product on the GPU, the AMX and the Neural Engine at the same time**, cut by rows:
 ///
@@ -87,14 +88,66 @@ final class Coexecutor {
     /// (a 3 × 20 ms test: the CPU saw the three signals at 60 / 60 / 60 ms, with a wait after each at 20 / 40 / 60).
     /// Here the next wait is after the GPU's own rows, so the AMX and the Neural Engine started only when the GPU was
     /// done, one after the other instead of together, and the timeline read the GPU's rows as ~1 ms. The wait is on a
-    /// value already reached: the GPU does not stop. Measured on the M5 Pro only; `KOKON_FLUSH_READY=0` / `=1`.
+    /// value already reached, but it is not free where signals arrive on time: on the M2 Pro (macOS 27.2) an
+    /// evaluation 6.83 → 7.00 s. So it is chosen by measuring (`signalArrivesLate`), not by chip: the M5 Pro on
+    /// macOS 26.6 and an M2 Max on 26.2 show the late signal, the Macs on macOS 27 did not. `KOKON_FLUSH_READY=0` / `=1`.
     let flushRelease: Bool
-    static func flushReleaseSelected(chipName: String) -> Bool {
+    static func flushReleaseSelected(_ context: MetalContext) -> Bool {
         switch ProcessInfo.processInfo.environment["KOKON_FLUSH_READY"] {
         case "0": return false
         case "1": return true
-        default: return chipName == "Apple M5 Pro"
+        default: return signalArrivesLate(context)
         }
+    }
+
+    nonisolated(unsafe) private static var lateSignal: Bool?
+    private static let lateSignalLock = NSLock()
+    /// **Whether this Mac delivers a signal inside a command buffer late** (at the command buffer's next wait or its
+    /// end): ~20 ms of GPU work, a signal, ~20 ms more; the CPU sees it about halfway when signals arrive on time, near
+    /// the end when they are late. Measured once per process (~50 ms, at the first co-executor), so a macOS update is
+    /// seen at the next start. A failed measurement counts as on time (the path before the flush existed).
+    static func signalArrivesLate(_ context: MetalContext) -> Bool {
+        lateSignalLock.withLock {
+            if let late = lateSignal { return late }
+            let late = (try? measureLateSignal(context)) ?? false
+            lateSignal = late
+            return late
+        }
+    }
+
+    private static func measureLateSignal(_ context: MetalContext) throws -> Bool {
+        let pipeline = try context.pipeline("spin")
+        let out = try context.scratch(4 << 20, label: "spin")
+        func spin(_ commands: MTLCommandBuffer, _ n: UInt32) {
+            var n = n
+            let e = commands.makeComputeCommandEncoder()!
+            e.setComputePipelineState(pipeline); e.setBuffer(out, offset: 0, index: 0); e.setBytes(&n, length: 4, index: 1)
+            e.dispatchThreads(MTLSize(width: 1 << 20, height: 1, depth: 1), threadsPerThreadgroup: MTLSize(width: 256, height: 1, depth: 1))
+            e.endEncoding()
+        }
+        // Sized to ~20 ms on this GPU.
+        var n: UInt32 = 64
+        for _ in 0..<3 {
+            guard let c = context.queue.makeCommandBuffer() else { return false }
+            spin(c, n)
+            let seconds = try MetalContext.finish(c, "spin")
+            n = UInt32(min(Double(1 << 24), Double(n) * 0.02 / max(seconds, 1e-5)))
+        }
+        guard let event = context.device.makeSharedEvent(), let commands = context.queue.makeCommandBuffer() else { return false }
+        spin(commands, n)
+        release(event, 1, flush: false, commands)
+        spin(commands, n)
+        let seen = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var at = 0.0
+        Thread {
+            _ = event.wait(untilSignaledValue: 1, timeoutMS: 10_000)
+            at = CACurrentMediaTime()
+            seen.signal()
+        }.start()
+        try MetalContext.finish(commands, "late signal probe")
+        guard seen.wait(timeout: .now() + 10) == .success else { return false }
+        let (start, end) = (commands.gpuStartTime, commands.gpuEndTime)
+        return at > end - 0.25 * (end - start)
     }
 
     /// Releases operation `p` to the AMX and the Neural Engine.
@@ -136,7 +189,7 @@ final class Coexecutor {
         self.amxEnabled = amx
         aneInt8 = ane && Coexecutor.int8Selected(Chip.current)
         aneHalfRows = !Coexecutor.int8Rows
-        flushRelease = Coexecutor.flushReleaseSelected(chipName: Chip.current.name)
+        flushRelease = Coexecutor.flushReleaseSelected(context)
         // The first evaluation's shares from the cost model on this chip's estimated rates (`Chip.unitScale`; on the
         // M2 Pro its measured ones). Remembered shares replace them (`recall`).
         balancer = Balancer(aneAttention: ane && aneAttention, chip: Chip.current)
@@ -558,7 +611,10 @@ final class Timeline: @unchecked Sendable {
     }
 }
 
-/// A thread running submitted jobs in order.
+/// A thread running submitted jobs in order, at `.userInitiated` like the engine's own work thread (`EngineServer`):
+/// under `.userInteractive`, the level of the apps' interface threads, the AMX's and the CPU's products (BNNS and
+/// `concurrentPerform` inherit it) competed with every window on the Mac as equals, and the interface stuttered while
+/// an image was made. The priority only matters when the CPU is contended; alone, the engine runs as fast.
 final class Worker: @unchecked Sendable {
     private var jobs: [() -> Void] = []
     private let lock = NSLock(), available = DispatchSemaphore(value: 0)
@@ -572,7 +628,7 @@ final class Worker: @unchecked Sendable {
             }
         }
         thread.name = name
-        thread.qualityOfService = .userInteractive
+        thread.qualityOfService = .userInitiated
         thread.start()
     }
 
