@@ -110,13 +110,6 @@ button:disabled { cursor: default; opacity: 0.4; }
 :root[data-theme="dark"] textarea::selection { background: #5a5a5a; color: #f2f2f2; }
 :root[data-theme="dark"][data-platform="mac"] ::selection, :root[data-theme="dark"][data-platform="mac"] input::selection,
 :root[data-theme="dark"][data-platform="mac"] textarea::selection { background: #636363; }
-/* WebKit paints a window that is not focused with the system's inactive selection colours (near-black in a dark GTK
-   theme) unless :window-inactive says otherwise. One rule each: Chromium (WebView2) drops a rule whose selector list
-   holds a pseudo-class it doesn't know. */
-::selection:window-inactive { background: #c4c4c4; color: #0d0d0d; }
-:root[data-theme="dark"] ::selection:window-inactive { background: #5a5a5a; color: #f2f2f2; }
-:root[data-theme="dark"] input::selection:window-inactive { background: #5a5a5a; color: #f2f2f2; }
-:root[data-theme="dark"] textarea::selection:window-inactive { background: #5a5a5a; color: #f2f2f2; }
 svg { display: block; flex: none; }
 
 .app { display: flex; height: 100%; }
