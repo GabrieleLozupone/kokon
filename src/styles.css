@@ -103,13 +103,14 @@ textarea, input[type="text"], input[type="number"] { user-select: text; }
 button { cursor: pointer; background: none; border: 0; padding: 0; }
 button:disabled { cursor: default; opacity: 0.4; }
 :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
-/* Literal colours (the --selection and --text of each theme): WebKitGTK (Linux) ignores var() inside ::selection and
-   draws a dark theme's selection near-black (#41). Keep them in step with the variables above. */
-::selection, input::selection, textarea::selection { background: #c4c4c4; color: #0d0d0d; }
+/* Written out, and with alpha 0.99: WebKitGTK (Linux) ignores var() inside ::selection and turns an opaque selection
+   background into its own colour (a dark theme's grey came out near-black, #41); a translucent one it draws as given.
+   Keep them in step with --selection and --text above. */
+::selection, input::selection, textarea::selection { background: rgba(196, 196, 196, 0.99); color: #0d0d0d; }
 :root[data-theme="dark"] ::selection, :root[data-theme="dark"] input::selection,
-:root[data-theme="dark"] textarea::selection { background: #5a5a5a; color: #f2f2f2; }
+:root[data-theme="dark"] textarea::selection { background: rgba(90, 90, 90, 0.99); color: #f2f2f2; }
 :root[data-theme="dark"][data-platform="mac"] ::selection, :root[data-theme="dark"][data-platform="mac"] input::selection,
-:root[data-theme="dark"][data-platform="mac"] textarea::selection { background: #636363; }
+:root[data-theme="dark"][data-platform="mac"] textarea::selection { background: rgba(99, 99, 99, 0.99); }
 svg { display: block; flex: none; }
 
 .app { display: flex; height: 100%; }
