@@ -66,23 +66,21 @@ final class Coexecutor {
     let aneEnabled: Bool, amxEnabled: Bool
     /// **int8 products on the Neural Engine** (`NeuralEngineProduct.int8Program`, `ane8_*` in `ane.metal`), the path
     /// libnnc (ccv) takes on the M3 and M4: W per column (its scales once per weight, the weight at each use as in
-    /// fp16) and, with `KOKON_ANE_INT8=1`, A per row too; `KOKON_ANE_INT8=w8` keeps the rows fp16. Opt-in on every
+    /// fp16) and A per row (`KOKON_ANE_INT8=1`). Opt-in on every
     /// chip: the error does not depend on the chip, and on the M2 Pro (2026-10-25) one 1792 × 4096 × 4096 tile ran
-    /// 7.0 ms in int8, 8.3 ms with int8 weights, 10.1 ms in fp16 (`check-ane8`), but the velocity at 896² went from
-    /// 7.6e-4 to 4.1e-2 (int8) and 1.1e-2 (int8 weights; one scale per 4 096 values where Q4_K has one per 32).
+    /// 7.0 ms in int8, 10.1 ms in fp16 (`check-ane8`), but the velocity at 896² went from 7.6e-4 to 4.1e-2 (one scale
+    /// per 4 096 values where Q4_K has one per 32). int8 weights with fp16 rows (8.3 ms, 1.1e-2) were removed in 0.1.1:
+    /// a whole generation came out black on every Mac, cause not found.
     /// Finer scales do not close the gap (README, "Tried and not kept": 4.8e-3 with one per 32, and scales given as
     /// program inputs run slower than fp16).
     /// `bench` measures both on M3 and later. Falls back to fp16 when its programs cannot be built (macOS 26+).
     private(set) var aneInt8: Bool
-    /// With `aneInt8`, the rows stay fp16 (int8 weights only, W8A16: `KOKON_ANE_INT8=w8`).
-    let aneHalfRows: Bool
     static func int8Selected(_ chip: Chip) -> Bool {
         switch ProcessInfo.processInfo.environment["KOKON_ANE_INT8"] {
-        case "1", "w8": return true
+        case "1": return true
         default: return false
         }
     }
-    static var int8Rows: Bool { ProcessInfo.processInfo.environment["KOKON_ANE_INT8"] != "w8" }
     /// **The release made visible at once**: a wait on `ready` right after its signal. On the M5 Pro (macOS 26.6) a
     /// signal inside a command buffer reaches the CPU only at the command buffer's end or at the next wait it encodes
     /// (a 3 × 20 ms test: the CPU saw the three signals at 60 / 60 / 60 ms, with a wait after each at 20 / 40 / 60).
@@ -188,7 +186,6 @@ final class Coexecutor {
         self.aneEnabled = ane
         self.amxEnabled = amx
         aneInt8 = ane && Coexecutor.int8Selected(Chip.current)
-        aneHalfRows = !Coexecutor.int8Rows
         flushRelease = Coexecutor.flushReleaseSelected(context)
         // The first evaluation's shares from the cost model on this chip's estimated rates (`Chip.unitScale`; on the
         // M2 Pro its measured ones). Remembered shares replace them (`recall`).
@@ -220,12 +217,12 @@ final class Coexecutor {
         guard rows > 0 else { return [[], []] }
         let device = context.device
         let first: [ProductSlot] = try (0..<3).map { _ in
-            let p = try NeuralEngineProduct(rows: rows, k: Coexecutor.tile, n: Coexecutor.tile, int8: aneInt8, halfActivations: aneHalfRows)
+            let p = try NeuralEngineProduct(rows: rows, k: Coexecutor.tile, n: Coexecutor.tile, int8: aneInt8)
             try p.run()
             return (p, try p.gpuBuffer(p.x, device: device), try p.gpuBuffer(p.w, device: device), try p.gpuBuffer(p.y, device: device))
         }
         let second: [ProductSlot] = try first.map { f in
-            let p = try NeuralEngineProduct(rows: rows, k: Coexecutor.tile, n: Coexecutor.tile, int8: aneInt8, halfActivations: aneHalfRows,
+            let p = try NeuralEngineProduct(rows: rows, k: Coexecutor.tile, n: Coexecutor.tile, int8: aneInt8,
                                             sharing: f.product, sharingOutput: false)
             try p.run()
             return (p, f.x, try p.gpuBuffer(p.w, device: device), try p.gpuBuffer(p.y, device: device))
@@ -350,7 +347,7 @@ final class Coexecutor {
             let bounds = shared && !aneInt8 ? readers.map { columnScales[$0]! } : [columns]   // L: fp16 only
             packedRows = shared ? (a.offset, readers) : nil
             if aneInt8 {
-                try kernel(aneHalfRows ? "ane8w_row_scales" : "ane8_row_scales") { e in
+                try kernel("ane8_row_scales") { e in
                     e.setBuffer(a.buffer, offset: a.offset, index: 0); e.setBuffer(scales, offset: sigma, index: 1)
                     e.setBytes(&sh, length: MemoryLayout<Shape>.stride, index: 2)
                     e.dispatchThreadgroups(MTLSize(width: s.ane, height: 1, depth: 1), threadsPerThreadgroup: MTLSize(width: 256, height: 1, depth: 1))
@@ -368,7 +365,7 @@ final class Coexecutor {
                 for np in 0..<nParts {
                     let slot = slots[kp * nParts + np]
                     var t = shape(kp: kp, np: np)
-                    try kernel(aneInt8 && !aneHalfRows ? "ane8_pack_rows" : "ane_pack_rows") { e in
+                    try kernel(aneInt8 ? "ane8_pack_rows" : "ane_pack_rows") { e in
                         e.setBuffer(a.buffer, offset: a.offset, index: 0); e.setBuffer(scales, offset: sigma, index: 1)
                         e.setBuffer(slot.x, offset: 0, index: 2)
                         e.setBytes(&t, length: MemoryLayout<Shape>.stride, index: 3)
@@ -424,7 +421,7 @@ final class Coexecutor {
             for np in 0..<nParts {
                 var t = shape(np: np)
                 let ys = (0..<3).map { kp in slots[min(kp, kParts - 1) * nParts + np].y }
-                try kernel(aneInt8 ? aneHalfRows ? "ane8w_unpack" : "ane8_unpack" : "ane_unpack") { e in
+                try kernel(aneInt8 ? "ane8_unpack" : "ane_unpack") { e in
                     for (i, y) in ys.enumerated() { e.setBuffer(y, offset: 0, index: i) }
                     e.setBuffer(columns, offset: lambda, index: 3); e.setBuffer(scales, offset: sigma, index: 4)
                     e.setBuffer(c.buffer, offset: c.offset, index: 5)

@@ -169,7 +169,7 @@ extension Coexecutor {
     }
 
     var memoryKey: String {
-        "\(context.device.name) rows \(rows) ane \(aneEnabled)\(aneInt8 ? aneHalfRows ? " w8" : " int8" : "") amx \(amxEnabled) ane-attention \(balancer.aneAttention)\(flushRelease ? " flush" : "")"
+        "\(context.device.name) rows \(rows) ane \(aneEnabled)\(aneInt8 ? " int8" : "") amx \(amxEnabled) ane-attention \(balancer.aneAttention)\(flushRelease ? " flush" : "")"
     }
 
     /// Takes the remembered shares for this Mac and shape, if any.

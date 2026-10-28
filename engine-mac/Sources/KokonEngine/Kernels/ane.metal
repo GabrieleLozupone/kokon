@@ -252,37 +252,3 @@ kernel void ane8_unpack(device const half *y0 [[buffer(0)]], device const half *
     uint j = s.n0 + jj;
     c[(ulong)(s.row0 + i) * s.n + j] = sum * float(s.kPart) * rowScale[i] * columnScale[j];
 }
-
-// int8 weights with fp16 rows (W8A16): the rows lifted by σ_i = 2^floor(log2(2^15 / (127 max_k |A_ik|))), since
-// |y| = |Σ_k x_k w_q,kj| / K <= max |x| · 127; then packed by `ane_pack_rows`; C_ij = K s_j Σ_tiles y_ij / σ_i.
-kernel void ane8w_row_scales(device const float *a [[buffer(0)]], device float *sigma [[buffer(1)]],
-                             constant AneShape &s [[buffer(2)]],
-                             uint i [[threadgroup_position_in_grid]], uint tid [[thread_index_in_threadgroup]]) {
-    threadgroup float shared[8];
-    device const float *row = a + (ulong)(s.row0 + i) * s.k;
-    float m = 0;
-    for (uint c = tid; c < s.k; c += 256) m = max(m, fabs(row[c]));
-    m = simd_max(m);
-    if (tid % 32 == 0) shared[tid / 32] = m;
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (tid == 0) {
-        float peak = 0;
-        for (uint q = 0; q < 8; q++) peak = max(peak, shared[q]);
-        float bound = peak * 127.0f;
-        sigma[i] = (bound > 0 && isfinite(bound)) ? exp2(floor(log2(32768.0f / bound))) : 1.0f;
-    }
-}
-
-kernel void ane8w_unpack(device const half *y0 [[buffer(0)]], device const half *y1 [[buffer(1)]],
-                         device const half *y2 [[buffer(2)]], device const float *columnScale [[buffer(3)]],
-                         device const float *sigma [[buffer(4)]], device float *c [[buffer(5)]],
-                         constant AneShape &s [[buffer(6)]], uint2 g [[thread_position_in_grid]]) {
-    uint jj = g.x, i = g.y;
-    if (jj >= s.nPart || i >= s.rows) return;
-    ulong at = (ulong)i * s.nPart + jj;
-    float sum = float(y0[at]);
-    if (s.kParts > 1) sum += float(y1[at]);
-    if (s.kParts > 2) sum += float(y2[at]);
-    uint j = s.n0 + jj;
-    c[(ulong)(s.row0 + i) * s.n + j] = sum * float(s.kPart) * columnScale[j] / sigma[i];
-}

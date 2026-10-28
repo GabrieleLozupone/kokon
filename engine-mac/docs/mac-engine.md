@@ -1276,7 +1276,7 @@ any Mac.**
 |---|---|---|---|
 | **GPU rows on Metal 4 tensor operations** (`na_matmul`, MetalPerformancePrimitives' `matmul2d`): on the M5 the GPU cores' matrix units, before it the shader cores | wherever Metal 4 runs | 6.3 vs MPS 5.6 TFLOP/s, bit for bit the same; an evaluation 7.57 → 7.48 s | `KOKON_NA=0` |
 | **Attention reading K/V from memory** (`flash_attention_direct`) | off on every chip (since 0.1.1) | slower on every Mac measured (M2 Pro 142 ms vs 91; M3 Max, M4 Pro, M4 Max, M5 Pro: 8–18 % per step) | `KOKON_ATTENTION_DIRECT=1` |
-| **int8 products on the Neural Engine** (libnnc's M3/M4 path) | opt-in on every chip | a tile 10.1 → 7.0 ms, but 15–50× the error | `KOKON_ANE_INT8=1` or `w8` |
+| **int8 products on the Neural Engine** (libnnc's M3/M4 path) | opt-in on every chip | a tile 10.1 → 7.0 ms, but 15–50× the error | `KOKON_ANE_INT8=1` |
 | **Each product released at once** (`Coexecutor.release`: a wait on `ready` right after its signal, so the CPU sees it before the GPU's own rows) | where signals arrive late, measured at every start (`signalArrivesLate`: M5 Pro on macOS 26.6, M2 Max on 26.2) | M5 Pro: an evaluation 5.50–5.89 → 4.44–4.46 s; where on time it costs ~2.5 % (M2 Pro, macOS 27.2) | `KOKON_FLUSH_READY=0/1` |
 | **Starting shares** scaled by the chip's estimated units | always | — | `KOKON_BALANCE=0` keeps the defaults |
 
@@ -1451,7 +1451,7 @@ All are environment variables read once at start. Defaults are what users run.
 | `KOKON_BALANCE` | on | `0`: keep the starting shares |
 | `KOKON_HEADS` | balanced | `g,a,c`: fixed attention heads for GPU, Neural Engine, CPU (sum 32, a multiple of 4) |
 | `KOKON_ANE_ATTENTION` | off | `1`: Neural Engine heads too |
-| `KOKON_ANE_INT8` | off | `1`: int8 weights and rows on the Neural Engine; `w8`: int8 weights only |
+| `KOKON_ANE_INT8` | off | `1`: int8 weights and rows on the Neural Engine |
 | `KOKON_NA` | on with Metal 4 | `0`: MPS for the GPU's rows; `1`: force Metal 4 tensor ops |
 | `KOKON_WEIGHTS` | fp16 | `fp32`: unpack weights to fp32 (checks) |
 | `KOKON_ACTIVATIONS` | fp16 | `fp32`: fp32 inputs to the GPU's and AMX's products (checks) |

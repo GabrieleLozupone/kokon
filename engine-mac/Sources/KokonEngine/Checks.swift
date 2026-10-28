@@ -375,19 +375,6 @@ extension Checks {
         int8.read { y in for i in 0..<(rows * n) { y8[i] = Float(y[i]) } }
         let e8 = error { i, j in Double(y8[i * n + j]) * Double(k) * Double(rowScale[i]) * Double(columnScale[j]) }
         print(String(format: "int8 program %d×%d×%d: %.2f ms (%.1f TOP/s), relative error %.2e", rows, k, n, t8 * 1e3, flops / t8 / 1e12, e8))
-        // int8 weights, fp16 activations: x lifted so |y| = |Σ x w_q| / K <= max|x| · 127 stays under 2^15.
-        let w8 = try NeuralEngineProduct(rows: rows, k: k, n: n, int8: true, halfActivations: true)
-        let lift = (0..<rows).map { i in exp2(floor(log2(32768 / 127 / max(1e-30, (0..<k).reduce(Float(0)) { max($0, abs(a[i * k + $1])) })))) }
-        w8.write(w8.x) { p in for i in 0..<rows { for l in 0..<k { p[i * k + l] = Float16(a[i * k + l] * lift[i]) } } }
-        CVPixelBufferLockBaseAddress(w8.w, [])
-        let pw = CVPixelBufferGetBaseAddress(w8.w)!.assumingMemoryBound(to: Int8.self)
-        for l in 0..<k { for j in 0..<n { pw[l * n + j] = q(w[l * n + j] / columnScale[j]) } }
-        CVPixelBufferUnlockBaseAddress(w8.w, [])
-        let tw = try time(w8)
-        var yw = [Float](repeating: 0, count: rows * n)
-        w8.read { y in for i in 0..<(rows * n) { yw[i] = Float(y[i]) } }
-        let ew = error { i, j in Double(yw[i * n + j]) * Double(k) * Double(columnScale[j]) / Double(lift[i]) }
-        print(String(format: "int8 weights, fp16 activations %d×%d×%d: %.2f ms (%.1f TFLOP/s), relative error %.2e", rows, k, n, tw * 1e3, flops / tw / 1e12, ew))
     }
 }
 

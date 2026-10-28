@@ -429,15 +429,10 @@ correctness test that runs on any Mac (`PerChipTests`). Only the M2 Pro has meas
   run on the GPU's neural accelerators, before it on the shader cores). Its source compiles at run time on macOS 27,
   so it is on wherever Metal 4 runs (`KOKON_NA=0` off). M2 Pro: 6.3 TFLOP/s against MPS's 5.6 at 1536 × 4096 × 4096,
   bit for bit the same result (`check-na`); per evaluation at 1024², 3 alternated rounds: 7.57 → 7.48 s.
-- **int8 products on the Neural Engine** (libnnc's M3/M4 path; `KOKON_ANE_INT8=w8` int8 weights, `=1` int8 weights and
-  rows). Opt-in on every chip, as their error does not depend on the chip. M2 Pro: one 1792 × 4096 × 4096 tile 10.1 ms
-  in fp16, 8.3 ms with int8 weights, 7.0 ms in int8 (`check-ane8`); per evaluation 7.42 → 7.20 / 7.00 s; but the
-  velocity at 896² goes from 7.6e-4 to 1.1e-2 / 4.1e-2 (one int8 scale per 4 096 weights where Q4_K has one per 32;
+- **int8 products on the Neural Engine** (libnnc's M3/M4 path; `KOKON_ANE_INT8=1`, int8 weights and rows). Opt-in on
+  every chip, as their error does not depend on the chip. M2 Pro: one 1792 × 4096 × 4096 tile 10.1 ms in fp16, 7.0 ms
+  in int8 (`check-ane8`); per evaluation 7.42 → 7.00 s; but the velocity at 896² goes from 7.6e-4 to 4.1e-2 (one int8 scale per 4 096 weights where Q4_K has one per 32;
   activation rows with outliers). **Finer scales do not fix it** (2026-10-25, below): int8 stays opt-in.
-- **int8 weights alone** (`KOKON_ANE_INT8=w8`) are broken in a whole generation: on every Mac in the bench reports and
-  on the M2 Pro (2026-10-28) the image comes out black (non-finite) at 512² to 1024², with either DiT file, while one tile
-  (`check-ane8`, 5.8e-3), `check-dit` at 896² (1.1e-2) and `time-dit` stay finite; turning off the prefix cache, the
-  fused kernels, shared rows, the AMX, fp16 activations or Metal 4 does not fix it. Cause not found; out of the bench.
 - **Each product released at once** where signals arrive late (`KOKON_FLUSH_READY=0` off, `=1` on): a wait on
   `ready` right after its signal, chosen by a ~50 ms measurement at the engine's start (`Coexecutor.signalArrivesLate`),
   every start, so a macOS update is seen. On the M5 Pro (macOS 26.6) a signal inside a command buffer reaches the CPU only at the next wait the

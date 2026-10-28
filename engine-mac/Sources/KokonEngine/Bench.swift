@@ -58,8 +58,7 @@ public enum Bench {
 
         var runs = [Run(name: "default (paths above)", environment: [:])]
         for path in paths { runs.append(Run(name: "\(path.1)=\(path.2)", environment: [path.1: path.2])) }
-        // The opt-in int8 Neural Engine path where it may pay (libnnc's M3/M4 path; less accurate everywhere). Not `w8`:
-        // its images come out black in a whole generation on every Mac (README, "int8 weights alone").
+        // The opt-in int8 Neural Engine path where it may pay (libnnc's M3/M4 path; less accurate everywhere).
         if (chip.generation ?? 5) >= 3, #available(macOS 26, *) {
             runs.append(Run(name: "KOKON_ANE_INT8=1", environment: ["KOKON_ANE_INT8": "1"]))
         }

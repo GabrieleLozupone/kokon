@@ -21,8 +21,8 @@ import Foundation
 ///   - rows in units of 256.
 public final class NeuralEngineProduct: @unchecked Sendable {
     public let rows: Int, k: Int, n: Int
-    /// int8 `w` (`int8Program`), and int8 `x` too unless `halfActivations`; the output fp16.
-    public let int8: Bool, halfActivations: Bool
+    /// int8 `x` and `w` (`int8Program`); the output fp16.
+    public let int8: Bool
     private let model: MLModel
     private let features: MLFeatureProvider
     private let options: MLPredictionOptions
@@ -40,15 +40,14 @@ public final class NeuralEngineProduct: @unchecked Sendable {
     }
 
     /// `sharing`: a program of the same shape whose `x` surface (and `y`, with `sharingOutput`) this one uses too.
-    public init(rows: Int, k: Int, n: Int, int8: Bool = false, halfActivations: Bool = false, sharing: NeuralEngineProduct? = nil,
+    public init(rows: Int, k: Int, n: Int, int8: Bool = false, sharing: NeuralEngineProduct? = nil,
                 sharingOutput: Bool = true) throws {
-        self.rows = rows; self.k = k; self.n = n; self.int8 = int8; self.halfActivations = int8 && halfActivations
-        let int8x = int8 && !halfActivations
+        self.rows = rows; self.k = k; self.n = n; self.int8 = int8
         (model, directory) = try NeuralEngineProduct.compile(
-            "\(rows)x\(k)x\(n)\(int8 ? int8x ? "-int8" : "-w8" : "")",
-            program: int8 ? NeuralEngineProduct.int8Program(rows: rows, k: k, n: n, int8x: int8x) : NeuralEngineProduct.program(rows: rows, k: k, n: n),
-            inputs: [("x", [rows, k]), ("w", [k, n])], outputs: [("y", [rows, n])], int8Inputs: int8 ? (int8x ? ["x", "w"] : ["w"]) : [])
-        x = try sharing?.x ?? NeuralEngineProduct.surface(rows: rows, columns: k, int8: int8x)
+            "\(rows)x\(k)x\(n)\(int8 ? "-int8" : "")",
+            program: int8 ? NeuralEngineProduct.int8Program(rows: rows, k: k, n: n) : NeuralEngineProduct.program(rows: rows, k: k, n: n),
+            inputs: [("x", [rows, k]), ("w", [k, n])], outputs: [("y", [rows, n])], int8Inputs: int8 ? ["x", "w"] : [])
+        x = try sharing?.x ?? NeuralEngineProduct.surface(rows: rows, columns: k, int8: int8)
         w = try NeuralEngineProduct.surface(rows: k, columns: n, int8: int8)
         y = try (sharingOutput ? sharing?.y : nil) ?? NeuralEngineProduct.surface(rows: rows, columns: n)
         func shape(_ dims: Int...) -> [NSNumber] { dims.map { NSNumber(value: $0) } }
@@ -114,12 +113,10 @@ public final class NeuralEngineProduct: @unchecked Sendable {
     /// (`ane8_*` in `ane.metal`). The program's form follows libnnc's Core ML int8 GEMM (ccv, BSD-3, Liu Liu:
     /// `ccv_nnc_mfa_ane_rowwise_coreml.mm`, which measured the K limit on an M4), in this engine's layout: x [rows, K]
     /// and w [K, N] row-major, as the fp16 program, where libnnc multiplies W [N, K] by X [K, M].
-    static func int8Program(rows: Int, k: Int, n: Int, int8x: Bool = true) -> String {
+    static func int8Program(rows: Int, k: Int, n: Int) -> String {
         let pieces = k <= 2688 ? 1 : (k + 2047) / 2048
         let part = k / pieces
-        let xType = int8x ? "int8" : "fp16"
-        // int8 x: both operands by 1/√K; fp16 x (W8A16): the weight alone by 1/K, x as the caller scaled it.
-        let (dx, dw) = int8x ? (1 / Float(k).squareRoot(), 1 / Float(k).squareRoot()) : (1, 1 / Float(k))
+        let (dx, dw) = (1 / Float(k).squareRoot(), 1 / Float(k).squareRoot())
         var body = """
                 fp16 dx = const()[name = string("dx"), val = fp16(\(String(format: "%a", dx)))];
                 fp16 dw = const()[name = string("dw"), val = fp16(\(String(format: "%a", dw)))];
@@ -127,18 +124,15 @@ public final class NeuralEngineProduct: @unchecked Sendable {
 
         """
         func operands(_ x: String, _ w: String, _ suffix: String, _ xRows: Int, _ kk: Int) -> String {
-            (int8x ? """
+            """
                     tensor<fp16, [\(xRows), \(kk)]> xh\(suffix) = dequantize(input = \(x), scale = dx)[name = string("xh\(suffix)")];
-
-            """ : "") + """
                     tensor<fp16, [\(kk), \(n)]> wh\(suffix) = dequantize(input = \(w), scale = dw)[name = string("wh\(suffix)")];
 
             """
         }
-        func xh(_ x: String, _ suffix: String) -> String { int8x ? "xh\(suffix)" : x }
         if pieces == 1 {
             body += operands("x", "w", "", rows, k) + """
-                    tensor<fp16, [\(rows), \(n)]> y = matmul(transpose_x = f, transpose_y = f, x = \(xh("x", "")), y = wh)[name = string("y")];
+                    tensor<fp16, [\(rows), \(n)]> y = matmul(transpose_x = f, transpose_y = f, x = xh, y = wh)[name = string("y")];
 
             """
         } else {
@@ -151,11 +145,11 @@ public final class NeuralEngineProduct: @unchecked Sendable {
                 body += """
                         tensor<int32, [2]> xb\(i) = const()[name = string("xb\(i)"), val = tensor<int32, [2]>([0, \(i * part)])];
                         tensor<int32, [2]> wb\(i) = const()[name = string("wb\(i)"), val = tensor<int32, [2]>([\(i * part), 0])];
-                        tensor<\(xType), [\(rows), \(part)]> xq\(i) = slice_by_size(x = x, begin = xb\(i), size = xs)[name = string("xq\(i)")];
+                        tensor<int8, [\(rows), \(part)]> xq\(i) = slice_by_size(x = x, begin = xb\(i), size = xs)[name = string("xq\(i)")];
                         tensor<int8, [\(part), \(n)]> wq\(i) = slice_by_size(x = w, begin = wb\(i), size = ws)[name = string("wq\(i)")];
 
                 """ + operands("xq\(i)", "wq\(i)", "\(i)", rows, part) + """
-                        tensor<fp16, [\(rows), \(n)]> m\(i) = matmul(transpose_x = f, transpose_y = f, x = \(xh("xq\(i)", "\(i)")), y = wh\(i))[name = string("m\(i)")];
+                        tensor<fp16, [\(rows), \(n)]> m\(i) = matmul(transpose_x = f, transpose_y = f, x = xh\(i), y = wh\(i))[name = string("m\(i)")];
 
                 """
             }
@@ -173,7 +167,7 @@ public final class NeuralEngineProduct: @unchecked Sendable {
         program(1.3)
         [buildInfo = dict<string, string>({{"coremlc-component-MIL", "3600.16.1"}, {"coremlc-version", "3600.25.2"}})]
         {
-            func main<ios19>(tensor<int8, [\(k), \(n)]> w, tensor<\(xType), [\(rows), \(k)]> x) {
+            func main<ios19>(tensor<int8, [\(k), \(n)]> w, tensor<int8, [\(rows), \(k)]> x) {
         \(body)        } -> (y);
         }
         """

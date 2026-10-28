@@ -26,4 +26,4 @@ Before working on a chip, look here and in [docs/mac-engine.md](docs/mac-engine.
   With it, test set (3 alternated rounds, median): 1024² 49.0 → 39.6 s, 1344×768 48.3 → 39.9 s, edit 51.6 → 43.0 s.
 - With the release fixed, `bench` still shows `KOKON_NA=0` (3.92 s per step) and `KOKON_ATTENTION_DIRECT=0` (3.86 s)
   ahead of the default (4.08 s): one run each. Direct attention is off on every chip since 0.1.1.
-- `KOKON_ANE_INT8=w8` gives a NaN velocity and a black image here, as on every Mac (README, "int8 weights alone"); `=1` works (1.7 · 10⁻²).
+- `KOKON_ANE_INT8=1` works here (1.7 · 10⁻²).
