@@ -22,7 +22,7 @@ use crate::paths;
 use crate::pipeline;
 use crate::planner::{self, GenerationRequest, Mode, OutputFormat, Plan, PlanInputs, ResolutionMode, ResolvedMode};
 use crate::process::{BackendProgress, BackendStage, ProgressParser, ServerManager, ServerState};
-use crate::sdcpp::{BackendJobStatus, CancelOutcome, Capabilities, SdcppClient, UpscaleRequest};
+use crate::sdcpp::{BackendJobStatus, CancelOutcome, Capabilities, SdcppClient, UpscaleRequest, VidGenRequest};
 use crate::store::{GenerationRecord, InputRecord, PipelineRecord, ReferenceRecord, Store, new_id, now_rfc3339};
 
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -704,7 +704,7 @@ impl Engine {
         // A model file on a drive that is not connected, moved or deleted: say so now, so the
         // app can guide the user (Setup), instead of failing once the job starts. Also with the
         // model loaded: sd-server opens the files again for every image.
-        if let Some(e) = self.config().missing_files_error() {
+        if let Some(e) = self.config().missing_files_error_for_mode(request.mode) {
             return Err(e);
         }
         if let Some(seed) = request.seed
@@ -1091,8 +1091,31 @@ impl Engine {
             j.view.notes = notes;
         });
 
-        // 3. Backend.
-        // A job that also starts the server is not a fair speed sample (startup, first load).
+        let mut cfg = self.config();
+        let profile = if plan.mode == ResolvedMode::Video {
+            if cfg.profile().model == crate::config::WAN_2_2 {
+                cfg.profile().clone()
+            } else {
+                let vp = cfg.profiles.iter().find(|p| p.model == crate::config::WAN_2_2).cloned().unwrap_or_else(|| {
+                    let preset = crate::catalog::recommended_video_preset(vram);
+                    crate::config::ModelProfile::official_video(&cfg.sdcpp_dir, preset)
+                });
+                cfg.active_profile = vp.id.clone();
+                if !cfg.profiles.iter().any(|p| p.id == vp.id) {
+                    cfg.profiles.push(vp.clone());
+                }
+                vp
+            }
+        } else if cfg.profile().model == crate::config::WAN_2_2 {
+            let ip = cfg.profiles.iter().find(|p| p.model == crate::config::QWEN_IMAGE_21).cloned().unwrap_or_else(|| {
+                let preset = crate::catalog::preset(crate::catalog::DEFAULT_PRESET).unwrap();
+                crate::config::ModelProfile::official(&cfg.sdcpp_dir, preset)
+            });
+            cfg.active_profile = ip.id.clone();
+            ip
+        } else {
+            cfg.profile().clone()
+        };
         let model_loaded = self.server.capabilities().is_some_and(|c| c.model_matches(&profile.diffusion_model));
         let mut cold_start = false;
         if self.server.status().state != ServerState::Ready || self.server.owned_alive() == Some(false) || !model_loaded {
@@ -1143,6 +1166,7 @@ impl Engine {
             let prompt = request.prompt.clone();
             let mask_img: Option<GrayImage> = mask.as_ref().map(|(m, _)| m.clone());
             let opts = pipeline::BackendOptions { server_vae_tile_size: cfg.server_vae_tile_size() };
+            let first_frame = images.first().map(|i| i.pixels.clone());
             let prepared = tokio::task::spawn_blocking(move || pipeline::prepare(&plan2, &prompt, seed, &images, mask_img.as_ref(), &opts))
                 .await
                 .map_err(AppError::internal)??;
@@ -1184,8 +1208,27 @@ impl Engine {
             // 5. Submit and follow.
             let mut lines = self.server.subscribe_lines();
             let detailed = self.server.status().owned;
+            let is_video = plan.mode == ResolvedMode::Video;
             let submitted = Instant::now();
-            let accepted = client.submit(&sd_req).await?;
+            let accepted = if is_video {
+                let vid_req = VidGenRequest {
+                    prompt: sd_req.prompt.clone(),
+                    negative_prompt: sd_req.negative_prompt.clone(),
+                    width: plan.working.width,
+                    height: plan.working.height,
+                    video_frames: plan.video_frames.unwrap_or(49),
+                    fps: plan.fps.unwrap_or(16),
+                    seed,
+                    init_image: sd_req.init_image.clone(),
+                    sample_params: sd_req.sample_params.clone(),
+                    vae_tiling_params: sd_req.vae_tiling_params.clone(),
+                    lora: sd_req.lora.clone(),
+                    output_format: "webm".into(),
+                };
+                client.submit_vid(&vid_req).await?
+            } else {
+                client.submit(&sd_req).await?
+            };
             drop(sd_req); // release the base64 payloads
             self.update(id, |j| {
                 j.view.status = JobStatus::Running;
@@ -1263,6 +1306,30 @@ impl Engine {
                 }
             }
             let result = backend_job.result.unwrap_or_default();
+            if is_video {
+                let video_b64 = result.b64_json.or_else(|| result.images.first().map(|img| img.b64_json.clone()));
+                let Some(b64) = video_b64 else {
+                    return Err(AppError::new(ErrorCode::GenerationFailed, "The inference server returned no video."));
+                };
+                let video_bytes = crate::sdcpp::b64_decode(&b64)?;
+                let ext = if result.output_format.is_empty() { "webm" } else { &result.output_format };
+                let duration_ms = started.elapsed().as_millis() as u64;
+                let mut plan3 = plan.clone();
+                if let Some(j) = self.job(id) {
+                    plan3.notes = j.notes;
+                }
+                let rec = self.save_video_result(&video_bytes, ext, &request, &plan3, seed, &inputs_meta, duration_ms, workspace.as_deref(), first_frame.as_ref())?;
+                if !request.private {
+                    let _ = self.events.send(Event::Gallery { id: rec.id.clone(), change: "added" });
+                }
+                self.update(id, |j| {
+                    j.view.status = JobStatus::Done;
+                    j.view.results = vec![rec];
+                    j.view.finished_at = Some(now_rfc3339());
+                    j.view.stage = None;
+                });
+                return Ok(());
+            }
             if result.images.is_empty() {
                 return Err(AppError::new(ErrorCode::GenerationFailed, "The inference server returned no image."));
             }
@@ -1656,6 +1723,7 @@ impl Engine {
             ResolvedMode::MultiReference => "multi_reference",
             ResolvedMode::Compose => "compose",
             ResolvedMode::Upscale => "upscale",
+            ResolvedMode::Video => "video",
         };
         let mut rec = GenerationRecord {
             id: id.clone(),
@@ -1733,6 +1801,116 @@ impl Engine {
         if let Ok(j) = imaging::encode_jpeg(&thumb, 85) {
             let _ = std::fs::write(store.thumb_path(&id), j);
         }
+        store.insert_generation(&rec)?;
+        Ok(rec)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn save_video_result(
+        &self,
+        video_bytes: &[u8],
+        ext: &str,
+        req: &GenerationRequest,
+        plan: &Plan,
+        seed: i64,
+        inputs: &[InputRecord],
+        duration_ms: u64,
+        workspace: Option<&Path>,
+        first_frame: Option<&image::RgbaImage>,
+    ) -> AppResult<GenerationRecord> {
+        let cfg = self.config();
+        let id = new_id();
+        let now = chrono::Local::now();
+        let store = if req.private { &self.private_store } else { &self.store };
+        let dir = if req.private { self.private_dir.join("out") } else { cfg.output_dir.join(now.format("%Y-%m-%d").to_string()) };
+        std::fs::create_dir_all(&dir).map_err(|e| AppError::io("create the output folder", &dir, e))?;
+        let words: Vec<&str> = req.prompt.split_whitespace().take(6).collect();
+        let stem = format!("{}-{}-{seed}", now.format("%H%M%S"), paths::sanitize_file_stem(&words.join(" ")));
+        let file = paths::unique_path(dir.join(format!("{stem}.{ext}")), &[]);
+
+        write_atomic(&file, video_bytes)?;
+
+        let mut extra_paths = Vec::new();
+        if let Some(out) = &req.output_path {
+            let mut roots = vec![cfg.output_dir.clone()];
+            if let Some(w) = workspace {
+                roots.push(w.to_path_buf());
+            }
+            let input_paths: Vec<PathBuf> = inputs.iter().filter_map(|r| r.original_path.as_ref().map(PathBuf::from)).collect();
+            let target = paths::resolve_output_path(out, workspace, &roots, &input_paths)?;
+            if let Some(d) = target.parent() {
+                std::fs::create_dir_all(d).map_err(|e| AppError::io("create the output folder", d, e))?;
+            }
+            write_atomic(&target, video_bytes)?;
+            extra_paths.push(target.to_string_lossy().into_owned());
+        }
+
+        let thumb_path = store.thumb_path(&id);
+        if let Some(d) = thumb_path.parent() {
+            let _ = std::fs::create_dir_all(d);
+        }
+        let mut thumb_created = false;
+        if let Some(ffmpeg) = crate::hdr::find_ffmpeg() {
+            let res = std::process::Command::new(ffmpeg)
+                .args(["-y", "-v", "error", "-i"])
+                .arg(&file)
+                .args(["-vframes", "1", "-vf", "scale=512:-1"])
+                .arg(&thumb_path)
+                .output();
+            if let Ok(output) = res {
+                thumb_created = output.status.success() && thumb_path.exists();
+            }
+        }
+        if !thumb_created {
+            if let Some(img) = first_frame {
+                let thumb = imaging::thumbnail(img, 512);
+                if let Ok(j) = imaging::encode_jpeg(&thumb, 85) {
+                    let _ = std::fs::write(&thumb_path, j);
+                }
+            }
+        }
+
+        let rec = GenerationRecord {
+            id: id.clone(),
+            created_at: now_rfc3339(),
+            mode: "video".into(),
+            original_prompt: None,
+            prompt: req.prompt.clone(),
+            loras: vec![],
+            negative_prompt: plan.negative_prompt.clone(),
+            seed,
+            width: plan.output.width,
+            height: plan.output.height,
+            working_width: plan.working.width,
+            working_height: plan.working.height,
+            model: cfg.profile().model_name(),
+            sampler: plan.sampler.clone(),
+            scheduler: None,
+            steps: plan.steps,
+            cfg: plan.cfg,
+            strength: plan.strength,
+            quality: serde_json::to_value(plan.quality).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default(),
+            resolution: serde_json::to_value(plan.resolution).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default(),
+            references: inputs
+                .iter()
+                .enumerate()
+                .map(|(i, r)| ReferenceRecord { index: i, input_id: r.id.clone(), original_path: r.original_path.clone(), width: r.width, height: r.height })
+                .collect(),
+            mask_input_id: None,
+            outpaint: None,
+            file_path: file.to_string_lossy().into_owned(),
+            extra_paths,
+            favorite: false,
+            parent_id: req.parent_id.clone(),
+            duration_ms,
+            notes: plan.notes.clone(),
+            app_version: APP_VERSION.into(),
+            backend_version: self.backend_version.lock().unwrap().clone(),
+            client: req.client.clone(),
+            request: serde_json::to_value(req).unwrap_or_default(),
+            pipeline: None,
+        };
+
         store.insert_generation(&rec)?;
         Ok(rec)
     }

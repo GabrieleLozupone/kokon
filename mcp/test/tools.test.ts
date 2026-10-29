@@ -34,6 +34,12 @@ describe("input validation", () => {
     expect(gen.description).toMatch(/^Seed for reproducible results/);
     expect(gen.description).not.toMatch(/source image/);
   });
+  it("generate_video validation", () => {
+    expect(obj("generate_video").safeParse({ prompt: "a sunset over the sea", frames: 49, fps: 16 }).success).toBe(true);
+    expect(obj("generate_video").safeParse({ prompt: "a sunset", image_path: "frame.png" }).success).toBe(true);
+    expect(obj("generate_video").safeParse({ prompt: "  " }).success).toBe(false);
+    expect(obj("generate_video").safeParse({ prompt: "x", frames: 5 }).success).toBe(false);
+  });
   it("edit_images limits and order", () => {
     expect(obj("edit_images").safeParse({ prompt: "x", image_paths: [] }).success).toBe(false);
     expect(obj("edit_images").safeParse({ prompt: "x", image_paths: Array(11).fill("a.png") }).success).toBe(false);

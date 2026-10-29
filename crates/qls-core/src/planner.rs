@@ -32,6 +32,7 @@ pub enum Mode {
     /// sized like text-to-image, not like image 1.
     Compose,
     Upscale,
+    Video,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -44,6 +45,7 @@ pub enum ResolvedMode {
     MultiReference,
     Compose,
     Upscale,
+    Video,
 }
 
 impl ResolvedMode {
@@ -56,6 +58,7 @@ impl ResolvedMode {
             Self::MultiReference => "Multi-reference",
             Self::Compose => "New image from references",
             Self::Upscale => "Upscale",
+            Self::Video => "Video",
         }
     }
 }
@@ -293,6 +296,15 @@ pub struct GenerationRequest {
     /// no LoRA (MCP and the HTTP API don't use LoRAs for now). Not used by upscales.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub loras: Option<Vec<String>>,
+    /// Number of video frames for `mode: video` (e.g. 49, 65, 81).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_frames: Option<u32>,
+    /// Frame rate for `mode: video` (default: 24 fps).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fps: Option<u32>,
+    /// Generate a seamlessly looping video (`mode: video`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_loop: Option<bool>,
 }
 
 // ---------------------------------------------------------------------------------------
@@ -369,6 +381,15 @@ pub struct Plan {
     /// Decode tile (width, height in pixels) sent with the job; None = the server's own.
     #[serde(default)]
     pub vae_tile: Option<(u32, u32)>,
+    /// Number of video frames generated (`mode: video`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_frames: Option<u32>,
+    /// Target playback frame rate for video (`mode: video`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fps: Option<u32>,
+    /// Generate a seamlessly looping video (`mode: video`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_loop: Option<bool>,
 }
 
 /// Facts about inputs and the environment, measured before planning.
@@ -860,6 +881,7 @@ fn detect_mode(req: &GenerationRequest, inputs: &PlanInputs) -> Result<(Resolved
             need(n >= 1, "Choose an image to upscale.")?;
             explicit(ResolvedMode::Upscale, "Selected")
         }
+        Mode::Video => explicit(ResolvedMode::Video, "Selected"),
         Mode::Auto => {
             if n == 0 {
                 return Ok((ResolvedMode::Generate, true, "No image provided".into()));
@@ -916,12 +938,21 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
     let mut notes = Vec::new();
     let quality = req.quality;
     // Turbo: its fixed 8-step schedule without CFG (model card).
-    let cfg = 1.0;
+    // Video: Wan flow matching requires 20-40 steps and CFG ~5.0.
+    let cfg = if mode == ResolvedMode::Video { 5.0 } else { 1.0 };
     let budget_tokens = planning_token_budget(inputs.vram_total_mib, inputs.unified_memory);
     let budget_area = budget_tokens * PIXELS_PER_TOKEN;
     let tier_area = resolution_area(req.resolution, quality, rec);
     let adv = &req.advanced;
-    let mut steps = TURBO_STEPS;
+    let mut steps = if mode == ResolvedMode::Video {
+        match quality {
+            Quality::Fast => 20,
+            Quality::Balanced => 30,
+            Quality::Quality => 40,
+        }
+    } else {
+        TURBO_STEPS
+    };
     let batch_count = if mode == ResolvedMode::Upscale { 1 } else { adv.batch_count.unwrap_or(1).clamp(1, 8) };
     let mut optimized = false;
     // Diffusion always runs in one pass; larger outputs are enlarged with the upscaler
@@ -1134,6 +1165,23 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
             outpaint = Some(p);
             strength = Some(adv.strength.unwrap_or(1.0).clamp(0.05, 1.0));
         }
+        ResolvedMode::Video => {
+            let (target_w, target_h) = match (req.width, req.height) {
+                (Some(w), Some(h)) => (w, h),
+                _ => {
+                    let vpreset = crate::catalog::recommended_video_preset(inputs.vram_total_mib);
+                    (vpreset.default_width, vpreset.default_height)
+                }
+            };
+            let w = (target_w / 16 * 16).max(256);
+            let h = (target_h / 16 * 16).max(256);
+            let size = Size::new(w, h);
+            working = plan_working_canvas(size, &limits(size.area(), rec));
+            output = size;
+            if !inputs.image_sizes.is_empty() {
+                references.push(RefPlan { index: 0, source: inputs.image_sizes[0], canvas: working });
+            }
+        }
     }
 
     optimized |= sources_reduced;
@@ -1146,7 +1194,9 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
     // Untiled decodes are only planned from the card's memory on discrete GPUs of 23 GiB
     // and up. 12/16 GB cards and Macs keep the measured fixed thresholds and the server's
     // --vae-tiling, unchanged.
-    let untile_from_memory = !inputs.unified_memory
+    let is_video = mode == ResolvedMode::Video;
+    let untile_from_memory = !is_video
+        && !inputs.unified_memory
         && inputs.vram_total_mib.is_some_and(|mib| mib >= UNTILED_VAE_MIN_VRAM_MIB);
     let (auto_tiling, server_tiling) = if untile_from_memory {
         // `resident + area * bytes/pixel` must fit in this GPU's share of memory
@@ -1161,8 +1211,12 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
     };
     // The server's `--vae-tiling` is only a fallback on large GPUs: a decode within the
     // budget is sent with tiling turned off (only an explicit choice overrides).
-    // Vulkan tiles every decode (`VULKAN_VAE_TILE`).
-    let vae_tiling = adv.vae_tiling.unwrap_or(inputs.vulkan || server_tiling || auto_tiling);
+    // Vulkan and Video tile every decode (`VULKAN_VAE_TILE`).
+    let vae_tiling = if is_video {
+        true
+    } else {
+        adv.vae_tiling.unwrap_or(inputs.vulkan || server_tiling || auto_tiling)
+    };
     if vae_tiling && adv.vae_tiling.is_none() && !inputs.server_vae_tiling && !inputs.vulkan && !quick_upscale {
         optimized = true;
         notes.push("Memory optimization enabled for this size.".into());
@@ -1202,10 +1256,24 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
         None if inputs.hide_uncalibrated => 0.0,
         None => estimated_seconds,
     };
-    let negative_prompt = req.negative_prompt.clone().unwrap_or_default();
-    if !negative_prompt.trim().is_empty() && !quick_upscale {
-        notes.push("The negative prompt is ignored: Turbo runs without CFG.".into());
-    }
+    let negative_prompt = if mode == ResolvedMode::Video {
+        let loop_neg = if req.video_loop.unwrap_or(false) {
+            ", scene cut, jump cut, camera cut, sudden transition"
+        } else {
+            ""
+        };
+        if let Some(np) = req.negative_prompt.as_deref().filter(|s| !s.trim().is_empty()) {
+            format!("{np}{loop_neg}")
+        } else {
+            format!("static, blurry, hazy, washed out, low quality, distorted, deformed{loop_neg}")
+        }
+    } else {
+        let np = req.negative_prompt.clone().unwrap_or_default();
+        if !np.trim().is_empty() && !quick_upscale {
+            notes.push("The negative prompt is ignored: Turbo runs without CFG.".into());
+        }
+        np
+    };
     Ok(Plan {
         mode,
         auto_mode,
@@ -1235,9 +1303,26 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
         upscaler: inputs.upscaler.clone(),
         upscale_tile: if inputs.upscale_tile > 0 { inputs.upscale_tile } else { LARGE_UPSCALE_TILE },
         upscale,
-        custom_sigmas: if quick_upscale { Vec::new() } else { TURBO_SIGMAS.to_vec() },
+        custom_sigmas: if quick_upscale || mode == ResolvedMode::Video { Vec::new() } else { TURBO_SIGMAS.to_vec() },
         vae_tile,
         reference_detail: matches!(mode, ResolvedMode::Edit | ResolvedMode::MultiReference | ResolvedMode::Compose | ResolvedMode::Inpaint).then(|| adv.reference_detail.unwrap_or_default()),
+        video_frames: if mode == ResolvedMode::Video {
+            let vpreset = crate::catalog::recommended_video_preset(inputs.vram_total_mib);
+            Some(req.video_frames.unwrap_or(vpreset.default_frames))
+        } else {
+            None
+        },
+        fps: if mode == ResolvedMode::Video {
+            let vpreset = crate::catalog::recommended_video_preset(inputs.vram_total_mib);
+            Some(req.fps.unwrap_or(vpreset.default_fps))
+        } else {
+            None
+        },
+        video_loop: if mode == ResolvedMode::Video {
+            req.video_loop
+        } else {
+            None
+        },
     })
 }
 
@@ -2031,4 +2116,35 @@ mod tests {
         assert_eq!(r.upscale.unwrap().method, UpscaleMethod::Quick);
         assert_eq!(r.upscale.unwrap().width, Some(3840));
     }
+
+    #[test]
+    fn video_plan_scales_with_vram() {
+        let r = GenerationRequest {
+            prompt: "a majestic waterfall in autumn, cinematic drone shot".into(),
+            mode: Mode::Video,
+            video_loop: Some(true),
+            ..Default::default()
+        };
+        // 8 GB card
+        let p8 = plan(&r, &PlanInputs { vram_total_mib: Some(8 * 1024), ..Default::default() }, &rec()).unwrap();
+        assert_eq!(p8.mode, ResolvedMode::Video);
+        assert_eq!(p8.output.width, 832);
+        assert_eq!(p8.output.height, 480);
+        assert_eq!(p8.video_frames, Some(49));
+        assert_eq!(p8.fps, Some(24));
+        assert_eq!(p8.video_loop, Some(true));
+        assert!(p8.negative_prompt.contains("jump cut"));
+
+        // 16 GB card
+        let p16 = plan(&r, &PlanInputs { vram_total_mib: Some(16 * 1024), ..Default::default() }, &rec()).unwrap();
+        assert_eq!(p16.mode, ResolvedMode::Video);
+        assert_eq!(p16.output.width, 1280);
+        assert_eq!(p16.output.height, 704);
+        assert_eq!(p16.video_frames, Some(73));
+        assert_eq!(p16.fps, Some(24));
+        assert_eq!(p16.steps, 20);
+        assert_eq!(p16.cfg, 5.0);
+        assert!(p16.custom_sigmas.is_empty());
+    }
 }
+

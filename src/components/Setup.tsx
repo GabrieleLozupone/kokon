@@ -149,6 +149,7 @@ export function Setup() {
   // Official files, or files the user already has.
   const requestedMode = useStore((s) => s.setupMode);
   const [mode, setMode] = useState<"official" | "own" | null>(requestedMode);
+  const [modelType, setModelType] = useState<"image" | "video">("image");
   const [scan, setScan] = useState<ModelScan | null>(null);
   const wasRunning = useRef(false);
   const setupDone = useStore((s) => s.status?.setup_complete ?? false);
@@ -327,7 +328,9 @@ export function Setup() {
     }
   };
 
-  const chosen = hw?.presets.find((p) => p.id === preset) ?? null;
+  const isVideo = modelType === "video";
+  const activePresets = isVideo ? (hw?.video_presets ?? []) : (hw?.presets ?? []);
+  const chosen = activePresets.find((p) => p.id === preset) ?? null;
   const running = inst?.running ?? false;
   // A browser cannot pick files on the server: the official download only.
   const own = mode === "own" && !inBrowser;
@@ -385,8 +388,10 @@ export function Setup() {
           <h1>{setupDone ? "Models" : "Welcome to Kokon"}</h1>
           <p className="setup-lead">
             {own
-              ? "Everything runs on this PC. Use the Qwen-Image 2.1 files you already have, for example from ComfyUI: Setup only downloads the engine and what you don't have."
-              : `Everything runs on this PC. Setup downloads the image model once (${chosen ? formatBytes(chosen.files.reduce((a, f) => a + f.size, 0)) : "about 12 GB"}); after that, nothing leaves your computer.`}
+              ? "Everything runs on this PC. Use the model files you already have, for example from ComfyUI: Setup only downloads the engine and what you don't have."
+              : isVideo
+                ? `Everything runs on this PC. Setup downloads the Wan 2.2 video model once (${chosen ? formatBytes(chosen.files.reduce((a, f) => a + f.size, 0)) : "about 8–18 GB"}); after that, nothing leaves your computer.`
+                : `Everything runs on this PC. Setup downloads the image model once (${chosen ? formatBytes(chosen.files.reduce((a, f) => a + f.size, 0)) : "about 12 GB"}); after that, nothing leaves your computer.`}
           </p>
         </div>
 
@@ -450,28 +455,58 @@ export function Setup() {
               </div>
             ) : (
               <>
-                {/* Where the model comes from: the first choice, so it is seen first. A browser has only the download. */}
-                {!inBrowser && <div className="field">
-                  <span>Image model</span>
-                  <div className="choice-cards" role="radiogroup">
-                    <button className={`choice-card ${!own ? "on" : ""}`} role="radio" aria-checked={!own} onClick={() => setMode("official")}>
-                      <Download size={20} />
-                      <div>
-                        <strong>Download the model</strong>
-                        <span>Qwen-Image 2.1 Turbo, tested with Kokon{modelBytes ? ` · ${formatBytes(modelBytes)}` : ""}</span>
-                      </div>
-                    </button>
-                    {!inBrowser && (
-                      <button className={`choice-card ${own ? "on" : ""}`} role="radio" aria-checked={own} onClick={() => setMode("own")}>
-                        <FolderOpen size={20} />
+                {/* Model capability: Image or Video */}
+                <div className="field">
+                  <span>Model capability</span>
+                  <Seg<"image" | "video">
+                    value={modelType}
+                    options={[
+                      { value: "image", label: "Image (Qwen 2.1)" },
+                      { value: "video", label: "Video (Wan 2.2)" },
+                    ]}
+                    onChange={(t) => {
+                      setModelType(t);
+                      setPreset(t === "video" ? (hw?.current_video ?? hw?.recommended_video ?? "video_12gb") : (hw?.current ?? hw?.recommended ?? "12gb"));
+                    }}
+                  />
+                </div>
+
+                {isVideo ? (
+                  <div className="field">
+                    <span>Video model</span>
+                    <div className="choice-cards" role="radiogroup">
+                      <button className="choice-card on" role="radio" aria-checked={true}>
+                        <Download size={20} />
                         <div>
-                          <strong>Use models I already have</strong>
-                          <span>From ComfyUI or another folder; only the engine is downloaded</span>
+                          <strong>Download Wan 2.2 ({chosen?.label ?? "Video"})</strong>
+                          <span>Latest Wan 2.2 video generation, unified T2V and I2V{modelBytes ? ` · ${formatBytes(modelBytes)}` : ""}</span>
                         </div>
                       </button>
-                    )}
+                    </div>
                   </div>
-                </div>}
+                ) : (
+                  <div className="field">
+                    <span>Image model</span>
+                    <div className="choice-cards" role="radiogroup">
+                      <button className={`choice-card ${!own ? "on" : ""}`} role="radio" aria-checked={!own} onClick={() => setMode("official")}>
+                        <Download size={20} />
+                        <div>
+                          <strong>Download the model</strong>
+                          <span>Qwen-Image 2.1 Turbo, tested with Kokon{modelBytes ? ` · ${formatBytes(modelBytes)}` : ""}</span>
+                        </div>
+                      </button>
+                      {!inBrowser && (
+                        <button className={`choice-card ${own ? "on" : ""}`} role="radio" aria-checked={own} onClick={() => setMode("own")}>
+                          <FolderOpen size={20} />
+                          <div>
+                            <strong>Use models I already have</strong>
+                            <span>From ComfyUI or another folder; only the engine is downloaded</span>
+                          </div>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {own && models && (
                   <div id="own-models">
                     <OwnModels
@@ -529,11 +564,15 @@ export function Setup() {
                 )}
                 <div className="field">
                   <span>{hw.gpu?.unified ? "Preset for your Mac's memory" : "Preset for your graphics card"}</span>
-                  <Seg<string> value={preset ?? hw.recommended} options={hw.presets.map((p) => ({ value: p.id, label: p.label }))} onChange={setPreset} />
+                  <Seg<string>
+                    value={preset ?? (isVideo ? (hw.current_video ?? hw.recommended_video ?? "video_12gb") : (hw.current ?? hw.recommended))}
+                    options={activePresets.map((p) => ({ value: p.id, label: p.label }))}
+                    onChange={setPreset}
+                  />
                   {chosen && own && <span className="muted">How Kokon runs the model on your card: memory use and image sizes. Your files are kept.</span>}
                   {chosen && !own && (
                     <span className="muted">
-                      {chosen.summary}.{chosen.id === hw.recommended ? " Recommended for your GPU." : ""}
+                      {chosen.summary}.{chosen.id === (isVideo ? hw.recommended_video : hw.recommended) ? " Recommended for your GPU." : ""}
                       {hw.gpu?.unified ? " Not yet tested on a Mac." : chosen.verified ? "" : chosen.id === "8gb" ? " Beta: tested by users, not yet by us." : " Not yet tested on a real card of this size."}
                     </span>
                   )}

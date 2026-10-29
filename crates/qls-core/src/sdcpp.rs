@@ -118,6 +118,26 @@ pub struct ImgGenRequest {
     pub embed_image_metadata: bool,
 }
 
+/// Body of `POST /sdcpp/v1/vid_gen`.
+#[derive(Debug, Clone, Default, Serialize, PartialEq)]
+pub struct VidGenRequest {
+    pub prompt: String,
+    pub negative_prompt: String,
+    pub width: u32,
+    pub height: u32,
+    pub video_frames: u32,
+    pub fps: u32,
+    pub seed: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub init_image: Option<String>,
+    pub sample_params: SampleParams,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vae_tiling_params: Option<VaeTilingParams>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub lora: Vec<LoraParam>,
+    pub output_format: String,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct LoraParam {
     pub path: String,
@@ -215,6 +235,9 @@ impl Capabilities {
     pub fn supports_img_gen(&self) -> bool {
         self.supported_modes.iter().any(|m| m == "img_gen")
     }
+    pub fn supports_vid_gen(&self) -> bool {
+        self.supported_modes.iter().any(|m| m == "vid_gen")
+    }
     /// The server is Kokon's Mac engine (`engine-mac/`), not sd-server.
     pub fn is_mac_engine(&self) -> bool {
         self.engine == crate::config::MAC_ENGINE_EXE
@@ -292,6 +315,14 @@ pub struct JobImage {
 pub struct JobResult {
     #[serde(default)]
     pub images: Vec<JobImage>,
+    #[serde(default)]
+    pub b64_json: Option<String>,
+    #[serde(default)]
+    pub mime_type: Option<String>,
+    #[serde(default)]
+    pub frame_count: Option<u32>,
+    #[serde(default)]
+    pub fps: Option<u32>,
     #[serde(default)]
     pub output_format: String,
 }
@@ -468,6 +499,28 @@ impl SdcppClient {
         let r = self
             .http
             .post(format!("{}/sdcpp/v1/img_gen", self.base))
+            .header("Content-Type", "application/json")
+            .body(body)
+            .timeout(Duration::from_secs(120))
+            .send()
+            .await
+            .map_err(unavailable)?;
+        let status = r.status().as_u16();
+        let text = r.text().await.unwrap_or_default();
+        match status {
+            200 | 202 => serde_json::from_str(&text)
+                .map_err(|e| AppError::new(ErrorCode::Unsupported, "Unexpected reply from the inference server.").detail(format!("{e}: {text}"))),
+            429 => Err(AppError::new(ErrorCode::QueueFull, "The inference server queue is full.").detail(text)),
+            400 => Err(AppError::new(ErrorCode::MalformedRequest, "The inference server rejected the request.").detail(text)),
+            _ => Err(AppError::new(ErrorCode::GenerationFailed, "The inference server returned an error.").detail(format!("HTTP {status}: {text}"))),
+        }
+    }
+
+    pub async fn submit_vid(&self, req: &VidGenRequest) -> Result<JobAccepted, AppError> {
+        let body = serde_json::to_vec(req).map_err(AppError::internal)?;
+        let r = self
+            .http
+            .post(format!("{}/sdcpp/v1/vid_gen", self.base))
             .header("Content-Type", "application/json")
             .body(body)
             .timeout(Duration::from_secs(120))

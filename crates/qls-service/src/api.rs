@@ -329,6 +329,26 @@ async fn setup_hardware(State(s): St, Query(q): Query<HardwareQ>) -> ApiResult<J
             let (download, disk) = installer::space_needed(&dir, &files);
             json!({ "files": installer::preview(&dir, &files), "download_bytes": download, "disk_bytes": disk })
         });
+        let video_presets: Vec<Value> = catalog::VIDEO_PRESETS
+            .iter()
+            .map(|p| {
+                let files = catalog::video_downloads_for(p, backend, &dir);
+                let (download, disk) = installer::space_needed(&dir, &files);
+                json!({
+                    "id": p.id,
+                    "label": if unified { p.unified_label } else { p.label },
+                    "summary": p.summary,
+                    "min_vram_mib": p.min_vram_mib,
+                    "default_width": p.default_width,
+                    "default_height": p.default_height,
+                    "default_frames": p.default_frames,
+                    "default_fps": p.default_fps,
+                    "files": installer::preview(&dir, &files),
+                    "download_bytes": download,
+                    "disk_bytes": disk,
+                })
+            })
+            .collect();
         json!({
             "active_source": cfg.profile().source,
             "user_files": user_files,
@@ -344,9 +364,12 @@ async fn setup_hardware(State(s): St, Query(q): Query<HardwareQ>) -> ApiResult<J
             "vram_simulated": cfg.vram_override_mib > 0,
             "ram_total_mib": sys.total_memory() / (1024 * 1024),
             "recommended": catalog::recommended_preset(vram, unified).id,
+            "recommended_video": catalog::recommended_video_preset(vram).id,
             "current": cfg.hardware_preset,
+            "current_video": cfg.video_hardware_preset,
             "current_backend": cfg.gpu_backend,
             "presets": presets,
+            "video_presets": video_presets,
             "sdcpp_dir": dir,
             "default_sdcpp_dir": qls_core::config::default_sdcpp_dir(),
             "free_bytes": installer::free_space(&dir),
@@ -381,7 +404,11 @@ fn yes() -> bool {
 /// Starts downloading a preset into the configured folder. When every file is installed the
 /// preset's runtime settings apply, and for the official files their profile becomes active.
 async fn install_start(State(s): St, Json(b): Json<InstallBody>) -> ApiResult<Json<Value>> {
-    let preset = catalog::preset(&b.preset).ok_or_else(|| AppError::invalid(format!("Unknown preset {}.", b.preset)))?;
+    let preset = catalog::preset(&b.preset);
+    let video_preset = catalog::video_preset(&b.preset);
+    if preset.is_none() && video_preset.is_none() {
+        return Err(AppError::invalid(format!("Unknown preset {}.", b.preset)).into());
+    }
     let cfg = s.engine.config();
     let backend = b.backend.unwrap_or(cfg.gpu_backend);
     let user = match b.target.as_deref() {
@@ -390,11 +417,13 @@ async fn install_start(State(s): St, Json(b): Json<InstallBody>) -> ApiResult<Js
         None => !b.apply && !cfg.profile().is_official(),
         Some(t) => return Err(AppError::invalid(format!("Unknown install target {t}.")).into()),
     };
-    let downloads = if user {
+    let downloads = if let Some(vp) = video_preset {
+        catalog::video_downloads_for(vp, backend, &cfg.sdcpp_dir)
+    } else if user {
         let u = cfg.user_profile().ok_or_else(|| AppError::invalid("Choose your model files first."))?;
         catalog::downloads_for_profile(u, backend)
     } else {
-        catalog::downloads_for(preset, backend, &cfg.sdcpp_dir)
+        catalog::downloads_for(preset.unwrap(), backend, &cfg.sdcpp_dir)
     };
     // A running server keeps its DLLs open; the engine zip may need to replace them.
     let st = s.engine.server.status();
@@ -415,9 +444,13 @@ async fn install_start(State(s): St, Json(b): Json<InstallBody>) -> ApiResult<Js
             return;
         }
         let mut c = engine.config();
-        c.apply_preset(preset);
-        if !user {
-            c.use_official();
+        if let Some(vp) = video_preset {
+            c.apply_video_preset(vp);
+        } else {
+            c.apply_preset(preset.unwrap());
+            if !user {
+                c.use_official();
+            }
         }
         c.gpu_backend = backend;
         if backend == GpuBackend::Metal && small_unified {
@@ -438,7 +471,11 @@ async fn install_start(State(s): St, Json(b): Json<InstallBody>) -> ApiResult<Js
     // The bundled upscaler first, so it is not downloaded again.
     let e = s.engine.clone();
     let _ = tokio::task::spawn_blocking(move || e.place_bundled_upscaler()).await;
-    let label = if user { format!("user:{}", preset.id) } else { preset.id.to_string() };
+    let label = if user {
+        format!("user:{}", b.preset)
+    } else {
+        b.preset.clone()
+    };
     s.engine.installer.start(cfg.sdcpp_dir.clone(), &label, downloads, on_finish)?;
     Ok(Json(serde_json::to_value(s.engine.installer.status()).unwrap()))
 }
@@ -525,7 +562,13 @@ async fn get_config(State(s): St) -> Json<AppConfig> {
 /// The prompt enhancer's built-in system prompts (Settings shows them for "" and restores them).
 async fn enhancer_defaults() -> Json<Value> {
     use qls_core::enhancer;
-    Json(json!({ "t2i": enhancer::T2I_SYSTEM_PROMPT, "edit": enhancer::EDIT_SYSTEM_PROMPT, "compose": enhancer::COMPOSE_SYSTEM_PROMPT, "max_chars": enhancer::MAX_SYSTEM_PROMPT_CHARS }))
+    Json(json!({
+        "t2i": enhancer::T2I_SYSTEM_PROMPT,
+        "edit": enhancer::EDIT_SYSTEM_PROMPT,
+        "compose": enhancer::COMPOSE_SYSTEM_PROMPT,
+        "video": enhancer::VIDEO_SYSTEM_PROMPT,
+        "max_chars": enhancer::MAX_SYSTEM_PROMPT_CHARS
+    }))
 }
 
 async fn put_config(State(s): St, Extension(caller): Extension<Caller>, Json(mut cfg): Json<AppConfig>) -> ApiResult<Json<Value>> {
@@ -568,8 +611,35 @@ async fn mac_bench_clear(State(s): St) -> Json<Value> {
     Json(serde_json::to_value(s.engine.mac_bench.state()).unwrap())
 }
 
-async fn backend_start(State(s): St) -> ApiResult<Json<Value>> {
-    let cfg = s.engine.config();
+#[derive(Deserialize, Default)]
+struct BackendStartBody {
+    #[serde(default)]
+    profile: Option<String>,
+    #[serde(default)]
+    mode: Option<String>,
+}
+
+async fn backend_start(State(s): St, body: axum::body::Bytes) -> ApiResult<Json<Value>> {
+    let mut cfg = s.engine.config();
+    let body: BackendStartBody = serde_json::from_slice(&body).unwrap_or_default();
+    if let Some(target_profile) = body.profile {
+        if cfg.profiles.iter().any(|p| p.id == target_profile) {
+            cfg.active_profile = target_profile;
+            let _ = s.engine.set_config(cfg.clone());
+        }
+    } else if let Some(mode) = body.mode {
+        if mode == "video" {
+            if let Some(vp) = cfg.profiles.iter().find(|p| p.model == qls_core::config::WAN_2_2) {
+                cfg.active_profile = vp.id.clone();
+                let _ = s.engine.set_config(cfg.clone());
+            }
+        } else if mode == "image" {
+            if let Some(ip) = cfg.profiles.iter().find(|p| p.model == qls_core::config::QWEN_IMAGE_21) {
+                cfg.active_profile = ip.id.clone();
+                let _ = s.engine.set_config(cfg.clone());
+            }
+        }
+    }
     let engine = s.engine.clone();
     engine.emit_server();
     let r = engine.server.ensure_ready(&cfg).await;
@@ -584,9 +654,9 @@ async fn backend_stop(State(s): St) -> Json<Value> {
     Json(json!({ "stopped": stopped }))
 }
 
-async fn backend_restart(State(s): St) -> ApiResult<Json<Value>> {
+async fn backend_restart(State(s): St, body: axum::body::Bytes) -> ApiResult<Json<Value>> {
     s.engine.server.stop().await;
-    backend_start(State(s)).await
+    backend_start(State(s), body).await
 }
 
 async fn diagnostics_json(State(s): St) -> ApiResult<Json<Value>> {
@@ -969,8 +1039,9 @@ async fn private_clear(State(s): St) -> ApiResult<Json<Value>> {
     Ok(Json(json!({ "cleared": n })))
 }
 
-async fn serve_file(path: &Path, content_type: Option<&str>) -> ApiResult<Response> {
-    let bytes = tokio::fs::read(path).await.map_err(|e| AppError::io("read the image", path, e))?;
+async fn serve_file(path: &Path, content_type: Option<&str>, req_headers: Option<&HeaderMap>) -> ApiResult<Response> {
+    let bytes = tokio::fs::read(path).await.map_err(|e| AppError::io("read the file", path, e))?;
+    let total_len = bytes.len();
     let ct = content_type.map(str::to_owned).unwrap_or_else(|| {
         match path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).as_deref() {
             Some("png") => "image/png",
@@ -979,12 +1050,62 @@ async fn serve_file(path: &Path, content_type: Option<&str>) -> ApiResult<Respon
             Some("gif") => "image/gif",
             Some("bmp") => "image/bmp",
             Some("tif") | Some("tiff") => "image/tiff",
+            Some("webm") => "video/webm",
+            Some("mp4") => "video/mp4",
             _ => "application/octet-stream",
         }
         .to_string()
     });
+
+    if let Some(range_header) = req_headers.and_then(|h| h.get(header::RANGE)).and_then(|v| v.to_str().ok()) {
+        if let Some(spec) = range_header.strip_prefix("bytes=") {
+            let mut parts = spec.split('-');
+            let start_str = parts.next().map(str::trim).unwrap_or("");
+            let end_str = parts.next().map(str::trim).unwrap_or("");
+
+            let (start, end) = match (start_str.is_empty(), end_str.is_empty()) {
+                (false, false) => {
+                    let s = start_str.parse::<usize>().unwrap_or(0);
+                    let e = end_str.parse::<usize>().unwrap_or(total_len.saturating_sub(1));
+                    (s, e.min(total_len.saturating_sub(1)))
+                }
+                (false, true) => {
+                    let s = start_str.parse::<usize>().unwrap_or(0);
+                    (s, total_len.saturating_sub(1))
+                }
+                (true, false) => {
+                    let suffix = end_str.parse::<usize>().unwrap_or(0);
+                    (total_len.saturating_sub(suffix), total_len.saturating_sub(1))
+                }
+                _ => (0, total_len.saturating_sub(1)),
+            };
+
+            if start < total_len && start <= end {
+                let chunk_len = end - start + 1;
+                let chunk = bytes[start..=end].to_vec();
+                return Ok(Response::builder()
+                    .status(StatusCode::PARTIAL_CONTENT)
+                    .header(header::CONTENT_TYPE, ct)
+                    .header(header::ACCEPT_RANGES, "bytes")
+                    .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{total_len}"))
+                    .header(header::CONTENT_LENGTH, chunk_len.to_string())
+                    .header(header::CACHE_CONTROL, "private, max-age=31536000, immutable")
+                    .body(Body::from(chunk))
+                    .unwrap());
+            } else {
+                return Ok(Response::builder()
+                    .status(StatusCode::RANGE_NOT_SATISFIABLE)
+                    .header(header::CONTENT_RANGE, format!("bytes */{total_len}"))
+                    .body(Body::empty())
+                    .unwrap());
+            }
+        }
+    }
+
     Ok(Response::builder()
         .header(header::CONTENT_TYPE, ct)
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CONTENT_LENGTH, total_len.to_string())
         .header(header::CACHE_CONTROL, "private, max-age=31536000, immutable")
         .body(Body::from(bytes))
         .unwrap())
@@ -1076,33 +1197,33 @@ async fn luts_apply(State(s): St, AxPath(name): AxPath<String>, Json(b): Json<Lu
     Ok(Json(serde_json::to_value(rec).unwrap()))
 }
 
-async fn input_image(State(s): St, AxPath(id): AxPath<String>) -> ApiResult<Response> {
+async fn input_image(State(s): St, AxPath(id): AxPath<String>, headers: HeaderMap) -> ApiResult<Response> {
     let store = s.engine.input_store(&id);
     let r = store.get_input(&id)?;
     if r.format == "heic" {
-        return serve_file(&store.input_display_path(&id), Some("image/jpeg")).await;
+        return serve_file(&store.input_display_path(&id), Some("image/jpeg"), Some(&headers)).await;
     }
-    serve_file(Path::new(&r.path), None).await
+    serve_file(Path::new(&r.path), None, Some(&headers)).await
 }
 
-async fn input_thumb(State(s): St, AxPath(id): AxPath<String>) -> ApiResult<Response> {
+async fn input_thumb(State(s): St, AxPath(id): AxPath<String>, headers: HeaderMap) -> ApiResult<Response> {
     let store = s.engine.input_store(&id);
     store.get_input(&id)?;
-    serve_file(&store.input_thumb_path(&id), Some("image/jpeg")).await
+    serve_file(&store.input_thumb_path(&id), Some("image/jpeg"), Some(&headers)).await
 }
 
 /// A screen-sized copy of `src` for the browser's stage, made once (`qls_core::store::preview`).
-async fn serve_preview(src: PathBuf, stem: PathBuf) -> ApiResult<Response> {
+async fn serve_preview(src: PathBuf, stem: PathBuf, headers: Option<&HeaderMap>) -> ApiResult<Response> {
     let (p, ct) = tokio::task::spawn_blocking(move || qls_core::store::preview(&src, &stem)).await.map_err(AppError::internal)??;
-    serve_file(&p, Some(ct)).await
+    serve_file(&p, Some(ct), headers).await
 }
 
-async fn input_preview(State(s): St, AxPath(id): AxPath<String>) -> ApiResult<Response> {
+async fn input_preview(State(s): St, AxPath(id): AxPath<String>, headers: HeaderMap) -> ApiResult<Response> {
     let store = s.engine.input_store(&id);
     let r = store.get_input(&id)?;
     // From the JPEG kept for display, as `input_image` serves it.
     let src = if r.format == "heic" { store.input_display_path(&id) } else { PathBuf::from(&r.path) };
-    serve_preview(src, store.input_preview_path(&id)).await
+    serve_preview(src, store.input_preview_path(&id), Some(&headers)).await
 }
 
 // ---------------------------------------------------------------------------------------
@@ -1139,32 +1260,35 @@ async fn gallery_delete(State(s): St, AxPath(id): AxPath<String>) -> ApiResult<J
     Ok(Json(json!({ "deleted": id })))
 }
 
-async fn gallery_image(State(s): St, AxPath(id): AxPath<String>) -> ApiResult<Response> {
+async fn gallery_image(State(s): St, AxPath(id): AxPath<String>, headers: HeaderMap) -> ApiResult<Response> {
     let r = s.engine.gen_store(&id).get_generation(&id)?;
-    serve_file(Path::new(&r.file_path), None).await
+    serve_file(Path::new(&r.file_path), None, Some(&headers)).await
 }
 
 /// The result before the upscaler enlarged it, when it was kept.
-async fn gallery_original(State(s): St, AxPath(id): AxPath<String>) -> ApiResult<Response> {
+async fn gallery_original(State(s): St, AxPath(id): AxPath<String>, headers: HeaderMap) -> ApiResult<Response> {
     let r = s.engine.gen_store(&id).get_generation(&id)?;
     let p = r.pipeline.and_then(|p| p.original_path).ok_or_else(|| AppError::new(ErrorCode::NotFound, "This image has no pre-upscale original."))?;
-    serve_file(Path::new(&p), Some("image/png")).await
+    serve_file(Path::new(&p), Some("image/png"), Some(&headers)).await
 }
 
-async fn gallery_thumb(State(s): St, AxPath(id): AxPath<String>) -> ApiResult<Response> {
+async fn gallery_thumb(State(s): St, AxPath(id): AxPath<String>, headers: HeaderMap) -> ApiResult<Response> {
     let store = s.engine.gen_store(&id);
     let p = store.thumb_path(&id);
     if !p.is_file() {
         let r = store.get_generation(&id)?;
-        return serve_file(Path::new(&r.file_path), None).await;
+        return serve_file(Path::new(&r.file_path), None, Some(&headers)).await;
     }
-    serve_file(&p, Some("image/jpeg")).await
+    serve_file(&p, Some("image/jpeg"), Some(&headers)).await
 }
 
-async fn gallery_preview(State(s): St, AxPath(id): AxPath<String>) -> ApiResult<Response> {
+async fn gallery_preview(State(s): St, AxPath(id): AxPath<String>, headers: HeaderMap) -> ApiResult<Response> {
     let store = s.engine.gen_store(&id);
     let r = store.get_generation(&id)?;
-    serve_preview(PathBuf::from(&r.file_path), store.preview_path(&id)).await
+    if r.mode == "video" {
+        return serve_file(Path::new(&r.file_path), None, Some(&headers)).await;
+    }
+    serve_preview(PathBuf::from(&r.file_path), store.preview_path(&id), Some(&headers)).await
 }
 
 #[derive(Deserialize)]
@@ -1184,15 +1308,6 @@ async fn gallery_export(State(s): St, AxPath(id): AxPath<String>, Json(b): Json<
     let saved = tokio::task::spawn_blocking(move || -> Result<PathBuf, AppError> {
         let mut target = paths::normalize(&b.path, None)?;
         let ext = target.extension().map(|e| e.to_string_lossy().to_ascii_lowercase());
-        let fmt = match ext.as_deref() {
-            Some("jpg") | Some("jpeg") => qls_core::planner::OutputFormat::Jpeg,
-            Some("webp") => qls_core::planner::OutputFormat::Webp,
-            Some("png") => qls_core::planner::OutputFormat::Png,
-            _ => {
-                target.set_extension("png");
-                qls_core::planner::OutputFormat::Png
-            }
-        };
         let source = if b.original {
             rec.pipeline.as_ref().and_then(|p| p.original_path.clone()).ok_or_else(|| AppError::new(ErrorCode::NotFound, "This image has no pre-upscale original."))?
         } else {
@@ -1204,6 +1319,34 @@ async fn gallery_export(State(s): St, AxPath(id): AxPath<String>, Json(b): Json<
         if !b.overwrite {
             target = paths::unique_path(target, &[]);
         }
+        if rec.mode == "video" || matches!(ext.as_deref(), Some("webm") | Some("mp4")) {
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| AppError::io("create export folder", parent, e))?;
+            }
+            if ext.as_deref() == Some("mp4") && Path::new(&source).extension().map(|e| e == "webm").unwrap_or(false) {
+                // If ffmpeg is installed, transcode WebM to universally compatible H.264 MP4 (yuv420p)
+                let status = std::process::Command::new("ffmpeg")
+                    .args(["-y", "-i"])
+                    .arg(&source)
+                    .args(["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "19", "-preset", "fast", "-an"])
+                    .arg(&target)
+                    .status();
+                if status.map(|s| s.success()).unwrap_or(false) {
+                    return Ok(target);
+                }
+            }
+            std::fs::copy(&source, &target).map_err(|e| AppError::io("export video", &target, e))?;
+            return Ok(target);
+        }
+        let fmt = match ext.as_deref() {
+            Some("jpg") | Some("jpeg") => qls_core::planner::OutputFormat::Jpeg,
+            Some("webp") => qls_core::planner::OutputFormat::Webp,
+            Some("png") => qls_core::planner::OutputFormat::Png,
+            _ => {
+                target.set_extension("png");
+                qls_core::planner::OutputFormat::Png
+            }
+        };
         let img = imaging::load_image(Path::new(&source))?;
         let bytes = qls_core::engine::encode_output(&img.pixels, fmt, &rec, img.icc_profile.as_deref())?;
         qls_core::engine::write_atomic(&target, &bytes)?;
@@ -1498,7 +1641,11 @@ async fn models_new_dit(State(s): St) -> ApiResult<Json<Value>> {
 }
 
 fn role_of(label: &str) -> Option<Role> {
-    Role::ALL.into_iter().find(|r| r.label() == label)
+    if label.starts_with("Text encoder") {
+        Some(Role::TextEncoder)
+    } else {
+        Role::ALL.into_iter().find(|r| r.label() == label)
+    }
 }
 
 /// The active model: its files (what each is, whether it is there), what is missing and what
@@ -1519,6 +1666,7 @@ async fn models_status(State(s): St) -> ApiResult<Json<Value>> {
             .collect();
         let downloadable: Vec<&str> = catalog::profile_model_downloads(p).iter().map(|d| d.label).collect();
         let official_installed = cfg.profiles.iter().find(|q| q.id == OFFICIAL_PROFILE_ID).is_some_and(|q| q.files().iter().all(|(_, f, _)| f.is_file()));
+        let video_official_installed = cfg.profiles.iter().find(|q| q.id == qls_core::config::WAN_OFFICIAL_PROFILE_ID).is_some_and(|q| q.files().iter().all(|(_, f, _)| f.is_file()));
         json!({
             "active": { "id": p.id, "display_name": p.display_name, "source": p.source, "model": p.model },
             "slots": slots,
@@ -1532,6 +1680,7 @@ async fn models_status(State(s): St) -> ApiResult<Json<Value>> {
             "has_user_profile": cfg.user_profile().is_some(),
             "user_installed": cfg.user_profile().is_some_and(|u| u.files().iter().all(|(_, f, _)| f.is_file())),
             "official_installed": official_installed,
+            "video_official_installed": video_official_installed,
             "default_download_dir": catalog::join_rel(&cfg.sdcpp_dir, catalog::MODEL_SUBDIR),
             // The texture-fix VAE (#21): in use, or what switching to it downloads.
             "vae": {

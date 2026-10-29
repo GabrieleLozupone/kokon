@@ -457,6 +457,34 @@ export function useStore<T>(sel: (s: State) => T): T {
 
 export function updateComposer(patch: Partial<Composer>) {
   setState((s) => ({ composer: { ...s.composer, ...patch } }));
+  if (patch.mode === "video") {
+    ensureServerMode("video");
+  } else if (patch.mode) {
+    ensureServerMode("image");
+  }
+}
+
+/** Ensures the inference server is running the model suited for the active mode (image or video). */
+export async function ensureServerMode(mode: "image" | "video") {
+  const s = getState();
+  if (!s.connected) return;
+  const busy = Object.values(s.jobs).some((j) => !["done", "failed", "cancelled"].includes(j.status));
+  if (busy) return;
+
+  const currentModel = s.status?.server.model?.toLowerCase() ?? "";
+  const isVideoServer = currentModel.includes("wan");
+  const desiredVideo = mode === "video";
+
+  if (s.server.state === "ready" && isVideoServer === desiredVideo) {
+    return;
+  }
+
+  try {
+    await api.startBackend({ mode });
+    await refreshStatus();
+  } catch (e) {
+    toastError(e);
+  }
 }
 
 // ---------------------------------------------------------------------------------------
@@ -724,11 +752,24 @@ function composerFor(c: Composer, session: SessionItem[], selected: string | nul
 export function newProject() {
   setState((s) =>
     s.session.length
-      ? { projectId: newKey(), session: [], selected: null, overlay: null, redo: [], composer: emptyComposer(s.composer) }
-      : { overlay: null, composer: { ...emptyComposer(s.composer), prompt: s.composer.prompt } },
+      ? { projectId: newKey(), session: [], selected: null, overlay: null, redo: [], composer: { ...emptyComposer(s.composer), mode: "auto" } }
+      : { overlay: null, composer: { ...emptyComposer(s.composer), mode: "auto", prompt: s.composer.prompt } },
   );
+  ensureServerMode("image");
   // A phone shows the new project's start first; the writing screen opens when the box is tapped.
   if (!isNarrow()) focusPrompt();
+}
+
+/** Starts a new video project; the current one stays in the list. */
+export function newVideoProject() {
+  setState((s) => {
+    const comp = { ...emptyComposer(s.composer), mode: "video" as const };
+    return s.session.length
+      ? { projectId: newKey(), session: [], selected: null, overlay: null, redo: [], composer: comp }
+      : { overlay: null, composer: { ...comp, prompt: s.composer.prompt } };
+  });
+  ensureServerMode("video");
+  focusPrompt();
 }
 
 /** Private mode on: a fresh project whose images stay out of the gallery, the output folder
@@ -769,6 +810,12 @@ export async function switchProject(id: string, selectKey?: string) {
   const keep = (k: string | null | undefined) => (k && session.some((i) => i.key === k) ? k : null);
   const selected = keep(selectKey) ?? keep(data.selected) ?? session[session.length - 1]?.key ?? null;
   setState((s) => ({ projectId: id, session, selected, overlay: null, redo: [], composer: { ...composerFor(s.composer, session, selected), loras: data.loras ?? null } }));
+  const isVideo = session.some((i) => i.gen?.mode === "video" || i.request?.mode === "video");
+  if (isVideo) {
+    ensureServerMode("video");
+  } else if (session.some((i) => i.gen || i.input)) {
+    ensureServerMode("image");
+  }
 }
 
 // In a browser the stage shows a screen-sized preview when it is as sharp there (logic.ts
@@ -1008,6 +1055,22 @@ export function editShownImage() {
     }
     return { composer: { ...retarget(c, ref), create: false } };
   });
+  focusPrompt();
+}
+
+/** "Animate": turns an image (generated or uploaded input) into a video using Wan2.2 TI2V */
+export function animateItem(item: SessionItem) {
+  const ref = item.gen ? refFromGen(item.gen) : item.input ? refFromInput(item.input) : null;
+  if (!ref) return;
+  setState((s) => ({
+    composer: {
+      ...emptyComposer(s.composer),
+      mode: "video",
+      refs: [ref],
+      prompt: s.composer.prompt || "cinematic subtle motion, vivid details",
+    },
+  }));
+  ensureServerMode("video");
   focusPrompt();
 }
 

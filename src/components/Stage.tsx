@@ -1,5 +1,5 @@
 import {
-  Brush, ClipboardPaste, Combine, Copy, Download, Ellipsis, Expand, FolderOpen, Heart, ImageUpscale, Info, Loader2, MousePointerClick, Palette, Pencil, RefreshCw, RotateCcw, SlidersHorizontal, Square, TextCursorInput, Trash2, Wand2, WandSparkles, X,
+  Brush, ClipboardPaste, Combine, Copy, Download, Ellipsis, Expand, FolderOpen, Heart, ImageUpscale, Info, Loader2, MousePointerClick, Palette, Pencil, RefreshCw, RotateCcw, SlidersHorizontal, Square, TextCursorInput, Trash2, Video, Wand2, WandSparkles, X,
 } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, urls } from "../lib/api";
@@ -9,7 +9,7 @@ import {
 } from "../lib/logic";
 import { canCopyImage, native } from "../lib/native";
 import {
-  addAsReference, addResult, cancelJob, focusPrompt, getState, itemSource, removeSessionItem, reusePrompt, selectedItem, selectItem, sessionLabels, sessionLinks, setState, stageImage, submitRequest, toastError, toastInfo, useStore, type SessionItem,
+  addAsReference, addResult, animateItem, cancelJob, focusPrompt, getState, itemSource, removeSessionItem, reusePrompt, selectedItem, selectItem, sessionLabels, sessionLinks, setState, stageImage, submitRequest, toastError, toastInfo, useStore, type SessionItem,
 } from "../lib/store";
 import type { GenerationRecord, GenerationRequest, JobView, LutEntry, Mode, Size } from "../lib/types";
 import { Cocoon, Hatch } from "./Cocoon";
@@ -31,6 +31,7 @@ export const MODE_ICON: Record<Mode | "lut", React.ReactNode> = {
   inpaint: <Brush size={11} />,
   outpaint: <Expand size={11} />,
   upscale: <ImageUpscale size={11} />,
+  video: <Video size={11} />,
   lut: <Palette size={11} />,
 };
 
@@ -43,6 +44,7 @@ const MODE_DOING: Record<Mode, string> = {
   inpaint: "Inpainting",
   outpaint: "Expanding",
   upscale: "Upscaling",
+  video: "Generating video",
 };
 
 function Empty() {
@@ -428,6 +430,7 @@ function GenActions({ item, g, showOriginal, onLut }: { item: SessionItem; g: Ge
   const shownPath = (showOriginal && g.pipeline?.original_path) || g.file_path;
   const original = sourceSize(g);
   const [fav, setFav] = useState(g.favorite);
+  const isVideo = g.mode === "video";
   return (
     <div className="actions">
       {g.prompt && (
@@ -449,8 +452,16 @@ function GenActions({ item, g, showOriginal, onLut }: { item: SessionItem; g: Ge
           }}
         />
       )}
-      <UpscaleButton source={`gen:${g.id}`} size={{ width: g.width, height: g.height }} original={original} parentId={g.id} />
-      <LutButton onPick={onLut} />
+      {!isVideo && (
+        <ActionButton
+          title="Animate: turn this image into a video"
+          icon={<Video size={16} />}
+          label="Animate"
+          onClick={() => animateItem(item)}
+        />
+      )}
+      {!isVideo && <UpscaleButton source={`gen:${g.id}`} size={{ width: g.width, height: g.height }} original={original} parentId={g.id} />}
+      {!isVideo && <LutButton onPick={onLut} />}
       <span className="sep" />
       <IconButton
         title={fav ? "Remove from favorites" : "Favorite"}
@@ -467,9 +478,19 @@ function GenActions({ item, g, showOriginal, onLut }: { item: SessionItem; g: Ge
         <Heart size={17} fill={fav ? "currentColor" : "none"} />
       </IconButton>
       <IconButton
-        title={inBrowser ? (showOriginal ? "Download the original (before upscaling)" : "Download") : showOriginal ? "Save the original (before upscaling) as…" : "Save as…"}
+        title={
+          inBrowser
+            ? showOriginal
+              ? "Download the original (before upscaling)"
+              : "Download"
+            : isVideo
+              ? "Save video as…"
+              : showOriginal
+                ? "Save the original (before upscaling) as…"
+                : "Save as…"
+        }
         onClick={async () => {
-          const name = g.file_path.split(/[\\/]/).pop() ?? "image.png";
+          const name = g.file_path.split(/[\\/]/).pop() ?? (isVideo ? "video.webm" : "image.png");
           if (inBrowser) {
             // Onto this device, as the file Kokon saved.
             native.download(showOriginal ? urls.genOriginal(g.id) : urls.gen(g.id), showOriginal ? name.replace(/(\.\w+)?$/, "-original.png") : name);
@@ -487,7 +508,7 @@ function GenActions({ item, g, showOriginal, onLut }: { item: SessionItem; g: Ge
       >
         <Download size={17} />
       </IconButton>
-      {canCopyImage && (
+      {!isVideo && canCopyImage && (
         <IconButton
           title={showOriginal ? "Copy the original (before upscaling)" : "Copy image"}
           onClick={async () => {
@@ -522,6 +543,12 @@ function InputActions({ item, onLut }: { item: SessionItem; onLut: (lut: LutEntr
   const input = item.input!;
   return (
     <div className="actions">
+      <ActionButton
+        title="Animate: turn this image into a video"
+        icon={<Video size={16} />}
+        label="Animate"
+        onClick={() => animateItem(item)}
+      />
       <UpscaleButton source={`input:${input.id}`} size={{ width: input.width, height: input.height }} />
       <LutButton onPick={onLut} />
       <span className="sep" />
@@ -532,18 +559,29 @@ function InputActions({ item, onLut }: { item: SessionItem; onLut: (lut: LutEntr
 
 /** A result or input fitted to the stage (never enlarged past its own size), with the
  * full-screen button in its top-right corner. */
-/** `fill`: enlarged to fill the frame like the card it replaces (a result); otherwise never shown
- * wider than it is. */
-/** One image on the stage. With `source` ("gen:"/"input:"), a browser may load its preview
- * (`stageImage`); `src` is loaded as it is. */
-function PlainFrame({ src, source, alt, w, h, maskSrc, overlay, fill, onFullscreen }: { src?: string; source?: string; alt: string; w: number; h: number; maskSrc?: string; overlay?: React.ReactNode; fill?: boolean; onFullscreen: () => void }) {
+function PlainFrame({ src, source, alt, w, h, maskSrc, overlay, fill, onFullscreen, isVideo }: { src?: string; source?: string; alt: string; w: number; h: number; maskSrc?: string; overlay?: React.ReactNode; fill?: boolean; onFullscreen: () => void; isVideo?: boolean }) {
   const { ref, box } = useFit(w / h);
   const bw = fill ? box.w : Math.min(box.w, w);
-  const img = source ? stageImage(source, bw, bw * (h / w)) : src;
+  const video = Boolean(isVideo || (src && (src.endsWith(".mp4") || src.endsWith(".webm"))) || (source && (source.endsWith(".mp4") || source.endsWith(".webm"))));
+  const img = video && source ? urls.source(source) : source ? stageImage(source, bw, bw * (h / w)) : src;
   return (
     <div className="stage-frame" ref={ref}>
       <div className="image-box" style={{ width: bw, height: bw * (h / w) }}>
-        <DevelopImg className="stage-img fill" src={img} placeholder={source ? urls.sourceThumb(source) : undefined} alt={alt} />
+        {video ? (
+          <video
+            className="stage-img fill"
+            src={img}
+            controls
+            autoPlay
+            loop
+            muted
+            playsInline
+            onError={(e) => console.error("Stage video error:", e.currentTarget.error)}
+            style={{ width: "100%", height: "100%", objectFit: "contain" }}
+          />
+        ) : (
+          <DevelopImg className="stage-img fill" src={img} placeholder={source ? urls.sourceThumb(source) : undefined} alt={alt} />
+        )}
         {maskSrc && <img className="stage-mask" src={maskSrc} alt="" draggable={false} />}
         {overlay}
         <FullscreenButton onOpen={onFullscreen} />
@@ -853,12 +891,28 @@ function StageFullscreen({ item, session, showOriginal, onClose }: { item: Sessi
   }, [item.key, session]);
 
   const g = item.gen;
+  const isVideo = g?.mode === "video";
   const base = g ? compareBase(g) : null;
   const from = g?.pipeline?.original_path ? g.pipeline.enlarged_from : null;
   let content: React.ReactNode;
-  let hint = "Scroll or click to zoom · Drag to pan";
-  if (g && from && showOriginal) content = <ZoomImage key={`original-${g.id}`} src={urls.genOriginal(g.id)} alt={`${g.prompt} (before upscaling)`} />;
-  else if (g && base) {
+  let hint = isVideo ? "Space to play / pause" : "Scroll or click to zoom · Drag to pan";
+  if (isVideo && g) {
+    content = (
+      <video
+        key={g.id}
+        src={urls.gen(g.id)}
+        controls
+        autoPlay
+        loop
+        muted
+        playsInline
+        onError={(e) => console.error("Fullscreen video error:", e.currentTarget.error)}
+        style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
+      />
+    );
+  } else if (g && from && showOriginal) {
+    content = <ZoomImage key={`original-${g.id}`} src={urls.genOriginal(g.id)} alt={`${g.prompt} (before upscaling)`} />;
+  } else if (g && base) {
     content = <CompareFullscreen key={g.id} g={g} base={base} />;
     hint = "Hold B for the original";
   } else {
@@ -1018,7 +1072,7 @@ export function Stage() {
         ) : item.gen && base ? (
           <CompareFrame key={`compare-${item.gen.id}`} g={item.gen} base={base} maskSrc={maskSrc} onFullscreen={openFull} />
         ) : (
-          <PlainFrame key={src} source={source} alt={item.gen?.prompt ?? item.input?.original_name ?? ""} w={w} h={h} maskSrc={maskSrc} fill={!!item.gen} onFullscreen={openFull} />
+          <PlainFrame key={src} source={source} alt={item.gen?.prompt ?? item.input?.original_name ?? ""} w={w} h={h} maskSrc={maskSrc} fill={!!item.gen} isVideo={item.gen?.mode === "video"} onFullscreen={openFull} />
         )}
         </Hatch>
     );

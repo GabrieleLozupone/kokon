@@ -2,11 +2,13 @@
 //! `%APPDATA%\Kokon\config.json`; every field has a default so older or
 //! partial files keep loading.
 
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, ErrorCode};
+use crate::planner::Mode;
 
 pub const APP_NAME: &str = "Kokon";
 /// Folder names before the app was renamed Kokon (2026-10-08); moved on first start.
@@ -48,6 +50,11 @@ pub const USER_PROFILE_ID: &str = "qwen-image-2.1-user";
 /// The model a profile's files are (`ModelProfile::model`). Today the only one; future model
 /// definitions (strategy, presets, prompts) will be looked up by this id.
 pub const QWEN_IMAGE_21: &str = "qwen-image-2.1";
+
+/// Video model profile constants (Wan 2.2 SOTA).
+pub const WAN_2_2: &str = "wan-2.2";
+pub const WAN_OFFICIAL_PROFILE_ID: &str = "wan-2.2";
+pub const WAN_USER_PROFILE_ID: &str = "wan-2.2-user";
 
 /// Where the text encoder's weights live. Compute always runs on the selected GPU except
 /// for `Cpu`, which also computes on the CPU (slow for image editing, measured ~35×).
@@ -238,12 +245,45 @@ impl ModelProfile {
         }
     }
 
+    /// The official video model profile (Wan 2.2).
+    pub fn official_video(sdcpp_dir: &Path, preset: &crate::catalog::VideoPreset) -> Self {
+        Self {
+            id: WAN_OFFICIAL_PROFILE_ID.into(),
+            display_name: format!("Wan 2.2 {} (official)", preset.label),
+            model: WAN_2_2.into(),
+            source: ProfileSource::Official,
+            scan_dir: None,
+            diffusion_model: preset.diffusion.path(sdcpp_dir),
+            vae: preset.vae.path(sdcpp_dir),
+            text_encoder: preset.text_encoder.path(sdcpp_dir),
+            vision_projector: None,
+            backend_args: vec![],
+            recommended_settings: RecommendedSettings {
+                sampler: "euler".into(),
+                area_fast: 832 * 480,
+                area_balanced: 832 * 480,
+                area_quality: 1280 * 720,
+                align: 16,
+                max_side: 1280,
+                max_references: 1,
+            },
+            capabilities: ProfileCapabilities {
+                text_to_image: true,
+                edit: true,
+                multi_reference: false,
+                inpaint: false,
+                outpaint: false,
+                alpha: false,
+            },
+        }
+    }
+
     /// (label, path, required) for every model file.
     pub fn files(&self) -> Vec<(&'static str, &Path, bool)> {
         let mut v = vec![
             ("Diffusion model", self.diffusion_model.as_path(), true),
             ("VAE", self.vae.as_path(), true),
-            ("Text encoder (Qwen3-VL)", self.text_encoder.as_path(), true),
+            (if self.model == WAN_2_2 { "Text encoder (UMT5-XXL)" } else { "Text encoder (Qwen3-VL)" }, self.text_encoder.as_path(), true),
         ];
         if let Some(p) = &self.vision_projector {
             v.push(("Vision projector (mmproj)", p.as_path(), true));
@@ -263,6 +303,39 @@ impl ModelProfile {
             text_encoder,
             vision_projector,
             ..Self::default()
+        }
+    }
+
+    /// Video model files the user already had.
+    pub fn user_video(diffusion_model: PathBuf, vae: PathBuf, text_encoder: PathBuf) -> Self {
+        Self {
+            id: "user-video".into(),
+            display_name: "Wan 2.2 Video (your files)".into(),
+            model: WAN_2_2.into(),
+            source: ProfileSource::User,
+            scan_dir: None,
+            diffusion_model,
+            vae,
+            text_encoder,
+            vision_projector: None,
+            backend_args: vec![],
+            recommended_settings: RecommendedSettings {
+                sampler: "euler".into(),
+                area_fast: 832 * 480,
+                area_balanced: 832 * 480,
+                area_quality: 1280 * 720,
+                align: 16,
+                max_side: 1280,
+                max_references: 1,
+            },
+            capabilities: ProfileCapabilities {
+                text_to_image: true,
+                edit: true,
+                multi_reference: false,
+                inpaint: false,
+                outpaint: false,
+                alpha: false,
+            },
         }
     }
 
@@ -351,6 +424,9 @@ pub struct AppConfig {
     pub setup_complete: bool,
     /// Hardware preset chosen in the setup wizard (`catalog::PRESETS`).
     pub hardware_preset: String,
+    /// Video hardware preset chosen in setup or settings (`catalog::VIDEO_PRESETS`).
+    #[serde(default = "default_video_hardware_preset")]
+    pub video_hardware_preset: String,
     /// Plan as if the GPU had this much VRAM (MiB); 0 = use the detected size. For testing
     /// smaller cards on a larger one, together with a VRAM ballast (scripts/dev).
     pub vram_override_mib: u64,
@@ -360,11 +436,16 @@ pub struct AppConfig {
     pub enhancer_t2i_prompt: String,
     pub enhancer_edit_prompt: String,
     pub enhancer_compose_prompt: String,
+    pub enhancer_video_prompt: String,
     /// The user's LoRAs (Settings → LoRA), each a copy in `lora_dir`. Changed only through the
     /// LoRA endpoints: a whole-config save keeps the current list (`Engine::set_config`).
     pub loras: Vec<LoraEntry>,
     /// Opaque UI preferences (last quality, resolution mode, aspect...).
     pub ui: serde_json::Value,
+}
+
+fn default_video_hardware_preset() -> String {
+    "video_12gb".into()
 }
 
 impl Default for AppConfig {
@@ -400,10 +481,12 @@ impl Default for AppConfig {
             idle_unload_minutes: 15,
             setup_complete: false,
             hardware_preset: crate::catalog::DEFAULT_PRESET.into(),
+            video_hardware_preset: "video_12gb".into(),
             vram_override_mib: 0,
             enhancer_t2i_prompt: String::new(),
             enhancer_edit_prompt: String::new(),
             enhancer_compose_prompt: String::new(),
+            enhancer_video_prompt: String::new(),
             loras: vec![],
             ui: serde_json::json!({}),
         }
@@ -628,13 +711,14 @@ impl AppConfig {
             (&mut self.enhancer_t2i_prompt, crate::enhancer::T2I_SYSTEM_PROMPT),
             (&mut self.enhancer_edit_prompt, crate::enhancer::EDIT_SYSTEM_PROMPT),
             (&mut self.enhancer_compose_prompt, crate::enhancer::COMPOSE_SYSTEM_PROMPT),
+            (&mut self.enhancer_video_prompt, crate::enhancer::VIDEO_SYSTEM_PROMPT),
         ] {
             if custom.trim().is_empty() || custom.trim() == default {
                 custom.clear();
             }
         }
         for p in &mut self.profiles {
-            p.source = if p.id == OFFICIAL_PROFILE_ID { ProfileSource::Official } else { ProfileSource::User };
+            p.source = if p.id == OFFICIAL_PROFILE_ID || p.id == WAN_OFFICIAL_PROFILE_ID { ProfileSource::Official } else { ProfileSource::User };
             if p.model.trim().is_empty() {
                 p.model = QWEN_IMAGE_21.into();
             }
@@ -648,6 +732,13 @@ impl AppConfig {
                 *p = official;
             }
             None => self.profiles.insert(0, official),
+        }
+        let video_preset = self.video_preset();
+        if let Some(p) = self.profiles.iter_mut().find(|p| p.id == WAN_OFFICIAL_PROFILE_ID) {
+            let mut official_video = ModelProfile::official_video(&self.sdcpp_dir, video_preset);
+            official_video.recommended_settings = p.recommended_settings.clone();
+            official_video.capabilities = p.capabilities.clone();
+            *p = official_video;
         }
         if !self.profiles.iter().any(|p| p.id == self.active_profile) {
             self.active_profile = OFFICIAL_PROFILE_ID.into();
@@ -722,13 +813,38 @@ impl AppConfig {
         self.active_profile = OFFICIAL_PROFILE_ID.into();
     }
 
-    /// Model files of the active profile that are not there (label, path).
-    pub fn missing_files(&self) -> Vec<(&'static str, PathBuf)> {
-        self.profile().files().into_iter().filter(|(_, p, required)| *required && !p.is_file()).map(|(l, p, _)| (l, p.to_path_buf())).collect()
+    /// Returns the active or target profile for `mode`.
+    pub fn profile_for_mode(&self, mode: Mode) -> Cow<'_, ModelProfile> {
+        if mode == Mode::Video {
+            if let Some(p) = self.profiles.iter().find(|p| p.model == WAN_2_2) {
+                Cow::Borrowed(p)
+            } else {
+                Cow::Owned(ModelProfile::official_video(&self.sdcpp_dir, self.video_preset()))
+            }
+        } else if self.profile().model == WAN_2_2 {
+            if let Some(p) = self.profiles.iter().find(|p| p.model == QWEN_IMAGE_21) {
+                Cow::Borrowed(p)
+            } else {
+                Cow::Owned(ModelProfile::official(&self.sdcpp_dir, self.preset()))
+            }
+        } else {
+            Cow::Borrowed(self.profile())
+        }
     }
 
-    /// Why the inference server cannot start: the engine or a model file is missing.
-    pub fn missing_files_error(&self) -> Option<AppError> {
+    /// Model files of the active profile for `mode` that are not there (label, path).
+    pub fn missing_files_for_mode(&self, mode: Mode) -> Vec<(&'static str, PathBuf)> {
+        let p = self.profile_for_mode(mode);
+        p.files().into_iter().filter(|(_, path, required)| *required && !path.is_file()).map(|(l, path, _)| (l, path.to_path_buf())).collect()
+    }
+
+    /// Model files of the active profile that are not there (label, path).
+    pub fn missing_files(&self) -> Vec<(&'static str, PathBuf)> {
+        self.missing_files_for_mode(Mode::Auto)
+    }
+
+    /// Why the inference server cannot start: the engine or a model file is missing for `mode`.
+    pub fn missing_files_error_for_mode(&self, mode: Mode) -> Option<AppError> {
         let exe = self.server_exe();
         if !exe.is_file() && self.uses_mac_engine() {
             return Some(
@@ -742,7 +858,7 @@ impl AppConfig {
                     .suggest("Install it from Settings → Models → Set up models…, or set the stable-diffusion.cpp folder in Settings."),
             );
         }
-        let missing = self.missing_files();
+        let missing = self.missing_files_for_mode(mode);
         let (label, path) = missing.first()?;
         let more = match missing.len() {
             1 => String::new(),
@@ -752,6 +868,11 @@ impl AppConfig {
             AppError::new(ErrorCode::MissingModel, format!("{label} not found: {}{more}", path.display()))
                 .suggest("If it is on a drive that is not connected, connect it and try again. Otherwise open Setup to find the file again, choose other files, or download the missing ones."),
         )
+    }
+
+    /// Why the inference server cannot start: the engine or a model file is missing.
+    pub fn missing_files_error(&self) -> Option<AppError> {
+        self.missing_files_error_for_mode(Mode::Auto)
     }
 
     /// VRAM (MiB) the user's own files take beyond the official ones, which the planner's
@@ -790,6 +911,26 @@ impl AppConfig {
         self.hardware_preset = preset.id.into();
         self.text_encoder_placement = preset.text_encoder_placement;
         self.vram_reserve_gib = preset.vram_reserve_gib;
+        self.normalize();
+    }
+
+    pub fn video_preset(&self) -> &'static crate::catalog::VideoPreset {
+        crate::catalog::video_preset(&self.video_hardware_preset).unwrap_or_else(|| &crate::catalog::VIDEO_PRESETS[1])
+    }
+
+    /// Uses `preset`'s runtime settings and registers its official video profile.
+    pub fn apply_video_preset(&mut self, preset: &crate::catalog::VideoPreset) {
+        self.video_hardware_preset = preset.id.into();
+        self.text_encoder_placement = preset.text_encoder_placement;
+        let mut p = ModelProfile::official_video(&self.sdcpp_dir, preset);
+        if let Some(pos) = self.profiles.iter().position(|x| x.id == p.id) {
+            p.recommended_settings = self.profiles[pos].recommended_settings.clone();
+            p.capabilities = self.profiles[pos].capabilities.clone();
+            self.profiles[pos] = p;
+        } else {
+            self.profiles.push(p);
+        }
+        self.active_profile = WAN_OFFICIAL_PROFILE_ID.into();
         self.normalize();
     }
 
@@ -928,7 +1069,7 @@ impl AppConfig {
             return Err(AppError::new(ErrorCode::InvalidConfig, "Simulated VRAM must be between 4096 and 196608 MiB (or 0 to detect it)."));
         }
         let max = crate::enhancer::MAX_SYSTEM_PROMPT_CHARS;
-        if [&self.enhancer_t2i_prompt, &self.enhancer_edit_prompt, &self.enhancer_compose_prompt].iter().any(|p| p.chars().count() > max) {
+        if [&self.enhancer_t2i_prompt, &self.enhancer_edit_prompt, &self.enhancer_compose_prompt, &self.enhancer_video_prompt].iter().any(|p| p.chars().count() > max) {
             return Err(AppError::new(ErrorCode::InvalidConfig, format!("Prompt enhancer instructions can be at most {max} characters.")));
         }
         Ok(())

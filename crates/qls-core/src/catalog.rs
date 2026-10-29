@@ -726,6 +726,164 @@ pub const PRESETS: &[Preset] = &[
 
 pub const DEFAULT_PRESET: &str = "16gb";
 
+// ---------------------------------------------------------------------------------------
+// Video Models (Wan 2.2 SOTA)
+// ---------------------------------------------------------------------------------------
+
+pub const WAN_2_2_5B_Q4_K: Download = Download {
+    id: "wan22_5b_q4_k",
+    label: "Wan2.2 TI2V 5B Q4_K_M",
+    kind: FileKind::Model,
+    url: "https://huggingface.co/QuantStack/Wan2.2-TI2V-5B-GGUF/resolve/main/Wan2.2-TI2V-5B-Q4_K_M.gguf",
+    fallback_urls: &[],
+    page: "https://huggingface.co/QuantStack/Wan2.2-TI2V-5B-GGUF",
+    size: 3_433_116_000,
+    sha256: "95b19697b7f98e65b0a543640e9ca7b4dfec32e2a6e3731e8e10708be52655e2",
+    dest: "models/wan22/Wan2.2-TI2V-5B-Q4_K_M.gguf",
+    provides: &[],
+    engine_tag: None,
+};
+
+pub const WAN_2_2_A14B_Q4_K: Download = Download {
+    id: "wan22_a14b_q4_k",
+    label: "Wan2.2 T2V A14B Q4_K_M",
+    kind: FileKind::Model,
+    url: "https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF/resolve/main/HighNoise/Wan2.2-T2V-A14B-HighNoise-Q4_K_M.gguf",
+    fallback_urls: &[],
+    page: "https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF",
+    size: 9_650_090_496,
+    sha256: "e0c490c6e316fd91ff52034e4ca66b825717e33ff11624585c0ccfcb5d410c59",
+    dest: "models/wan22/Wan2.2-T2V-A14B-HighNoise-Q4_K_M.gguf",
+    provides: &[],
+    engine_tag: None,
+};
+
+pub const WAN_2_2_VAE: Download = Download {
+    id: "wan22_vae",
+    label: "Wan2.2 VAE",
+    kind: FileKind::Model,
+    url: "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/vae/wan2.2_vae.safetensors",
+    fallback_urls: &[],
+    page: "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+    size: 1_409_400_960,
+    sha256: "e40321bd36b9709991dae2530eb4ac303dd168276980d3e9bc4b6e2b75fed156",
+    dest: "models/wan22/wan2.2_vae.safetensors",
+    provides: &[],
+    engine_tag: None,
+};
+
+pub const UMT5_XXL_Q4_K: Download = Download {
+    id: "umt5_xxl_q4_k",
+    label: "UMT5-XXL text encoder Q4_K_M",
+    kind: FileKind::Model,
+    url: "https://huggingface.co/city96/umt5-xxl-encoder-gguf/resolve/main/umt5-xxl-encoder-Q4_K_M.gguf",
+    fallback_urls: &[],
+    page: "https://huggingface.co/city96/umt5-xxl-encoder-gguf",
+    size: 3_655_145_312,
+    sha256: "17cf97a5bbbc60a646d6105b832b6f657ce904a8a1ad970e4b59df0c67584a40",
+    dest: "models/wan22/umt5-xxl-encoder-Q4_K_M.gguf",
+    provides: &[],
+    engine_tag: None,
+};
+
+/// Video hardware presets: which models and dimensions to recommend based on available VRAM.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct VideoPreset {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub min_vram_mib: u64,
+    pub unified_label: &'static str,
+    pub diffusion: Download,
+    pub vae: Download,
+    pub text_encoder: Download,
+    pub text_encoder_placement: TextEncoderPlacement,
+    pub default_width: u32,
+    pub default_height: u32,
+    pub default_frames: u32,
+    pub default_fps: u32,
+    pub summary: &'static str,
+}
+
+pub const VIDEO_PRESETS: &[VideoPreset] = &[
+    VideoPreset {
+        id: "video_8gb",
+        label: "8 GB",
+        min_vram_mib: 0,
+        unified_label: "16 GB Mac",
+        diffusion: WAN_2_2_5B_Q4_K,
+        vae: WAN_2_2_VAE,
+        text_encoder: UMT5_XXL_Q4_K,
+        text_encoder_placement: TextEncoderPlacement::Ram,
+        default_width: 832,
+        default_height: 480,
+        default_frames: 49,
+        default_fps: 24,
+        summary: "Wan2.2 TI2V 5B (4-bit); 480p at 49 frames (~2s @ 24 fps)",
+    },
+    VideoPreset {
+        id: "video_12gb",
+        label: "12 GB",
+        min_vram_mib: 10 * 1024,
+        unified_label: "24–32 GB Mac",
+        diffusion: WAN_2_2_5B_Q4_K,
+        vae: WAN_2_2_VAE,
+        text_encoder: UMT5_XXL_Q4_K,
+        text_encoder_placement: TextEncoderPlacement::Ram,
+        default_width: 832,
+        default_height: 480,
+        default_frames: 73,
+        default_fps: 24,
+        summary: "Wan2.2 TI2V 5B; 480p at 73 frames (~3s @ 24 fps)",
+    },
+    VideoPreset {
+        id: "video_16gb",
+        label: "16 GB",
+        min_vram_mib: 14 * 1024,
+        unified_label: "36–48 GB Mac",
+        diffusion: WAN_2_2_A14B_Q4_K,
+        vae: WAN_2_2_VAE,
+        text_encoder: UMT5_XXL_Q4_K,
+        text_encoder_placement: TextEncoderPlacement::Ram,
+        default_width: 1280,
+        default_height: 704,
+        default_frames: 73,
+        default_fps: 24,
+        summary: "Wan2.2 A14B MoE (4-bit); native 720p at 73 frames (~3s @ 24 fps)",
+    },
+    VideoPreset {
+        id: "video_24gb",
+        label: "24 GB+",
+        min_vram_mib: 20 * 1024,
+        unified_label: "64 GB+ Mac",
+        diffusion: WAN_2_2_A14B_Q4_K,
+        vae: WAN_2_2_VAE,
+        text_encoder: UMT5_XXL_Q4_K,
+        text_encoder_placement: TextEncoderPlacement::Ram,
+        default_width: 1280,
+        default_height: 704,
+        default_frames: 97,
+        default_fps: 24,
+        summary: "Wan2.2 A14B MoE; native 720p at 97 frames (~4s @ 24 fps)",
+    },
+];
+
+pub fn recommended_video_preset(vram_mib: Option<u64>) -> &'static VideoPreset {
+    match vram_mib {
+        Some(v) => VIDEO_PRESETS.iter().rev().find(|p| v >= p.min_vram_mib).unwrap_or(&VIDEO_PRESETS[0]),
+        None => &VIDEO_PRESETS[1], // 12 GB default
+    }
+}
+
+pub fn video_preset(id: &str) -> Option<&'static VideoPreset> {
+    VIDEO_PRESETS.iter().find(|p| p.id == id)
+}
+
+pub fn video_downloads_for(p: &VideoPreset, backend: GpuBackend, _sdcpp_dir: &Path) -> Vec<Download> {
+    let mut v = engine_downloads(backend);
+    v.extend([p.vae, p.text_encoder, p.diffusion]);
+    v
+}
+
 pub fn preset(id: &str) -> Option<&'static Preset> {
     PRESETS.iter().find(|p| p.id == id)
 }
@@ -764,7 +922,10 @@ pub fn downloads_for(p: &Preset, backend: GpuBackend, sdcpp_dir: &Path) -> Vec<D
 /// (a piece the user chose to download, or an official file deleted from their folder), each
 /// saved where the profile expects it. Existing files are never replaced, whatever their name.
 pub fn profile_model_downloads(profile: &crate::config::ModelProfile) -> Vec<Download> {
-    let official = [TURBO_Q4_K_M, TURBO_Q4_K, VAE, VAE_ORIGINAL, TEXT_ENCODER_Q4_K_M, TEXT_ENCODER_Q8_0, VISION_PROJECTOR];
+    let official = [
+        TURBO_Q4_K_M, TURBO_Q4_K, VAE, VAE_ORIGINAL, TEXT_ENCODER_Q4_K_M, TEXT_ENCODER_Q8_0, VISION_PROJECTOR,
+        WAN_2_2_5B_Q4_K, WAN_2_2_A14B_Q4_K, WAN_2_2_VAE, UMT5_XXL_Q4_K,
+    ];
     profile
         .files()
         .into_iter()

@@ -54,6 +54,17 @@ pub const COMPOSE_SYSTEM_PROMPT: &str = r#"You write prompts for an image genera
 - Write in English whatever language the user writes in: about 80 to 180 words, up to about 280 when the scene has several people or many objects, with a sentence for each.
 Output only the prompt."#;
 
+/// Built-in system prompt for video generation (text-to-video and image-to-video).
+pub const VIDEO_SYSTEM_PROMPT: &str = r#"You write prompts for a video generation model. Expand the user's request into one vivid, cinematic English paragraph describing the continuous motion, subject action, environment, and camera movement.
+- Specify clear, fluid, physical motion: how the subject moves, speeds up, pauses, or interacts with the surroundings.
+- Describe camera movement precisely (e.g. static camera, gentle slow push in, smooth tracking shot, subtle panning).
+- Mention lighting and atmosphere: direction of light, reflections, atmospheric depth, shadows in motion.
+- Keep the description focused on a single coherent shot or sequence without jump cuts or abrupt scene transitions.
+- If an input image is provided, maintain the subject's identity, clothes, setting, and style faithfully, focusing on how the scene comes alive with motion.
+- Avoid vague quality buzzwords (photorealistic, 4K, 8K, high quality). Describe concrete visual elements instead.
+- Write in English whatever language the user writes in, in present tense, around 60 to 120 words.
+Output only the prompt."#;
+
 /// Step 1 of a composition: each reference seen alone, with the user's request, and labelled by
 /// what the request takes from it (a list of features, which the 8B keeps free of the photo's
 /// context better than a sentence). With the request it labels the bowl a person holds, or a
@@ -81,10 +92,10 @@ pub const MAX_TOKENS: u32 = 1024;
 /// Qwen's recommended sampling for Qwen3-VL (vision-language), used for both prompts.
 pub const SAMPLING: TextSampling = TextSampling { temperature: 0.7, top_p: 0.8, top_k: 20, presence_penalty: 1.5, seed: -1 };
 
-/// Text-to-image, new images from references, edits and combines get the enhancer. Inpaint
+/// Text-to-image, new images from references, edits, combines and video get the enhancer. Inpaint
 /// and outpaint wrap the prompt in their own instructions, and upscales have no prompt.
 pub fn applies(mode: ResolvedMode) -> bool {
-    matches!(mode, ResolvedMode::Generate | ResolvedMode::Compose | ResolvedMode::Edit | ResolvedMode::MultiReference)
+    matches!(mode, ResolvedMode::Generate | ResolvedMode::Compose | ResolvedMode::Edit | ResolvedMode::MultiReference | ResolvedMode::Video)
 }
 
 /// The system prompt for `mode`: the one saved in Settings, or the built-in one.
@@ -92,6 +103,7 @@ pub fn system_prompt(cfg: &AppConfig, mode: ResolvedMode) -> String {
     let (custom, default) = match mode {
         ResolvedMode::Generate => (&cfg.enhancer_t2i_prompt, T2I_SYSTEM_PROMPT),
         ResolvedMode::Compose => (&cfg.enhancer_compose_prompt, COMPOSE_SYSTEM_PROMPT),
+        ResolvedMode::Video => (&cfg.enhancer_video_prompt, VIDEO_SYSTEM_PROMPT),
         _ => (&cfg.enhancer_edit_prompt, EDIT_SYSTEM_PROMPT),
     };
     if custom.trim().is_empty() { default.to_string() } else { custom.trim().to_string() }

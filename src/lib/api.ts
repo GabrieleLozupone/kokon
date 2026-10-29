@@ -129,9 +129,9 @@ export const api = {
   /** The prompt enhancer's built-in instructions. */
   enhancerDefaults: () => call<{ t2i: string; edit: string; compose: string; max_chars: number }>("/enhancer/defaults"),
   saveConfig: (c: AppConfig) => call<{ saved: boolean; backend_restart_needed: boolean }>("/config", { method: "PUT", body: json(c) }),
-  startBackend: () => call<{ ready: boolean }>("/backend/start", { method: "POST" }),
+  startBackend: (opts?: { profile?: string; mode?: "image" | "video" }) => call<{ ready: boolean; model?: string }>("/backend/start", { method: "POST", body: json(opts ?? {}) }),
   stopBackend: () => call<{ stopped: boolean }>("/backend/stop", { method: "POST" }),
-  restartBackend: () => call<{ ready: boolean }>("/backend/restart", { method: "POST" }),
+  restartBackend: (opts?: { profile?: string; mode?: "image" | "video" }) => call<{ ready: boolean; model?: string }>("/backend/restart", { method: "POST", body: json(opts ?? {}) }),
   diagnostics: () => call<{ text: string }>("/diagnostics"),
   plan: (r: GenerationRequest) => call<Plan>("/plan", { method: "POST", body: json(r) }),
   submit: (r: GenerationRequest) => call<JobView>("/jobs", { method: "POST", body: json(r) }),

@@ -23,6 +23,7 @@ pub fn build_server_args(cfg: &AppConfig, profile: &ModelProfile) -> Vec<String>
         return build_mac_engine_args(cfg, profile);
     }
     let p = |p: &Path| p.to_string_lossy().into_owned();
+    let is_wan = profile.model == crate::config::WAN_2_2;
     let mut a: Vec<String> = vec![
         "--listen-ip".into(),
         "127.0.0.1".into(),
@@ -32,12 +33,18 @@ pub fn build_server_args(cfg: &AppConfig, profile: &ModelProfile) -> Vec<String>
         p(&profile.diffusion_model),
         "--vae".into(),
         p(&profile.vae),
-        "--llm".into(),
-        p(&profile.text_encoder),
     ];
-    if let Some(v) = &profile.vision_projector {
-        a.push("--llm_vision".into());
-        a.push(p(v));
+    if is_wan {
+        a.push("--t5xxl".into());
+        a.push(p(&profile.text_encoder));
+        a.extend(["--vae-format".into(), "wan".into()]);
+    } else {
+        a.push("--llm".into());
+        a.push(p(&profile.text_encoder));
+        if let Some(v) = &profile.vision_projector {
+            a.push("--llm_vision".into());
+            a.push(p(v));
+        }
     }
     let dev = cfg.effective_device();
     let metal = cfg.gpu_backend == crate::config::GpuBackend::Metal;
@@ -87,10 +94,16 @@ pub fn build_server_args(cfg: &AppConfig, profile: &ModelProfile) -> Vec<String>
             "0.125".into(),
         ]);
     }
-    match cfg.prefix_cache_type.as_str() {
-        "auto" => {}
-        "off" => a.extend(["--model-args".into(), "qwen_image_2_1_prefix_cache=false".into()]),
-        t => a.extend(["--model-args".into(), format!("qwen_image_2_1_prefix_cache_type={t}")]),
+    if is_wan {
+        a.push("--temporal-tiling".into());
+        a.extend(["--cache-mode".into(), "easycache".into()]);
+    }
+    if !is_wan {
+        match cfg.prefix_cache_type.as_str() {
+            "auto" => {}
+            "off" => a.extend(["--model-args".into(), "qwen_image_2_1_prefix_cache=false".into()]),
+            t => a.extend(["--model-args".into(), format!("qwen_image_2_1_prefix_cache_type={t}")]),
+        }
     }
     if cfg.eager_load && placement != TextEncoderPlacement::Disk {
         a.push("--eager-load".into());
@@ -477,9 +490,13 @@ impl ServerManager {
         let client = SdcppClient::new(port);
 
         if let Ok(caps) = client.capabilities(Duration::from_secs(3)).await {
-            let rec = rec.filter(|r| r.port == port);
             // The right kind of server too: switching Kokon's Mac engine on or off restarts ours.
-            if caps.model_matches(&profile.diffusion_model) && caps.supports_img_gen() && caps.is_mac_engine() == cfg.uses_mac_engine() {
+            let mode_supported = if profile.model == crate::config::WAN_2_2 {
+                caps.supports_vid_gen()
+            } else {
+                caps.supports_img_gen()
+            };
+            if caps.model_matches(&profile.diffusion_model) && mode_supported && caps.is_mac_engine() == cfg.uses_mac_engine() {
                 let owned = rec.is_some();
                 if let Some(r) = &rec
                     && self.inner.lock().unwrap().tail_stop.is_none()

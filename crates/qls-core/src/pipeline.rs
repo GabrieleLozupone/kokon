@@ -153,6 +153,9 @@ pub fn effective_prompt(plan: &Plan, prompt: &str) -> String {
             "Extend the image naturally into the empty border areas, continuing the scene with matching perspective, lighting and style. {}",
             prompt.trim()
         ),
+        ResolvedMode::Video if plan.video_loop.unwrap_or(false) => {
+            format!("{}, seamless loop, seamless motion, ending frame smoothly matches and connects to starting frame", prompt.trim().trim_end_matches('.'))
+        }
         _ => prompt.trim().to_string(),
     }
 }
@@ -187,13 +190,13 @@ pub fn prepare(plan: &Plan, prompt: &str, seed: i64, images: &[LoadedImage], mas
             sample_method: Some(plan.sampler.clone()),
             scheduler: None,
             sample_steps: plan.steps,
-            flow_shift: None,
+            flow_shift: if plan.mode == ResolvedMode::Video { Some(5.0) } else { None },
             custom_sigmas: plan.custom_sigmas.clone(),
             guidance: Guidance { txt_cfg: plan.cfg, img_cfg: None },
         },
         vae_tiling_params: vae_tiling_params(plan.vae_tiling, opts.server_vae_tile_size, plan.vae_tile),
         hires: None,
-        cache_mode: None,
+        cache_mode: if plan.mode == ResolvedMode::Video { Some("easycache".into()) } else { None },
         cache_option: None,
         lora: Vec::new(),
         output_format: "png".into(),
@@ -314,6 +317,12 @@ pub fn prepare(plan: &Plan, prompt: &str, seed: i64, images: &[LoadedImage], mas
             kind = PostKind::Outpaint { source: src.clone(), feather: feather_final.max(2) };
         }
         ResolvedMode::Upscale => return Err(AppError::internal("an upscale has no diffusion request")),
+        ResolvedMode::Video => {
+            if !plan.references.is_empty() && !images.is_empty() {
+                let img = &images[plan.references[0].index].pixels;
+                req.init_image = Some(png_b64(&to_canvas(img, &plan.references[0].canvas))?);
+            }
+        }
     }
 
     Ok(PreparedJob {

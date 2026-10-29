@@ -1,4 +1,4 @@
-import { ArrowUp, Brush, Check, ChevronDown, Expand, Eye, FolderOpen, Gauge, ImagePlus, Layers, Lightbulb, Maximize, Pencil, Settings2, SlidersHorizontal, Sparkles, Square, Undo2, WandSparkles, X } from "lucide-react";
+import { ArrowUp, Brush, Check, ChevronDown, Expand, Eye, FolderOpen, Gauge, ImagePlus, Layers, Lightbulb, Maximize, Pencil, Repeat, Settings2, SlidersHorizontal, Sparkles, Square, Undo2, Video, WandSparkles, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, urls } from "../lib/api";
 import { activeLoras, activeOverrides, aspectLabel, buildRequest, composing, editing, enhancerApplies, expansionPixels, formatDuration, hasOutpaint, imageName, MAX_LORAS, moveRef, needsPrompt, parseRatio, toggleLora, wantsPromptReview, type Ref } from "../lib/logic";
@@ -19,6 +19,13 @@ const QUALITY: { value: Quality; label: string; sub: string }[] = [
   { value: "fast", label: "Fast", sub: "~1 MP · fastest" },
   { value: "balanced", label: "Balanced", sub: "~1.5K" },
   { value: "quality", label: "Quality", sub: "native 2K · slowest" },
+];
+
+const VIDEO_DURATIONS: { frames: number; label: string; sub: string }[] = [
+  { frames: 49, label: "2s (49f)", sub: "49 frames · 24 fps · fast" },
+  { frames: 73, label: "3s (73f)", sub: "73 frames · 24 fps · balanced" },
+  { frames: 97, label: "4s (97f)", sub: "97 frames · 24 fps · quality" },
+  { frames: 121, label: "5s (121f)", sub: "121 frames · 24 fps · maximum" },
 ];
 
 const INPAINT_ACTIONS: { value: InpaintAction; label: string; placeholder: string }[] = [
@@ -142,27 +149,54 @@ function RefStrip() {
   );
 }
 
-/** Edit image | New image: whether the prompt changes an image or makes a new one (with the
- * images in the prompt as references). */
+/** Edit image | New image | Video: whether the prompt changes an image, makes a new one, or generates video. */
 function ModeSwitch({ editing }: { editing: boolean }) {
+  const mode = useStore((s) => s.composer.mode);
   const sel = useStore(selectedItem);
   const session = useStore((s) => s.session);
   const img = sel && (sel.gen || sel.input) ? sel : [...session].reverse().find((i) => i.gen || i.input);
   const refs = useStore((s) => s.composer.refs);
   const name = refs.length ? "image 1 of the prompt" : img ? `${imageName(sessionLabels(session)[img.key]).toLowerCase()}, the image shown` : "";
+  const isVideo = mode === "video";
+  const isEditing = editing && !isVideo;
+  const isNewImage = !editing && !isVideo;
+
   return (
     <div className="mode-switch" role="radiogroup" aria-label="What the prompt does">
       <button
-        className={editing ? "" : "on"}
+        className={isNewImage ? "on" : ""}
         role="radio"
-        aria-checked={!editing}
-        onClick={() => startNewImage()}
+        aria-checked={isNewImage}
+        onClick={() => {
+          updateComposer({ mode: "generate" });
+          editing && startNewImage();
+        }}
         title="Make a new image. Images you add are references (a person, a product, a style) for it, not edited; your images stay in the timeline"
       >
         <Sparkles size={14} /> <span className="lbl">New image</span>
       </button>
-      <button className={editing ? "on" : ""} role="radio" aria-checked={editing} onClick={() => !editing && editShownImage()} title={editing ? "The prompt edits this image" : `Edit ${name}`}>
-        <Pencil size={14} /> <span className="lbl">Edit image</span>
+      {img && (
+        <button
+          className={isEditing ? "on" : ""}
+          role="radio"
+          aria-checked={isEditing}
+          onClick={() => {
+            updateComposer({ mode: "auto" });
+            !editing && editShownImage();
+          }}
+          title={editing ? "The prompt edits this image" : `Edit ${name}`}
+        >
+          <Pencil size={14} /> <span className="lbl">Edit image</span>
+        </button>
+      )}
+      <button
+        className={isVideo ? "on" : ""}
+        role="radio"
+        aria-checked={isVideo}
+        onClick={() => updateComposer({ mode: "video" })}
+        title="Generate a video (Wan2.2 local diffusion)"
+      >
+        <Video size={14} /> <span className="lbl">Video</span>
       </button>
     </div>
   );
@@ -171,11 +205,25 @@ function ModeSwitch({ editing }: { editing: boolean }) {
 /** Says, in words, what the prompt is going to do, and offers the tools for that image. */
 function TargetBar() {
   const c = useStore((s) => s.composer);
-  const session = useStore((s) => s.session);
   const nameOf = useRefNames();
 
+  if (c.mode === "video") {
+    const isI2V = c.refs.length > 0;
+    const what = isI2V ? `Image to Video: ${nameOf(c.refs[0]) ?? c.refs[0].name}` : "Text to Video";
+    const sub = isI2V ? "Animate this image with Wan2.2" : "Generate video from prompt with Wan2.2";
+    return (
+      <div className="target">
+        <ModeSwitch editing={isI2V} />
+        {isI2V && <RefStrip />}
+        <span className="target-text">
+          <span className="what">{what}</span>
+          <span className="sub">{sub}</span>
+        </span>
+      </div>
+    );
+  }
+
   if (!c.refs.length) {
-    if (!session.some((i) => i.gen || i.input)) return null;
     return (
       <div className="target create">
         <ModeSwitch editing={false} />
@@ -323,7 +371,7 @@ function usePlanPreview(): { plan: Plan | null; error: string | null } {
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [connected, c.prompt, c.refs, c.mode, c.quality, c.resolution, c.aspect, c.outpaint, c.mask, c.inpaintAction, c.customWidth, c.customHeight, c.advanced]);
+  }, [connected, c.prompt, c.refs, c.mode, c.quality, c.resolution, c.aspect, c.outpaint, c.mask, c.inpaintAction, c.customWidth, c.customHeight, c.video_frames, c.fps, c.advanced]);
   return res;
 }
 
@@ -558,6 +606,10 @@ export function Composer() {
       : hasImages
         ? "Prompt+ is looking at your images…"
         : "Prompt+ is reading your idea…"
+    : c.mode === "video"
+      ? hasImages
+        ? "Describe motion or animation for this image…"
+        : "Describe a video scene, camera motion, action…"
     : !hasImages
     ? hasProject
       ? "Describe a new image: subject, what it's doing, setting…"
@@ -711,6 +763,7 @@ export function Composer() {
               {(close) => <ResolutionMenu plan={plan} close={close} />}
             </Popover>
 
+
             <Popover
               trigger={(open, toggle) => (
                 <button className={`pill ${open ? "on" : ""}`} onClick={toggle} title="Quality">
@@ -724,6 +777,44 @@ export function Composer() {
                 QUALITY.map((q) => <Option key={q.value} selected={c.quality === q.value} label={q.label} sub={q.sub} onClick={() => (updateComposer({ quality: q.value }), close())} />)
               }
             </Popover>
+
+            {c.mode === "video" && (
+              <Popover
+                trigger={(open, toggle) => (
+                  <button className={`pill ${open ? "on" : ""}`} onClick={toggle} title="Video Duration">
+                    <Video size={14} />
+                    <span className="lbl">{VIDEO_DURATIONS.find((d) => d.frames === (c.video_frames ?? plan?.video_frames ?? 49))?.label ?? `${c.video_frames ?? 49} frames`}</span>
+                    <ChevronDown size={13} className="chev" />
+                  </button>
+                )}
+              >
+                {(close) =>
+                  VIDEO_DURATIONS.map((d) => (
+                    <Option
+                      key={d.frames}
+                      selected={(c.video_frames ?? plan?.video_frames ?? 49) === d.frames}
+                      label={d.label}
+                      sub={d.sub}
+                      onClick={() => {
+                        updateComposer({ video_frames: d.frames });
+                        close();
+                      }}
+                    />
+                  ))
+                }
+              </Popover>
+            )}
+
+            {c.mode === "video" && (
+              <button
+                className={`pill ${c.video_loop ? "on" : ""}`}
+                onClick={() => updateComposer({ video_loop: !c.video_loop })}
+                title="Seamless Loop: ends smoothly connect to the beginning"
+              >
+                <Repeat size={14} />
+                <span className="lbl">Loop</span>
+              </button>
+            )}
 
             {canEnhance && <PromptPlus />}
 
