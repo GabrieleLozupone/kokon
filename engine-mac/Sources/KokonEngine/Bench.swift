@@ -27,6 +27,9 @@ public enum Bench {
         }
         if NeuralAccelerators.selected(device: device), NeuralAccelerators.make(device: device) != nil {
             paths.append(("GPU products on Metal 4 tensor operations (the M5's neural accelerators; shader cores before)", "KOKON_NA", "0"))
+            if NeuralAccelerators.simdgroups(chip: chip.name, setting: ProcessInfo.processInfo.environment["KOKON_NA_SG2"]) == 2 {
+                paths.append(("those products on 2 SIMD groups per tile (M5 Pro)", "KOKON_NA_SG2", "0"))
+            }
         }
         if Coexecutor.flushReleaseSelected(context) {
             paths.append(("each product released to the AMX and the Neural Engine at once (this Mac's signals arrive late)", "KOKON_FLUSH_READY", "0"))

@@ -1275,6 +1275,7 @@ any Mac.**
 | Path | Chosen | M2 Pro result | Switch |
 |---|---|---|---|
 | **GPU rows on Metal 4 tensor operations** (`na_matmul`, MetalPerformancePrimitives' `matmul2d`): on the M5 the GPU cores' matrix units, before it the shader cores | wherever Metal 4 runs | 6.3 vs MPS 5.6 TFLOP/s, bit for bit the same; an evaluation 7.57 → 7.48 s | `KOKON_NA=0` |
+| **2 SIMD groups per `na_matmul` tile** (4 elsewhere): with 4 the MLP's out (K 12 288) and 4 096-row products ran 20–26 % below MPS on the M5 Pro's neural accelerators; with 2 every DiT shape is at their ~32 TFLOP/s fp16 ceiling (MPS's and MLX's too) | M5 Pro only | not selected (M5 Pro: a step at 1024² 4.21 → 3.86 s, 1024² image 37.2 → 34.4 s, the same result to the bit) | `KOKON_NA_SG2=0/1` |
 | **Attention reading K/V from memory** (`flash_attention_direct`) | off on every chip (since 0.1.1) | slower on every Mac measured (M2 Pro 142 ms vs 91; M3 Max, M4 Pro, M4 Max, M5 Pro: 8–18 % per step) | `KOKON_ATTENTION_DIRECT=1` |
 | **int8 products on the Neural Engine** (libnnc's M3/M4 path) | opt-in on every chip | a tile 10.1 → 7.0 ms, but 15–50× the error | `KOKON_ANE_INT8=1` |
 | **Each product released at once** (`Coexecutor.release`: a wait on `ready` right after its signal, so the CPU sees it before the GPU's own rows) | where signals arrive late, measured at every start (`signalArrivesLate`: M5 Pro on macOS 26.6, M2 Max on 26.2) | M5 Pro: an evaluation 5.50–5.89 → 4.44–4.46 s; where on time it costs ~2.5 % (M2 Pro, macOS 27.2) | `KOKON_FLUSH_READY=0/1` |
@@ -1453,6 +1454,7 @@ All are environment variables read once at start. Defaults are what users run.
 | `KOKON_ANE_ATTENTION` | off | `1`: Neural Engine heads too |
 | `KOKON_ANE_INT8` | off | `1`: int8 weights and rows on the Neural Engine |
 | `KOKON_NA` | on with Metal 4 | `0`: MPS for the GPU's rows; `1`: force Metal 4 tensor ops |
+| `KOKON_NA_SG2` | on the M5 Pro | `0`/`1`: 2 SIMD groups per `na_matmul` tile instead of 4 |
 | `KOKON_WEIGHTS` | fp16 | `fp32`: unpack weights to fp32 (checks) |
 | `KOKON_ACTIVATIONS` | fp16 | `fp32`: fp32 inputs to the GPU's and AMX's products (checks) |
 | `KOKON_ATTENTION` | fp16 packed kernel | `fp32`: fp32 kernel; `graph`: MPSGraph; `unpacked`: no K/V packing |

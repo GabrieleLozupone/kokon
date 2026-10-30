@@ -9,17 +9,36 @@ import Metal
 /// Selected for the split products' GPU rows wherever Metal 4 runs (fp16 A and weights, the defaults), MPS when the
 /// source does not compile or with `KOKON_NA=0`. On the M2 Pro's shader cores it beats MPS too: 6.3 against 5.6
 /// TFLOP/s at 1536 × 4096 × 4096, bit for bit the same result (`check-na`), and per evaluation at 1024², 3 alternated
-/// rounds of 4, 7.57 → 7.48 s (2026-10-25). Not yet run on an M5, M1, M3 or M4; the attention stays on the engine's
-/// own kernels.
+/// rounds of 4, 7.57 → 7.48 s (2026-10-25). On the M5 Pro they are the neural accelerators: 31 TFLOP/s at
+/// 1536 × 4096 × 4096, against at most ~10 the 20 GPU cores could do without them; MPS reaches them too (32 TFLOP/s,
+/// the same result to the bit), and so does MLX (28–31). Not yet run on an M1, M3 or M4; the attention stays on the
+/// engine's own kernels.
 public final class NeuralAccelerators: @unchecked Sendable {
     let pipeline: MTLComputePipelineState
+    /// SIMD groups per 64 × 64 tile: 4 (`na_matmul`), or 2 (`na_matmul_sg2`) where `simdgroups` picks it.
+    public let simdgroups: Int
     /// Why `make` returned nil, for the bench's report.
     nonisolated(unsafe) public private(set) static var unavailable: String?
 
     struct Params { var m, n, k: UInt32 }
 
-    /// Compiles the kernel; nil without Metal 4 or when the compiler refuses the source.
-    public static func make(device: MTLDevice) -> NeuralAccelerators? {
+    /// **2 SIMD groups per tile on the M5 Pro.** With 4, a tile's K loop ran 20–26 % slower than MPS where it is
+    /// long or the rows are many: the MLP's out (2048 × 12288 × 4096) 10.2 ms against MPS's 7.9, 4096 × 4096 × 4096
+    /// 6.0 against 4.5. With 2 every DiT shape is at the matrix units' ceiling (~32 TFLOP/s fp16, MPS's and MLX's
+    /// too): 7.1 and 4.5 ms, the same result to the bit (a sweep of tiles 32–128 and 1–8 SIMD groups; M5 Pro 20-core,
+    /// macOS 27.2, median of 12). Not measured on the M5, M5 Max or the shader cores of older chips, which keep 4.
+    /// `KOKON_NA_SG2=0` / `=1`.
+    static func simdgroups(chip: String, setting: String?) -> Int {
+        switch setting {
+        case "0": return 4
+        case "1": return 2
+        default: return chip.contains("M5 Pro") ? 2 : 4
+        }
+    }
+
+    /// Compiles the kernel; nil without Metal 4 or when the compiler refuses the source. `simdgroups`: nil for this
+    /// chip's choice.
+    public static func make(device: MTLDevice, simdgroups: Int? = nil) -> NeuralAccelerators? {
         guard #available(macOS 26, *), device.supportsFamily(.metal4) else {
             unavailable = "no Metal 4 on this GPU or macOS"
             return nil
@@ -31,15 +50,21 @@ public final class NeuralAccelerators: @unchecked Sendable {
             options.languageVersion = .version4_0
             options.mathMode = .safe
             let library = try device.makeLibrary(source: try String(contentsOf: url, encoding: .utf8), options: options)
-            guard let function = library.makeFunction(name: "na_matmul") else { throw MetalContext.Failure.kernel("na_matmul not found") }
-            return NeuralAccelerators(pipeline: try device.makeComputePipelineState(function: function))
+            let groups = simdgroups ?? NeuralAccelerators.simdgroups(chip: Chip.current.name,
+                                                                     setting: ProcessInfo.processInfo.environment["KOKON_NA_SG2"])
+            let name = groups == 2 ? "na_matmul_sg2" : "na_matmul"
+            guard let function = library.makeFunction(name: name) else { throw MetalContext.Failure.kernel("\(name) not found") }
+            return NeuralAccelerators(pipeline: try device.makeComputePipelineState(function: function), simdgroups: groups)
         } catch {
             unavailable = "the kernel did not compile: \(error.localizedDescription)"
             return nil
         }
     }
 
-    init(pipeline: MTLComputePipelineState) { self.pipeline = pipeline }
+    init(pipeline: MTLComputePipelineState, simdgroups: Int) {
+        self.pipeline = pipeline
+        self.simdgroups = simdgroups
+    }
 
     /// Whether the split products' GPU rows go through them on this device.
     public static func selected(device: MTLDevice) -> Bool {
@@ -67,7 +92,7 @@ public final class NeuralAccelerators: @unchecked Sendable {
         var p = Params(m: UInt32(m), n: UInt32(n), k: UInt32(k))
         e.setBytes(&p, length: MemoryLayout<Params>.stride, index: 3)
         e.dispatchThreadgroups(MTLSize(width: n / 64, height: m / 64, depth: 1),
-                               threadsPerThreadgroup: MTLSize(width: pipeline.threadExecutionWidth * 4, height: 1, depth: 1))
+                               threadsPerThreadgroup: MTLSize(width: pipeline.threadExecutionWidth * simdgroups, height: 1, depth: 1))
         e.endEncoding()
     }
 }

@@ -429,6 +429,17 @@ correctness test that runs on any Mac (`PerChipTests`). Only the M2 Pro has meas
   run on the GPU's neural accelerators, before it on the shader cores). Its source compiles at run time on macOS 27,
   so it is on wherever Metal 4 runs (`KOKON_NA=0` off). M2 Pro: 6.3 TFLOP/s against MPS's 5.6 at 1536 × 4096 × 4096,
   bit for bit the same result (`check-na`); per evaluation at 1024², 3 alternated rounds: 7.57 → 7.48 s.
+  **On the M5 Pro they are the neural accelerators**, and MPS reaches them too: 31.4 against 32.2 TFLOP/s at
+  1536 × 4096 × 4096, the same result to the bit, against at most ~10 for its 20 GPU cores without them; MLX 0.32
+  reaches 28–31 on the DiT's shapes. So `KOKON_NA=0` does not turn them off; it was ahead because of the tile below.
+- **2 SIMD groups per `na_matmul` tile on the M5 Pro** (`KOKON_NA_SG2=0` off, `=1` on elsewhere). With 4, the MLP's
+  out (2048 × 12288 × 4096) took 9.6 ms against MPS's 6.7 and 4096 × 4096 × 4096 6.0 against 4.4 (`check-na`, best
+  of 5); with 2, 7.0 and 4.4, the same result to the bit. A sweep of tiles 32–128 and 1–8 SIMD groups found no
+  shape faster than ~32 TFLOP/s fp16, the units' ceiling. M5 Pro 20-core, 24 GB, macOS 27.2, 3 alternated rounds,
+  median (min–max): `time-dit` third evaluation 4.21 (4.19–4.27) → 3.86 (3.84–4.16) s (MPS 3.89); test set 1024²
+  37.2 → 34.4 s, 1344×768 37.5 → 34.9 s, edit 40.2 → 39.0 s; velocity error 4.1 · 10⁻⁴ both. Not measured on the M5
+  or M5 Max, which keep 4. int8 × int8 runs at ~62 TOP/s there, twice fp16, but needs int8 activations (the Neural
+  Engine's int8 error, chapter 29); half × int8 weights is slower than fp16.
 - **int8 products on the Neural Engine** (libnnc's M3/M4 path; `KOKON_ANE_INT8=1`, int8 weights and rows). Opt-in on
   every chip, as their error does not depend on the chip. M2 Pro: one 1792 × 4096 × 4096 tile 10.1 ms in fp16, 7.0 ms
   in int8 (`check-ane8`); per evaluation 7.42 → 7.00 s; but the velocity at 896² goes from 7.6e-4 to 4.1e-2 (one int8 scale per 4 096 weights where Q4_K has one per 32;

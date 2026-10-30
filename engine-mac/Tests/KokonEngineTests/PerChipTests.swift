@@ -8,10 +8,11 @@ import XCTest
 /// for (`kokon-engine-mac bench`), their results do not.
 final class PerChipTests: XCTestCase {
     /// `na_matmul` (the M5's neural accelerators; shader cores on older Metal 4 GPUs) against a product in double of
-    /// the same fp16 operands, on shapes with several tiles along m and n and a K that is not a power of two.
+    /// the same fp16 operands, on shapes with several tiles along m and n and a K that is not a power of two: both
+    /// tile variants (4 SIMD groups, and the M5 Pro's 2), forced on whatever chip runs the test.
     func testNeuralAcceleratorProduct() throws {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
-        guard let na = NeuralAccelerators.make(device: device) else {
+        guard NeuralAccelerators.make(device: device) != nil else {
             throw XCTSkip("Metal 4 tensor operations unavailable: \(NeuralAccelerators.unavailable ?? "?")")
         }
         let context = try MetalContext()
@@ -25,21 +26,40 @@ final class PerChipTests: XCTestCase {
         let ab = try context.scratch(a.count * 2, label: "A"), bb = try context.scratch(b.count * 2, label: "B")
         ab.contents().copyMemory(from: a, byteCount: a.count * 2)
         bb.contents().copyMemory(from: b, byteCount: b.count * 2)
-        let cb = try context.scratch(m * n * 4, label: "C")
-        let commands = context.queue.makeCommandBuffer()!
-        try na.encode(a: (ab, 0), b: (bb, 0), c: (cb, 0), m: m, n: n, k: k, commands: commands)
-        try MetalContext.finish(commands, "na_matmul")
-        let c = cb.contents().assumingMemoryBound(to: Float.self)
-        var worst = 0.0, scale = 0.0
+        var exact = [Double](repeating: 0, count: m * n), scale = 0.0
         for i in 0..<m {
             for j in 0..<n {
                 var s = 0.0
                 for l in 0..<k { s += Double(a[i * k + l]) * Double(b[l * n + j]) }
-                worst = max(worst, abs(Double(c[i * n + j]) - s))
+                exact[i * n + j] = s
                 scale = max(scale, abs(s))
             }
         }
-        XCTAssertLessThan(worst / scale, 1e-5, "fp16 products accumulated in fp32")
+        var results: [[Float]] = []
+        for groups in [4, 2] {
+            let na = try XCTUnwrap(NeuralAccelerators.make(device: device, simdgroups: groups))
+            XCTAssertEqual(na.simdgroups, groups)
+            let cb = try context.scratch(m * n * 4, label: "C")
+            let commands = context.queue.makeCommandBuffer()!
+            try na.encode(a: (ab, 0), b: (bb, 0), c: (cb, 0), m: m, n: n, k: k, commands: commands)
+            try MetalContext.finish(commands, "na_matmul")
+            let c = Array(UnsafeBufferPointer(start: cb.contents().assumingMemoryBound(to: Float.self), count: m * n))
+            let worst = zip(c, exact).map { abs(Double($0) - $1) }.max() ?? 0
+            XCTAssertLessThan(worst / scale, 1e-5, "\(groups) SIMD groups: fp16 products accumulated in fp32")
+            results.append(c)
+        }
+        // On the M5 Pro the two were the same to the bit; elsewhere only the error above is required.
+        if Chip.current.name.contains("M5 Pro") { XCTAssertEqual(results[0], results[1]) }
+    }
+
+    /// Which chips get 2 SIMD groups per tile: the M5 Pro only, unless the setting says otherwise.
+    func testNeuralAcceleratorTileSelection() {
+        XCTAssertEqual(NeuralAccelerators.simdgroups(chip: "Apple M5 Pro", setting: nil), 2)
+        XCTAssertEqual(NeuralAccelerators.simdgroups(chip: "Apple M5 Pro", setting: "0"), 4)
+        for chip in ["Apple M5", "Apple M5 Max", "Apple M4 Pro", "Apple M2 Pro", "Apple M1"] {
+            XCTAssertEqual(NeuralAccelerators.simdgroups(chip: chip, setting: nil), 4, chip)
+            XCTAssertEqual(NeuralAccelerators.simdgroups(chip: chip, setting: "1"), 2, chip)
+        }
     }
 
     func testChipNames() {
