@@ -9,9 +9,10 @@ final class AttentionTests: XCTestCase {
 
     struct PackParams { var keys, paddedKeys, stride, heads: UInt32 }
 
-    /// `kernel` on K and V packed by `attention_pack_kv` when `packed`.
+    /// `kernel` on K and V packed by `attention_pack_kv` when `packed`; `neural`: the packed attention on Metal 4 tensor
+    /// operations instead (`NeuralAttention`).
     func run(queries: Int, keys: Int, causal: Bool, heads: Int = 2, magnitude: Float = 4,
-             kernel: String = "flash_attention", packed: Bool = false) throws -> (worst: Double, untouched: Bool) {
+             kernel: String = "flash_attention", packed: Bool = false, neural: NeuralAttention? = nil) throws -> (worst: Double, untouched: Bool) {
         let context = try MetalContext()
         let stride = heads * 128, padding = 64
         let rows = max(queries, keys) + padding
@@ -42,6 +43,10 @@ final class AttentionTests: XCTestCase {
             e.dispatchThreads(MTLSize(width: 32, height: paddedKeys, depth: heads), threadsPerThreadgroup: MTLSize(width: 32, height: 8, depth: 1))
             e.endEncoding()
         }
+        if let neural {
+            try neural.encode(q: (qb, 0), kp: (kp, 0), vp: (vp, 0), out: (ob, 0), queries: queries, keys: keys, paddedKeys: paddedKeys,
+                              heads: heads, stride: stride, scale: 1 / Float(128).squareRoot() * Float(M_LOG2E), commands: commands)
+        } else {
         let e = commands.makeComputeCommandEncoder()!
         e.setComputePipelineState(try context.pipeline(kernel))
         for (i, b) in [qb, packed ? kp : kb, packed ? vp : vb, ob].enumerated() { e.setBuffer(b, offset: 0, index: i) }
@@ -53,6 +58,7 @@ final class AttentionTests: XCTestCase {
         e.dispatchThreadgroups(MTLSize(width: (queries + 63) / 64, height: heads, depth: 1),
                                threadsPerThreadgroup: MTLSize(width: 256, height: 1, depth: 1))
         e.endEncoding()
+        }
         try MetalContext.finish(commands, "flash")
         let o = ob.contents().assumingMemoryBound(to: Float.self)
         var worst = 0.0
@@ -114,6 +120,23 @@ final class AttentionTests: XCTestCase {
                 XCTAssertLessThan(r.worst, 5e-3, "\(kernel) \(q)×\(k)")
                 XCTAssertTrue(r.untouched, "\(kernel) \(q)×\(k) wrote past its queries")
             }
+        }
+    }
+
+    /// The packed attention on Metal 4 tensor operations (`NeuralAttention`, the M5's neural accelerators), forced on
+    /// any Metal 4 GPU: within fp16's rounding of exact as `flash_attention_packed`, and no further from exact than it
+    /// (the same fp16 operands), on sizes that are not multiples of its tiles and on a peaked softmax.
+    func testNeuralAttention() throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        guard let neural = NeuralAttention.make(device: device) else {
+            throw XCTSkip("Metal 4 tensor operations unavailable: \(NeuralAttention.unavailable ?? "?")")
+        }
+        for (q, k, magnitude): (Int, Int, Float) in [(32, 32, 4), (40, 70, 4), (100, 130, 4), (7, 300, 4), (64, 96, 16), (128, 200, 4)] {
+            let r = try run(queries: q, keys: k, causal: false, magnitude: magnitude, packed: true, neural: neural)
+            let reference = try run(queries: q, keys: k, causal: false, magnitude: magnitude, kernel: "flash_attention_packed", packed: true)
+            if magnitude == 4 { XCTAssertLessThan(r.worst, 5e-3, "\(q)×\(k)") }   // as testPacked; the peaked case by the line below
+            XCTAssertLessThan(r.worst, 2 * reference.worst + 1e-4, "\(q)×\(k): \(r.worst) against the packed kernel's \(reference.worst)")
+            XCTAssertTrue(r.untouched, "\(q)×\(k) wrote past its queries")
         }
     }
 }

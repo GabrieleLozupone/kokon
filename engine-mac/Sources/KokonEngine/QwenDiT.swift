@@ -930,6 +930,9 @@ public final class QwenDiT {
     /// M4 Max 4.57 → 3.88, M5 Pro 5.79 → 5.34 (on the M2 Pro 142 ms against 91 for the attention alone). Off by default
     /// on every chip; `KOKON_ATTENTION_DIRECT=1` to try it.
     lazy var packedKernel = QwenDiT.directAttention(device: context.device) ? "flash_attention_direct" : "flash_attention_packed"
+    /// The packed attention on the neural accelerators where the GPU has them (`NeuralAttention`), else nil.
+    lazy var neuralAttention: NeuralAttention? = !QwenDiT.directAttention(device: context.device)
+        && NeuralAttention.selected(device: context.device) ? NeuralAttention.make(device: context.device) : nil
     static func directAttention(device: MTLDevice) -> Bool {
         ProcessInfo.processInfo.environment["KOKON_ATTENTION_DIRECT"] == "1"
     }
@@ -982,14 +985,24 @@ public final class QwenDiT {
                                   threadsPerThreadgroup: MTLSize(width: 32, height: 8, depth: 1))
             }
         }
+        let scale = 1 / Float(QwenDiT.headDim).squareRoot() * Float(M_LOG2E)
+        if packed, let neuralAttention {
+            castInput = nil
+            try gpu("na_flash_attention", commands) {
+                try neuralAttention.encode(q: (arena.buffer, q.offset + queries * row), kp: (arena.buffer, kPacked.offset),
+                                           vp: (arena.buffer, vPacked.offset), out: (arena.buffer, attended.offset + queries * row),
+                                           queries: count, keys: keys, paddedKeys: paddedKeys, heads: heads,
+                                           stride: QwenDiT.dim, scale: scale, commands: $0)
+            }
+            return
+        }
         try compute(packed ? packedKernel : flashKernel, commands: commands) { e in
             e.setBuffer(arena.buffer, offset: q.offset + queries * row, index: 0)
             e.setBuffer(arena.buffer, offset: packed ? kPacked.offset : k.offset, index: 1)
             e.setBuffer(arena.buffer, offset: packed ? vPacked.offset : v.offset, index: 2)
             e.setBuffer(arena.buffer, offset: attended.offset + queries * row, index: 3)
             var params = FlashParams(queries: UInt32(count), keys: UInt32(keys), causal: causal ? 1 : 0,
-                                     stride: UInt32(QwenDiT.dim), scale: 1 / Float(QwenDiT.headDim).squareRoot() * Float(M_LOG2E),
-                                     headBase: 0)
+                                     stride: UInt32(QwenDiT.dim), scale: scale, headBase: 0)
             e.setBytes(&params, length: MemoryLayout<FlashParams>.stride, index: 4)
             var padded = UInt32(paddedKeys)
             if packed { e.setBytes(&padded, length: 4, index: 5) }
