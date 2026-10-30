@@ -51,8 +51,10 @@ pub struct PreparedJob {
 
 pub enum PostKind {
     Plain,
-    Inpaint { source: RgbaImage, region: Rect, blend: GrayImage },
-    Outpaint { source: RgbaImage, feather: u32 },
+    /// `regen`: where the model regenerated pixels that are pasted back at 0 (region size),
+    /// the band that measures its colour cast; None skips the colour match.
+    Inpaint { source: RgbaImage, region: Rect, blend: GrayImage, regen: Option<GrayImage> },
+    Outpaint { source: RgbaImage, feather: u32, match_colors: bool },
 }
 
 pub struct PostProcess {
@@ -105,12 +107,27 @@ fn is_binary(m: &GrayImage) -> bool {
 const RGBA_PREFIX: &str = "This is an RGBA image with transparency.";
 const RGBA_SUFFIX: &str = "The image has alpha channel and the background is transparent.";
 
-/// True when the prompt asks for transparency (e.g. "transparent background", "remove the background").
+/// True when the prompt asks for transparency (e.g. "transparent background", "remove the background"),
+/// in the user's own words: English plus Italian, Spanish, French, German and Portuguese (Prompt+
+/// rewrites in English, but this looks at what the user typed).
 pub fn wants_transparency(prompt: &str) -> bool {
     let p = prompt.to_lowercase();
-    ["transparent", "transparency", "alpha channel", "rgba", "no background", "without background", "remove the background", "remove background", "cut out", "cutout"]
-        .iter()
-        .any(|k| p.contains(k))
+    [
+        // en; "transpar" also covers es/pt "transparente", fr/de "transparent"
+        "transpar", "alpha channel", "rgba", "no background", "without background", "remove the background", "remove background", "cut out", "cutout",
+        // it
+        "traspar", "senza sfondo", "rimuovi lo sfondo", "togli lo sfondo", "elimina lo sfondo", "scontorn",
+        // es
+        "sin fondo", "quita el fondo", "quitar el fondo", "elimina el fondo", "eliminar el fondo",
+        // fr
+        "sans fond", "sans arrière-plan", "supprime l'arrière-plan", "supprimer l'arrière-plan", "détour",
+        // de
+        "ohne hintergrund", "hintergrund entfernen", "entferne den hintergrund", "freistell",
+        // pt
+        "sem fundo", "remova o fundo", "remover o fundo", "tire o fundo",
+    ]
+    .iter()
+    .any(|k| p.contains(k))
 }
 
 /// Inpaint instruction: `<image1>` is the region (blurred out where content is removed),
@@ -131,7 +148,7 @@ pub fn inpaint_prompt(action: InpaintAction, prompt: &str, color: &str) -> Strin
             )
         }
         InpaintAction::Replace => format!(
-            "In <image1>, replace what is inside {area} with {what}. Match the scene's lighting, perspective, scale and style so it looks naturally part of the image. {keep}"
+            "In <image1>, {area} has been blurred out to clear what was there. Fill the blurred area with {what}. Match the scene's lighting, perspective, scale and style so it looks naturally part of the image. {keep}"
         ),
         InpaintAction::Add => format!(
             "In <image1>, add {what} inside {area}, fitting it naturally into the scene with matching lighting, perspective, scale and shadows. {keep}"
@@ -157,12 +174,26 @@ pub fn effective_prompt(plan: &Plan, prompt: &str) -> String {
     }
 }
 
+/// True when a Prompt+ rewrite asks for a transparent *background* ("background to be fully
+/// transparent", "transparent background", "full transparency", "alpha channel"): the rewrite is
+/// English whatever the user typed, so this catches other languages and typos ("trasperenza").
+/// A transparent object ("a transparent glass vase") does not count.
+pub fn rewrite_wants_transparency(enhanced: &str) -> bool {
+    static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(
+            r"(?i)\bbackground\s+(?:is\s+|to\s+be\s+|becomes?\s+|made\s+)?(?:fully\s+|completely\s+|entirely\s+)?transparent\b|\btransparent\s+background\b|\bfull\s+transparency\b|\balpha\s+channel\b|\btransparent\s+png\b",
+        )
+        .unwrap()
+    });
+    RE.is_match(enhanced)
+}
+
 /// The prompt sent for an enhanced job (text-to-image, compose, edit, combine): the enhancer's text,
-/// wrapped for transparency when the user's own words asked for it (not the rewrite's, which
-/// may mention "transparent glass").
+/// wrapped for transparency when the user's own words asked for it, or the rewrite asks for a
+/// transparent background (not merely a transparent object: "transparent glass").
 pub fn enhanced_prompt(original: &str, enhanced: &str) -> String {
     let p = enhanced.trim();
-    if wants_transparency(original) && !p.starts_with(RGBA_PREFIX) {
+    if (wants_transparency(original) || rewrite_wants_transparency(p)) && !p.starts_with(RGBA_PREFIX) {
         return format!("{RGBA_PREFIX} {}. {RGBA_SUFFIX}", p.trim_end_matches('.'));
     }
     p.to_string()
@@ -256,7 +287,7 @@ pub fn prepare(plan: &Plan, prompt: &str, seed: i64, images: &[LoadedImage], mas
                 blend = imaging::dilate(&blend, ((region.width.max(region.height) as f64) * 0.01).round().max(4.0) as u32);
             }
             if is_binary(&blend) {
-                let r = ((region.width.max(region.height) as f64) * 0.006).round().max(3.0) as u32;
+                let r = ((region.width.max(region.height) as f64) * 0.012).round().max(3.0) as u32;
                 blend = imaging::feather(&imaging::dilate(&blend, r / 2), r);
             }
             // Backend mask (working resolution): binary, grown to cover the soft edge.
@@ -266,10 +297,11 @@ pub fn prepare(plan: &Plan, prompt: &str, seed: i64, images: &[LoadedImage], mas
             let mut m_canvas = GrayImage::from_pixel(wc.canvas.width, wc.canvas.height, Luma([0]));
             image::imageops::replace(&mut m_canvas, &m_work, wc.content_offset.0 as i64, wc.content_offset.1 as i64);
 
-            // Image 1: the region; for a removal with the content already blurred away, so
-            // the model rebuilds background instead of copying the object back.
+            // Image 1: the region; for a removal or a replacement with the content already
+            // blurred away, so the model rebuilds the area instead of keeping the old object
+            // (a replaced bowl otherwise gets the new thing put *in* it).
             let pad = |img: &RgbaImage| imaging::pad_edge(img, wc.canvas, wc.content_offset);
-            let image1 = if action == InpaintAction::Remove { imaging::fill_masked(&content, &m_work) } else { content.clone() };
+            let image1 = if matches!(action, InpaintAction::Remove | InpaintAction::Replace) { imaging::fill_masked(&content, &m_work) } else { content.clone() };
             // Image 2 (guide): the area marked in a color named in the prompt. The model gets
             // no mask otherwise; the latent mask only discards changes outside it.
             let gc = plan.references.get(1).map(|r| r.canvas).ok_or_else(|| AppError::internal("missing inpaint guide plan"))?;
@@ -292,7 +324,10 @@ pub fn prepare(plan: &Plan, prompt: &str, seed: i64, images: &[LoadedImage], mas
             req.mask_image = Some(gray_png_b64(&m_canvas)?);
             req.strength = plan.strength;
             req.image_preprocess = vec!["target=init,mode=none".into(), "target=mask,mode=none,filter=nearest-exact".into(), "target=ref,mode=none".into()];
-            kind = PostKind::Inpaint { source: src.clone(), region, blend };
+            // Regenerated but not pasted: the backend mask (back at region size) where the blend is ~0.
+            let back = imaging::resize_mask(&m_work, region.width, region.height);
+            let regen = GrayImage::from_fn(region.width, region.height, |x, y| Luma([if back.get_pixel(x, y)[0] > 127 && blend.get_pixel(x, y)[0] <= 8 { 255 } else { 0 }]));
+            kind = PostKind::Inpaint { source: src.clone(), region, blend, regen: Some(regen) };
         }
         ResolvedMode::Outpaint => {
             need_images(1)?;
@@ -311,7 +346,7 @@ pub fn prepare(plan: &Plan, prompt: &str, seed: i64, images: &[LoadedImage], mas
             let feather_final = ((op.overlap_working.left.max(op.overlap_working.right).max(op.overlap_working.top).max(op.overlap_working.bottom)) as f64
                 / op.working.scale)
                 .round() as u32;
-            kind = PostKind::Outpaint { source: src.clone(), feather: feather_final.max(2) };
+            kind = PostKind::Outpaint { source: src.clone(), feather: feather_final.max(2), match_colors: true };
         }
         ResolvedMode::Upscale => return Err(AppError::internal("an upscale has no diffusion request")),
     }
@@ -321,6 +356,10 @@ pub fn prepare(plan: &Plan, prompt: &str, seed: i64, images: &[LoadedImage], mas
         post: PostProcess { kind, keep_alpha, working: plan.working, content: plan.content, output: plan.output, mode: plan.mode, outpaint: plan.outpaint },
     })
 }
+
+/// Largest colour correction (levels per channel) at a paste border: a real cast is a few
+/// levels; more means different content, which a tint must not try to fix.
+const COLOR_MATCH_MAX: f32 = 24.0;
 
 /// Turns one backend output image into the delivered image (Lanczos for any resize).
 pub fn postprocess(raw: RgbaImage, post: &PostProcess) -> AppResult<RgbaImage> {
@@ -360,17 +399,42 @@ pub fn enlarge_target(post: &PostProcess) -> Option<Size> {
 pub fn finish(content: RgbaImage, post: &PostProcess) -> AppResult<RgbaImage> {
     Ok(match &post.kind {
         PostKind::Plain => imaging::resize(&content, post.output.width, post.output.height),
-        PostKind::Inpaint { source, region, blend } => {
-            let patch = imaging::resize(&content, region.width, region.height);
+        PostKind::Inpaint { source, region, blend, regen } => {
+            let mut patch = imaging::resize(&content, region.width, region.height);
+            // The model's colour cast, measured just outside the pasted area, comes off the patch.
+            if let Some(regen) = regen {
+                let truth = imaging::crop(source, *region);
+                if let Some(shift) = imaging::color_shift(&patch, &truth, regen, (0, 0), COLOR_MATCH_MAX) {
+                    shift.apply(&mut patch, |x, y| if blend.get_pixel(x, y)[0] > 0 { 1.0 } else { 0.0 });
+                }
+            }
             let mut out = source.clone();
             imaging::composite(&mut out, &patch, blend, (region.x, region.y));
             out
         }
-        PostKind::Outpaint { source, feather } => {
+        PostKind::Outpaint { source, feather, match_colors } => {
             let op = post.outpaint.as_ref().ok_or_else(|| AppError::internal("missing outpaint plan"))?;
             let mut out = imaging::resize(&content, op.final_size.width, op.final_size.height);
             let paste = imaging::paste_back_mask(Size::new(source.width(), source.height()), op.expansion, *feather);
-            imaging::composite(&mut out, source, &paste, (op.source_rect_final.x, op.source_rect_final.y));
+            let r = op.source_rect_final;
+            if *match_colors {
+                // Colour step across the seam: the original's pixels in the paste band, mirrored
+                // onto the new area just outside it, against what the model drew there. Removed
+                // fully at the seam, fading out over half the widest expansion (a local mismatch
+                // must not tint far areas). Comparing the band with its own regenerated copy
+                // instead over-corrected where the model drew the band unlike its surroundings.
+                let (truth, known) = imaging::mirror_band(source, &paste, r, op.expansion, Size::new(out.width(), out.height()));
+                if let Some(shift) = imaging::color_shift(&out, &truth, &known, (0, 0), COLOR_MATCH_MAX) {
+                    let e = op.expansion;
+                    let fade = (e.left.max(e.right).max(e.top).max(e.bottom) as f32 * 0.5).max(64.0);
+                    shift.apply(&mut out, |x, y| {
+                        let dx = r.x.saturating_sub(x).max(x.saturating_sub(r.right().saturating_sub(1)));
+                        let dy = r.y.saturating_sub(y).max(y.saturating_sub(r.bottom().saturating_sub(1)));
+                        (1.0 - (dx as f32).hypot(dy as f32) / fade).clamp(0.0, 1.0)
+                    });
+                }
+            }
+            imaging::composite(&mut out, source, &paste, (r.x, r.y));
             out
         }
     })
@@ -546,6 +610,27 @@ mod tests {
         let p = enhanced_prompt("a logo with transparent background", "A flat fox logo.");
         assert_eq!(p, format!("{RGBA_PREFIX} A flat fox logo. {RGBA_SUFFIX}"));
         assert_eq!(enhanced_prompt("transparent", &p), p, "not wrapped twice");
+        // The user's own language counts (10-30: "trasparenza" gave an opaque purple background).
+        let it = enhanced_prompt("dammi solo il soggetto con trasparenza png", "Remove the background and replace it with full transparency.");
+        assert!(it.starts_with(RGBA_PREFIX), "{it}");
+        // A typo the keywords miss: the rewrite's "transparent background" decides.
+        let typo = enhanced_prompt("dammi l'immagine con trasperenza", "Change the background to be fully transparent. Keep everything else unchanged.");
+        assert!(typo.starts_with(RGBA_PREFIX), "{typo}");
+        for r in ["A transparent glass vase on a wooden background.", "Remove the background and replace it with a sunny beach."] {
+            assert!(!rewrite_wants_transparency(r), "{r}");
+        }
+    }
+
+    #[test]
+    fn transparency_requests_in_other_languages() {
+        for p in ["sfondo trasparente", "scontorna il soggetto", "togli lo sfondo", "fondo transparente", "sin fondo", "fond transparent", "détoure le produit",
+            "ohne Hintergrund", "freistellen", "sem fundo", "Remove the background"]
+        {
+            assert!(wants_transparency(p), "{p}");
+        }
+        for p in ["un gatto sul divano", "a red car at sunset", "metti uno sfondo blu", "ein Hund im Park"] {
+            assert!(!wants_transparency(p), "{p}");
+        }
     }
 
     #[test]
@@ -931,6 +1016,28 @@ mod tests {
         assert!(rm.request.prompt.contains("blurred out to remove the box"), "{}", rm.request.prompt);
         assert!(center(&rm).0[..3].iter().any(|&c| c < 230), "box erased: {:?}", center(&rm));
         assert_eq!(rm.request.init_image.as_ref(), Some(&rm.request.ref_images[0]));
+        // A replacement clears the old object too, so the new one is not put *in* it.
+        let (_, _, rp) = inpaint_job("a red hat", InpaintAction::Replace);
+        assert!(rp.request.prompt.contains("blurred out to clear what was there"), "{}", rp.request.prompt);
+        assert!(center(&rp).0[..3].iter().any(|&c| c < 230), "box erased: {:?}", center(&rp));
+    }
+
+    #[test]
+    fn outpaint_takes_the_original_colours_at_the_seam() {
+        // The model's new area is off-colour (the fake backend); the original is flat grey.
+        let mut img = photo(800, 600);
+        img.pixels = RgbaImage::from_pixel(800, 600, Rgba([120, 120, 120, 255]));
+        let mut r = req("more wall");
+        r.outpaint = Some(OutpaintSpec { left: 0.0, right: 50.0, top: 0.0, bottom: 0.0, units: ExpansionUnits::Percent });
+        let p = plan(&r, &PlanInputs { image_sizes: vec![img.size()], vram_total_mib: Some(16303), ..Default::default() }, &RecommendedSettings::default()).unwrap();
+        let j = prepare(&p, &r.prompt, 1, std::slice::from_ref(&img), None, &BackendOptions::default()).unwrap();
+        let out = postprocess(fake_backend(p.working.width, p.working.height), &j.post).unwrap();
+        // Just past the seam: moved toward the original by the capped shift (+24, +21, −24).
+        let near = out.get_pixel(810, 300).0;
+        assert!((near[0] as i32 - 32).abs() <= 2 && (near[1] as i32 - 119).abs() <= 2 && (near[2] as i32 - 176).abs() <= 2, "{near:?}");
+        // Far from it, the model's colours; the original itself untouched.
+        assert_eq!(out.get_pixel(1150, 300), &Rgba([9, 99, 199, 255]));
+        assert_eq!(out.get_pixel(400, 300), &Rgba([120, 120, 120, 255]));
     }
 
     #[test]

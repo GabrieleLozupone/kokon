@@ -1146,7 +1146,7 @@ impl Engine {
             let prepared = tokio::task::spawn_blocking(move || pipeline::prepare(&plan2, &prompt, seed, &images, mask_img.as_ref(), &opts))
                 .await
                 .map_err(AppError::internal)??;
-            let pipeline::PreparedJob { request: mut sd_req, post } = prepared;
+            let pipeline::PreparedJob { request: mut sd_req, mut post } = prepared;
             if let Some(what) = caps.mac_engine_unsupported(&sd_req) {
                 return Err(AppError::new(ErrorCode::Unsupported, format!("Kokon's Mac engine (experimental) does not do {what} yet."))
                     .suggest("Turn it off in Settings → Performance to use the standard engine for this."));
@@ -1158,6 +1158,8 @@ impl Engine {
                 enhanced = self.enhance_prompt(id, &client, &caps, &cfg, plan.mode, &request.prompt, &sd_req.ref_images, seed).await?;
                 if let Some(text) = &enhanced {
                     sd_req.prompt = pipeline::enhanced_prompt(&request.prompt, text);
+                    // The rewrite understood a transparency request the keywords missed: keep the alpha.
+                    post.keep_alpha |= pipeline::rewrite_wants_transparency(text);
                 }
             }
             // Prompt+ review: the prompt is the result; the user's next job makes the image.

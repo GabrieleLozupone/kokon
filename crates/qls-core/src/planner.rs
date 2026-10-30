@@ -1127,7 +1127,9 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
                 _ => tier_area.unwrap().min(final_area.max(256 * 256)),
             };
             let area = cap_for_refs(wanted, 1.0, &mut notes);
-            let p = plan_outpaint(src, exp, &limits(area, rec), 32).map_err(AppError::invalid)?;
+            // 64 working px of the original's border are regenerated and blended: narrower bands
+            // left a visible line on flat backgrounds (10-30 suit Expand).
+            let p = plan_outpaint(src, exp, &limits(area, rec), 64).map_err(AppError::invalid)?;
             working = p.working;
             output = p.final_size;
             references.push(RefPlan { index: 0, source: src, canvas: ref_canvas(src, p.working.canvas.area(), rec) });
