@@ -60,7 +60,9 @@ pub fn join_rel(base: &Path, rel: &str) -> PathBuf {
     if Path::new(rel).is_absolute() {
         return PathBuf::from(rel);
     }
-    rel.split('/').filter(|c| !c.is_empty()).fold(base.to_path_buf(), |p, c| p.join(c))
+    rel.split('/')
+        .filter(|c| !c.is_empty())
+        .fold(base.to_path_buf(), |p, c| p.join(c))
 }
 
 impl Download {
@@ -79,7 +81,10 @@ impl Download {
 
     /// The same file, saved at `path` (anywhere) instead of the stable-diffusion.cpp folder.
     pub fn at(self, path: &Path) -> Download {
-        Download { dest: Box::leak(path.to_string_lossy().into_owned().into_boxed_str()), ..self }
+        Download {
+            dest: Box::leak(path.to_string_lossy().into_owned().into_boxed_str()),
+            ..self
+        }
     }
 
     /// Every URL to try, in order.
@@ -92,15 +97,25 @@ impl Download {
     /// size match is enough for files already on disk.
     pub fn is_present(&self, sdcpp_dir: &Path) -> bool {
         if self.is_zip() {
-            let files = self.provides.iter().all(|f| join_rel(sdcpp_dir, f).is_file());
-            return files && self.engine_tag.is_none_or(|t| self.installed_tag(sdcpp_dir).as_deref() == Some(t));
+            let files = self
+                .provides
+                .iter()
+                .all(|f| join_rel(sdcpp_dir, f).is_file());
+            return files
+                && self
+                    .engine_tag
+                    .is_none_or(|t| self.installed_tag(sdcpp_dir).as_deref() == Some(t));
         }
-        std::fs::metadata(self.path(sdcpp_dir)).map(|m| m.is_file() && m.len() == self.size).unwrap_or(false)
+        std::fs::metadata(self.path(sdcpp_dir))
+            .map(|m| m.is_file() && m.len() == self.size)
+            .unwrap_or(false)
     }
 
     /// The release an engine folder is marked with, if any.
     pub fn installed_tag(&self, sdcpp_dir: &Path) -> Option<String> {
-        std::fs::read_to_string(zip_dir(self, sdcpp_dir).join(ENGINE_MARKER)).ok().map(|s| s.trim().to_string())
+        std::fs::read_to_string(zip_dir(self, sdcpp_dir).join(ENGINE_MARKER))
+            .ok()
+            .map(|s| s.trim().to_string())
     }
 
     /// Marks an extracted engine with its release.
@@ -118,14 +133,17 @@ impl Download {
 /// graphs (ggml from Kokon's fork). Linux builds on Ubuntu 22.04 (smoke-tested on Ubuntu
 /// 22.04/24.04, Debian 12, Fedora 40/42); macOS for 15.0 (upstream's Mac zip needs macOS 26).
 /// Sizes and SHA-256 from GitHub's asset digests.
-const KOKON_RELEASE: &str = "https://github.com/GabrieleLozupone/stable-diffusion.cpp/releases/tag/kokon-1013-1814814";
+const KOKON_RELEASE: &str =
+    "https://github.com/GabrieleLozupone/stable-diffusion.cpp/releases/tag/kokon-1013-1814814";
 /// Upstream release the Windows CUDA runtime comes from (CUDA 12.8.1, the version the engines
 /// are built with).
 #[cfg(not(target_os = "linux"))]
-const SDCPP_UPSTREAM_RELEASE: &str = "https://github.com/leejet/stable-diffusion.cpp/releases/tag/master-929-3f8527a";
+const SDCPP_UPSTREAM_RELEASE: &str =
+    "https://github.com/leejet/stable-diffusion.cpp/releases/tag/master-929-3f8527a";
 /// Release the Linux CUDA runtime comes from (CUDA 12.8).
 #[cfg(target_os = "linux")]
-const KOKON_LINUX_RELEASE: &str = "https://github.com/GabrieleLozupone/stable-diffusion.cpp/releases/tag/kokon-linux-1d0a58a";
+const KOKON_LINUX_RELEASE: &str =
+    "https://github.com/GabrieleLozupone/stable-diffusion.cpp/releases/tag/kokon-linux-1d0a58a";
 
 /// CUDA 12 build; it runs on GTX 10xx to RTX 50xx.
 #[cfg(not(target_os = "linux"))]
@@ -173,7 +191,11 @@ pub const ENGINE_VULKAN: Download = Download {
     size: WIN_VULKAN_SIZE,
     sha256: WIN_VULKAN_SHA256,
     dest: "engine-vulkan/sd-kokon-1814814-bin-win-vulkan-x64.zip",
-    provides: &["engine-vulkan/sd-server.exe", "engine-vulkan/stable-diffusion.dll", "engine-vulkan/ggml-vulkan.dll"],
+    provides: &[
+        "engine-vulkan/sd-server.exe",
+        "engine-vulkan/stable-diffusion.dll",
+        "engine-vulkan/ggml-vulkan.dll",
+    ],
     engine_tag: Some(ENGINE_TAG),
 };
 
@@ -222,7 +244,11 @@ pub const ENGINE_VULKAN: Download = Download {
     size: LINUX_VULKAN_SIZE,
     sha256: LINUX_VULKAN_SHA256,
     dest: "engine-vulkan/sd-kokon-1814814-bin-Linux-Ubuntu-22.04-x86_64-vulkan.zip",
-    provides: &["engine-vulkan/sd-server", "engine-vulkan/libstable-diffusion.so", "engine-vulkan/libggml-vulkan.so"],
+    provides: &[
+        "engine-vulkan/sd-server",
+        "engine-vulkan/libstable-diffusion.so",
+        "engine-vulkan/libggml-vulkan.so",
+    ],
     engine_tag: Some(ENGINE_TAG),
 };
 
@@ -238,7 +264,10 @@ pub const ENGINE_METAL: Download = Download {
     size: MACOS_METAL_SIZE,
     sha256: MACOS_METAL_SHA256,
     dest: "engine-metal/sd-kokon-1814814-bin-Darwin-macOS-15.0-universal.zip",
-    provides: &["engine-metal/sd-server", "engine-metal/libstable-diffusion.dylib"],
+    provides: &[
+        "engine-metal/sd-server",
+        "engine-metal/libstable-diffusion.dylib",
+    ],
     engine_tag: Some(ENGINE_TAG),
 };
 
@@ -258,7 +287,8 @@ const LINUX_CUDA_SHA256: &str = "a7a712f86f5d605883d2496dacf283009d00d2d5880b4b8
 #[cfg(target_os = "linux")]
 const LINUX_VULKAN_SIZE: u64 = 38_181_852;
 #[cfg(target_os = "linux")]
-const LINUX_VULKAN_SHA256: &str = "9c085070da4ea07356f92bddfb5882133de40ef36de30d8e8d6ddde064f33890";
+const LINUX_VULKAN_SHA256: &str =
+    "9c085070da4ea07356f92bddfb5882133de40ef36de30d8e8d6ddde064f33890";
 const MACOS_METAL_SIZE: u64 = 36_981_824;
 const MACOS_METAL_SHA256: &str = "0cba039a1ce063daa977e3ea927dab0a0bf1414002e74e80902afdf0ef6bb274";
 
@@ -266,7 +296,11 @@ const MACOS_METAL_SHA256: &str = "0cba039a1ce063daa977e3ea927dab0a0bf1414002e74e
 /// newer than the built-in pins was applied ([`apply_engine_release`]), else the pins.
 pub fn engine_downloads(backend: GpuBackend) -> Vec<Download> {
     let o = *ENGINE_OVERRIDE.read().unwrap();
-    let (cuda, vulkan, metal) = o.map(|r| (r.cuda, r.vulkan, r.metal)).unwrap_or((ENGINE_CUDA, ENGINE_VULKAN, ENGINE_METAL));
+    let (cuda, vulkan, metal) = o.map(|r| (r.cuda, r.vulkan, r.metal)).unwrap_or((
+        ENGINE_CUDA,
+        ENGINE_VULKAN,
+        ENGINE_METAL,
+    ));
     match backend {
         GpuBackend::Cuda => vec![cuda, CUDA_RUNTIME],
         GpuBackend::Vulkan => vec![vulkan],
@@ -276,7 +310,11 @@ pub fn engine_downloads(backend: GpuBackend) -> Vec<Download> {
 
 /// The engine release the app wants installed: the manifest's, or [`ENGINE_TAG`].
 pub fn engine_tag() -> &'static str {
-    ENGINE_OVERRIDE.read().unwrap().map(|r| r.tag).unwrap_or(ENGINE_TAG)
+    ENGINE_OVERRIDE
+        .read()
+        .unwrap()
+        .map(|r| r.tag)
+        .unwrap_or(ENGINE_TAG)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -329,7 +367,11 @@ pub fn release_number(tag: &str) -> Option<u32> {
 }
 
 fn version_tuple(v: &str) -> Option<(u32, u32, u32)> {
-    let mut it = v.trim().trim_start_matches('v').split(['.', '-']).map(|p| p.parse::<u32>().ok());
+    let mut it = v
+        .trim()
+        .trim_start_matches('v')
+        .split(['.', '-'])
+        .map(|p| p.parse::<u32>().ok());
     Some((it.next()??, it.next()??, it.next().flatten().unwrap_or(0)))
 }
 
@@ -344,7 +386,8 @@ pub fn apply_engine_release(m: &EngineManifest, app_version: &str) -> Result<boo
     let (Some(n), Some(builtin)) = (release_number(&k.tag), release_number(ENGINE_TAG)) else {
         return Err(format!("not a Kokon engine release tag: {}", k.tag));
     };
-    if version_tuple(app_version) < version_tuple(&k.min_app) || version_tuple(&k.min_app).is_none() {
+    if version_tuple(app_version) < version_tuple(&k.min_app) || version_tuple(&k.min_app).is_none()
+    {
         return Ok(false);
     }
     if n <= builtin {
@@ -354,8 +397,14 @@ pub fn apply_engine_release(m: &EngineManifest, app_version: &str) -> Result<boo
     let leak = |s: String| -> &'static str { Box::leak(s.into_boxed_str()) };
     let tag = leak(k.tag.clone());
     let commit = k.tag.rsplit('-').next().unwrap_or_default();
-    let release = format!("https://github.com/GabrieleLozupone/stable-diffusion.cpp/releases/download/{}/", k.tag);
-    let page = leak(format!("https://github.com/GabrieleLozupone/stable-diffusion.cpp/releases/tag/{}", k.tag));
+    let release = format!(
+        "https://github.com/GabrieleLozupone/stable-diffusion.cpp/releases/download/{}/",
+        k.tag
+    );
+    let page = leak(format!(
+        "https://github.com/GabrieleLozupone/stable-diffusion.cpp/releases/tag/{}",
+        k.tag
+    ));
     let prefix = format!("sd-kokon-{commit}-bin-");
     let build = |a: &ManifestAsset, base: Download, folder: &str| -> Result<Download, String> {
         let file = a
@@ -363,17 +412,46 @@ pub fn apply_engine_release(m: &EngineManifest, app_version: &str) -> Result<boo
             .strip_prefix(&release)
             .filter(|f| f.starts_with(&prefix) && f.ends_with(".zip") && !f.contains(['/', '\\']))
             .ok_or_else(|| format!("unexpected engine URL: {}", a.url))?;
-        if a.sha256.len() != 64 || !a.sha256.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()) || a.size == 0 {
+        if a.sha256.len() != 64
+            || !a
+                .sha256
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+            || a.size == 0
+        {
             return Err(format!("bad size or SHA-256 for {}", a.url));
         }
-        Ok(Download { url: leak(a.url.clone()), page, size: a.size, sha256: leak(a.sha256.clone()), dest: leak(format!("{folder}{file}")), engine_tag: Some(tag), ..base })
+        Ok(Download {
+            url: leak(a.url.clone()),
+            page,
+            size: a.size,
+            sha256: leak(a.sha256.clone()),
+            dest: leak(format!("{folder}{file}")),
+            engine_tag: Some(tag),
+            ..base
+        })
     };
     // Every build is checked, whatever the platform: a manifest is good or ignored as a whole.
-    let win = (build(&k.win_cuda, ENGINE_CUDA, "")?, build(&k.win_vulkan, ENGINE_VULKAN, "engine-vulkan/")?);
-    let linux = (build(&k.linux_cuda, ENGINE_CUDA, "")?, build(&k.linux_vulkan, ENGINE_VULKAN, "engine-vulkan/")?);
+    let win = (
+        build(&k.win_cuda, ENGINE_CUDA, "")?,
+        build(&k.win_vulkan, ENGINE_VULKAN, "engine-vulkan/")?,
+    );
+    let linux = (
+        build(&k.linux_cuda, ENGINE_CUDA, "")?,
+        build(&k.linux_vulkan, ENGINE_VULKAN, "engine-vulkan/")?,
+    );
     let metal = build(&k.macos, ENGINE_METAL, "engine-metal/")?;
-    let (cuda, vulkan) = if cfg!(target_os = "linux") { linux } else { win };
-    *ENGINE_OVERRIDE.write().unwrap() = Some(EngineRelease { tag, cuda, vulkan, metal });
+    let (cuda, vulkan) = if cfg!(target_os = "linux") {
+        linux
+    } else {
+        win
+    };
+    *ENGINE_OVERRIDE.write().unwrap() = Some(EngineRelease {
+        tag,
+        cuda,
+        vulkan,
+        metal,
+    });
     Ok(true)
 }
 
@@ -420,7 +498,14 @@ pub const TURBO_Q4_K: Download = Download {
 /// there, else the Q4_K of an earlier install (its owner has not accepted the new one), else the
 /// preset's to download. Like [`official_vae`], nothing here downloads it uninvited.
 pub fn official_dit(p: &Preset, sdcpp_dir: &Path) -> Download {
-    if p.diffusion.id == TURBO_Q4_K_M.id && !TURBO_Q4_K_M.is_present(sdcpp_dir) && TURBO_Q4_K.is_present(sdcpp_dir) { TURBO_Q4_K } else { p.diffusion }
+    if p.diffusion.id == TURBO_Q4_K_M.id
+        && !TURBO_Q4_K_M.is_present(sdcpp_dir)
+        && TURBO_Q4_K.is_present(sdcpp_dir)
+    {
+        TURBO_Q4_K
+    } else {
+        p.diffusion
+    }
 }
 
 /// The Q4_K in the app's own folder once the Q4_K_M is there and no profile uses it any more,
@@ -470,7 +555,11 @@ pub const VAE_ORIGINAL: Download = Download {
 /// original of an earlier install (its owner has not accepted the new one), else the texture
 /// fix to download. Updating is the user's choice, so nothing here downloads it uninvited.
 pub fn official_vae(sdcpp_dir: &Path) -> Download {
-    if !VAE.is_present(sdcpp_dir) && VAE_ORIGINAL.is_present(sdcpp_dir) { VAE_ORIGINAL } else { VAE }
+    if !VAE.is_present(sdcpp_dir) && VAE_ORIGINAL.is_present(sdcpp_dir) {
+        VAE_ORIGINAL
+    } else {
+        VAE
+    }
 }
 
 /// The original VAE in the app's own folder once the texture fix replaced it: no profile
@@ -499,7 +588,10 @@ pub fn dit_update(cfg: &crate::config::AppConfig) -> Option<DitUpdate> {
 }
 
 /// [`dit_update`], `is_old` telling whether a file of the user's is the Q4_K.
-fn dit_update_with(cfg: &crate::config::AppConfig, is_old: impl Fn(&Path) -> bool) -> Option<DitUpdate> {
+fn dit_update_with(
+    cfg: &crate::config::AppConfig,
+    is_old: impl Fn(&Path) -> bool,
+) -> Option<DitUpdate> {
     let p = cfg.profile();
     if p.is_official() {
         (p.diffusion_model == TURBO_Q4_K.path(&cfg.sdcpp_dir)).then_some(DitUpdate::Official)
@@ -567,7 +659,9 @@ pub const UPSCALER: Download = Download {
     label: "4xNomos2 MoSR upscaler",
     kind: FileKind::Model,
     url: "https://github.com/GabrieleLozupone/kokon/releases/download/models-1/4xNomos2_hq_mosr.pth",
-    fallback_urls: &["https://github.com/Phhofm/models/releases/download/4xNomos2_hq_mosr/4xNomos2_hq_mosr.pth"],
+    fallback_urls: &[
+        "https://github.com/Phhofm/models/releases/download/4xNomos2_hq_mosr/4xNomos2_hq_mosr.pth",
+    ],
     page: "https://github.com/Phhofm/models/releases/tag/4xNomos2_hq_mosr",
     size: 17_213_494,
     sha256: "c60dbfc7e6f7d27e03517d1bec3f3cbd16e8cd4288eefd1358952f73f8497ddc",
@@ -617,12 +711,21 @@ pub const UPSCALER_DOWNLOADS: &[Download] = &[SUPERSCALE, UPSCALER, ULTRASHARP];
 
 /// The download of the upscaler named `name` (file stem).
 pub fn upscaler_download(name: &str) -> Option<Download> {
-    UPSCALER_DOWNLOADS.iter().copied().find(|d| d.dest.rsplit('/').next().and_then(|f| f.rsplit_once('.')).is_some_and(|(stem, _)| stem == name))
+    UPSCALER_DOWNLOADS.iter().copied().find(|d| {
+        d.dest
+            .rsplit('/')
+            .next()
+            .and_then(|f| f.rsplit_once('.'))
+            .is_some_and(|(stem, _)| stem == name)
+    })
 }
 
 /// Upscaler files Settings offers to delete when they are not the selected model (in the
 /// app's own folder only).
-pub const LEGACY_UPSCALERS: &[&str] = &["models/upscalers/4x-UltraSharp.pth", "models/upscalers/4x_NMKD-Superscale-SP_178000_G.pth"];
+pub const LEGACY_UPSCALERS: &[&str] = &[
+    "models/upscalers/4x-UltraSharp.pth",
+    "models/upscalers/4x_NMKD-Superscale-SP_178000_G.pth",
+];
 
 /// Hardware presets: which weights to download and how to run them, by VRAM.
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -726,6 +829,208 @@ pub const PRESETS: &[Preset] = &[
 
 pub const DEFAULT_PRESET: &str = "16gb";
 
+// ---------------------------------------------------------------------------------------
+// Video Models (Wan 2.2 SOTA)
+// ---------------------------------------------------------------------------------------
+
+pub const WAN_2_2_5B_Q4_K: Download = Download {
+    id: "wan22_5b_q4_k",
+    label: "Wan2.2 TI2V 5B Q4_K_M",
+    kind: FileKind::Model,
+    url: "https://huggingface.co/QuantStack/Wan2.2-TI2V-5B-GGUF/resolve/main/Wan2.2-TI2V-5B-Q4_K_M.gguf",
+    fallback_urls: &[],
+    page: "https://huggingface.co/QuantStack/Wan2.2-TI2V-5B-GGUF",
+    size: 3_433_116_000,
+    sha256: "95b19697b7f98e65b0a543640e9ca7b4dfec32e2a6e3731e8e10708be52655e2",
+    dest: "models/wan22/Wan2.2-TI2V-5B-Q4_K_M.gguf",
+    provides: &[],
+    engine_tag: None,
+};
+
+pub const WAN_2_2_A14B_HIGH_NOISE_Q4_K: Download = Download {
+    id: "wan22_a14b_high_noise_q4_k",
+    label: "Wan2.2 T2V A14B High-Noise Q4_K_M",
+    kind: FileKind::Model,
+    url: "https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF/resolve/main/HighNoise/Wan2.2-T2V-A14B-HighNoise-Q4_K_M.gguf",
+    fallback_urls: &[],
+    page: "https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF",
+    size: 9_650_090_496,
+    sha256: "e0c490c6e316fd91ff52034e4ca66b825717e33ff11624585c0ccfcb5d410c59",
+    dest: "models/wan22/Wan2.2-T2V-A14B-HighNoise-Q4_K_M.gguf",
+    provides: &[],
+    engine_tag: None,
+};
+
+pub const WAN_2_2_A14B_LOW_NOISE_Q4_K: Download = Download {
+    id: "wan22_a14b_low_noise_q4_k",
+    label: "Wan2.2 T2V A14B Low-Noise Q4_K_M",
+    kind: FileKind::Model,
+    url: "https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF/resolve/main/LowNoise/Wan2.2-T2V-A14B-LowNoise-Q4_K_M.gguf",
+    fallback_urls: &[],
+    page: "https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF",
+    size: 9_650_090_496,
+    sha256: "0163bca063ef5450f6a6aaff47bbe9e46d17b3b0e5c959b3a7c81c9c2b8c2db7",
+    dest: "models/wan22/Wan2.2-T2V-A14B-LowNoise-Q4_K_M.gguf",
+    provides: &[],
+    engine_tag: None,
+};
+
+pub const WAN_2_1_VAE: Download = Download {
+    id: "wan21_vae",
+    label: "Wan2.1 VAE",
+    kind: FileKind::Model,
+    url: "https://huggingface.co/Comfy-Org/Wan-2.1/resolve/main/split_files/vae/wan_2.1_vae.safetensors",
+    fallback_urls: &[],
+    page: "https://huggingface.co/Comfy-Org/Wan-2.1",
+    size: 253_815_318,
+    sha256: "2e358d90f91ce658dc1be053d44cf2d6437e5f517c71ae89fcb2c89fd54ca67e",
+    dest: "models/wan22/wan_2.1_vae.safetensors",
+    provides: &[],
+    engine_tag: None,
+};
+
+pub const WAN_2_2_VAE: Download = Download {
+    id: "wan22_vae",
+    label: "Wan2.2 VAE",
+    kind: FileKind::Model,
+    url: "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/vae/wan2.2_vae.safetensors",
+    fallback_urls: &[],
+    page: "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+    size: 1_409_400_960,
+    sha256: "e40321bd36b9709991dae2530eb4ac303dd168276980d3e9bc4b6e2b75fed156",
+    dest: "models/wan22/wan2.2_vae.safetensors",
+    provides: &[],
+    engine_tag: None,
+};
+
+pub const UMT5_XXL_Q4_K: Download = Download {
+    id: "umt5_xxl_q4_k",
+    label: "UMT5-XXL text encoder Q4_K_M",
+    kind: FileKind::Model,
+    url: "https://huggingface.co/city96/umt5-xxl-encoder-gguf/resolve/main/umt5-xxl-encoder-Q4_K_M.gguf",
+    fallback_urls: &[],
+    page: "https://huggingface.co/city96/umt5-xxl-encoder-gguf",
+    size: 3_655_145_312,
+    sha256: "17cf97a5bbbc60a646d6105b832b6f657ce904a8a1ad970e4b59df0c67584a40",
+    dest: "models/wan22/umt5-xxl-encoder-Q4_K_M.gguf",
+    provides: &[],
+    engine_tag: None,
+};
+
+/// Video hardware presets: which models and dimensions to recommend based on available VRAM.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct VideoPreset {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub min_vram_mib: u64,
+    pub unified_label: &'static str,
+    pub diffusion: Download,
+    pub high_noise_diffusion: Option<Download>,
+    pub vae: Download,
+    pub text_encoder: Download,
+    pub text_encoder_placement: TextEncoderPlacement,
+    pub default_width: u32,
+    pub default_height: u32,
+    pub default_frames: u32,
+    pub default_fps: u32,
+    pub summary: &'static str,
+}
+
+pub const VIDEO_PRESETS: &[VideoPreset] = &[
+    VideoPreset {
+        id: "video_8gb",
+        label: "8 GB",
+        min_vram_mib: 0,
+        unified_label: "16 GB Mac",
+        diffusion: WAN_2_2_5B_Q4_K,
+        high_noise_diffusion: None,
+        vae: WAN_2_2_VAE,
+        text_encoder: UMT5_XXL_Q4_K,
+        text_encoder_placement: TextEncoderPlacement::Ram,
+        default_width: 832,
+        default_height: 480,
+        default_frames: 49,
+        default_fps: 24,
+        summary: "Wan2.2 TI2V 5B (4-bit); 480p at 49 frames (~2s @ 24 fps)",
+    },
+    VideoPreset {
+        id: "video_12gb",
+        label: "12 GB",
+        min_vram_mib: 10 * 1024,
+        unified_label: "24–32 GB Mac",
+        diffusion: WAN_2_2_5B_Q4_K,
+        high_noise_diffusion: None,
+        vae: WAN_2_2_VAE,
+        text_encoder: UMT5_XXL_Q4_K,
+        text_encoder_placement: TextEncoderPlacement::Ram,
+        default_width: 832,
+        default_height: 480,
+        default_frames: 73,
+        default_fps: 24,
+        summary: "Wan2.2 TI2V 5B; 480p at 73 frames (~3s @ 24 fps)",
+    },
+    VideoPreset {
+        id: "video_16gb",
+        label: "16 GB",
+        min_vram_mib: 14 * 1024,
+        unified_label: "36–48 GB Mac",
+        diffusion: WAN_2_2_A14B_LOW_NOISE_Q4_K,
+        high_noise_diffusion: Some(WAN_2_2_A14B_HIGH_NOISE_Q4_K),
+        vae: WAN_2_1_VAE,
+        text_encoder: UMT5_XXL_Q4_K,
+        text_encoder_placement: TextEncoderPlacement::Ram,
+        default_width: 1280,
+        default_height: 704,
+        default_frames: 73,
+        default_fps: 24,
+        summary: "Wan2.2 A14B MoE (4-bit dual-expert); native 720p at 73 frames (~3s @ 24 fps)",
+    },
+    VideoPreset {
+        id: "video_24gb",
+        label: "24 GB+",
+        min_vram_mib: 20 * 1024,
+        unified_label: "64 GB+ Mac",
+        diffusion: WAN_2_2_A14B_LOW_NOISE_Q4_K,
+        high_noise_diffusion: Some(WAN_2_2_A14B_HIGH_NOISE_Q4_K),
+        vae: WAN_2_1_VAE,
+        text_encoder: UMT5_XXL_Q4_K,
+        text_encoder_placement: TextEncoderPlacement::Ram,
+        default_width: 1280,
+        default_height: 704,
+        default_frames: 97,
+        default_fps: 24,
+        summary: "Wan2.2 A14B MoE (dual-expert); native 720p at 97 frames (~4s @ 24 fps)",
+    },
+];
+
+pub fn recommended_video_preset(vram_mib: Option<u64>) -> &'static VideoPreset {
+    match vram_mib {
+        Some(v) => VIDEO_PRESETS
+            .iter()
+            .rev()
+            .find(|p| v >= p.min_vram_mib)
+            .unwrap_or(&VIDEO_PRESETS[0]),
+        None => &VIDEO_PRESETS[1], // 12 GB default
+    }
+}
+
+pub fn video_preset(id: &str) -> Option<&'static VideoPreset> {
+    VIDEO_PRESETS.iter().find(|p| p.id == id)
+}
+
+pub fn video_downloads_for(
+    p: &VideoPreset,
+    backend: GpuBackend,
+    _sdcpp_dir: &Path,
+) -> Vec<Download> {
+    let mut v = engine_downloads(backend);
+    v.extend([p.vae, p.text_encoder, p.diffusion]);
+    if let Some(h) = p.high_noise_diffusion {
+        v.push(h);
+    }
+    v
+}
+
 pub fn preset(id: &str) -> Option<&'static Preset> {
     PRESETS.iter().find(|p| p.id == id)
 }
@@ -742,7 +1047,11 @@ impl Preset {
 pub fn recommended_preset(vram_mib: Option<u64>, unified: bool) -> &'static Preset {
     let offered = || PRESETS.iter().filter(move |p| p.offered(unified));
     match vram_mib {
-        Some(v) => offered().rev().find(|p| v >= p.min_vram_mib).or_else(|| offered().next()).unwrap(),
+        Some(v) => offered()
+            .rev()
+            .find(|p| v >= p.min_vram_mib)
+            .or_else(|| offered().next())
+            .unwrap(),
         None => preset(DEFAULT_PRESET).unwrap(),
     }
 }
@@ -756,7 +1065,12 @@ pub fn downloads_for(p: &Preset, backend: GpuBackend, sdcpp_dir: &Path) -> Vec<D
     if backend != GpuBackend::Metal {
         v.push(SUPERSCALE);
     }
-    v.extend([official_vae(sdcpp_dir), VISION_PROJECTOR, p.text_encoder, official_dit(p, sdcpp_dir)]);
+    v.extend([
+        official_vae(sdcpp_dir),
+        VISION_PROJECTOR,
+        p.text_encoder,
+        official_dit(p, sdcpp_dir),
+    ]);
     v
 }
 
@@ -764,21 +1078,41 @@ pub fn downloads_for(p: &Preset, backend: GpuBackend, sdcpp_dir: &Path) -> Vec<D
 /// (a piece the user chose to download, or an official file deleted from their folder), each
 /// saved where the profile expects it. Existing files are never replaced, whatever their name.
 pub fn profile_model_downloads(profile: &crate::config::ModelProfile) -> Vec<Download> {
-    let official = [TURBO_Q4_K_M, TURBO_Q4_K, VAE, VAE_ORIGINAL, TEXT_ENCODER_Q4_K_M, TEXT_ENCODER_Q8_0, VISION_PROJECTOR];
+    let official = [
+        TURBO_Q4_K_M,
+        TURBO_Q4_K,
+        VAE,
+        VAE_ORIGINAL,
+        TEXT_ENCODER_Q4_K_M,
+        TEXT_ENCODER_Q8_0,
+        VISION_PROJECTOR,
+        WAN_2_2_5B_Q4_K,
+        WAN_2_2_A14B_LOW_NOISE_Q4_K,
+        WAN_2_2_A14B_HIGH_NOISE_Q4_K,
+        WAN_2_1_VAE,
+        WAN_2_2_VAE,
+        UMT5_XXL_Q4_K,
+    ];
     profile
         .files()
         .into_iter()
         .filter(|(_, p, _)| !p.exists())
         .filter_map(|(_, p, _)| {
             let name = p.file_name()?.to_string_lossy().to_string();
-            official.iter().find(|d| d.file_name().eq_ignore_ascii_case(&name)).map(|d| d.at(p))
+            official
+                .iter()
+                .find(|d| d.file_name().eq_ignore_ascii_case(&name))
+                .map(|d| d.at(p))
         })
         .collect()
 }
 
 /// Everything a user profile needs on `backend`: the engine, the upscalers, then the model
 /// files of [`profile_model_downloads`]. The official profile uses [`downloads_for`].
-pub fn downloads_for_profile(profile: &crate::config::ModelProfile, backend: GpuBackend) -> Vec<Download> {
+pub fn downloads_for_profile(
+    profile: &crate::config::ModelProfile,
+    backend: GpuBackend,
+) -> Vec<Download> {
     let mut v = engine_downloads(backend);
     v.push(UPSCALER);
     if backend != GpuBackend::Metal {
@@ -790,12 +1124,19 @@ pub fn downloads_for_profile(profile: &crate::config::ModelProfile, backend: Gpu
 
 /// Folder a zip is extracted into: the folder of its `dest`.
 pub fn zip_dir(d: &Download, sdcpp_dir: &Path) -> PathBuf {
-    d.path(sdcpp_dir).parent().map(Path::to_path_buf).unwrap_or_else(|| sdcpp_dir.to_path_buf())
+    d.path(sdcpp_dir)
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| sdcpp_dir.to_path_buf())
 }
 
 /// Message shown when a download keeps failing (moved link, changed file, server down).
 pub fn manual_download_hint(d: &Download, sdcpp_dir: &Path) -> String {
-    let target = if d.is_zip() { format!("extract it into {}", zip_dir(d, sdcpp_dir).display()) } else { format!("save it as {}", d.path(sdcpp_dir).display()) };
+    let target = if d.is_zip() {
+        format!("extract it into {}", zip_dir(d, sdcpp_dir).display())
+    } else {
+        format!("save it as {}", d.path(sdcpp_dir).display())
+    };
     format!(
         "Download {} by hand from {} and {target}, then press Check again. Please also open an issue at {ISSUES_URL} so the link can be fixed.",
         d.label, d.page
@@ -809,10 +1150,22 @@ mod tests {
     #[test]
     fn presets_follow_vram() {
         assert_eq!(recommended_preset(Some(12_288), false).id, "12gb");
-        assert_eq!(recommended_preset(Some(11_264), false).id, "12gb", "RTX 2080 Ti");
-        assert_eq!(recommended_preset(Some(10_240), false).id, "12gb", "RTX 3080 10 GB");
+        assert_eq!(
+            recommended_preset(Some(11_264), false).id,
+            "12gb",
+            "RTX 2080 Ti"
+        );
+        assert_eq!(
+            recommended_preset(Some(10_240), false).id,
+            "12gb",
+            "RTX 3080 10 GB"
+        );
         assert_eq!(recommended_preset(Some(8_188), false).id, "8gb");
-        assert_eq!(recommended_preset(Some(6_144), false).id, "8gb", "smaller cards get the lightest preset");
+        assert_eq!(
+            recommended_preset(Some(6_144), false).id,
+            "8gb",
+            "smaller cards get the lightest preset"
+        );
         assert_eq!(recommended_preset(Some(16_303), false).id, "16gb");
         assert_eq!(recommended_preset(Some(24_564), false).id, "24gb");
         assert_eq!(recommended_preset(Some(32_607), false).id, "32gb");
@@ -825,13 +1178,38 @@ mod tests {
 
     #[test]
     fn catalog_is_well_formed() {
-        let all = [ENGINE_CUDA, CUDA_RUNTIME, ENGINE_VULKAN, ENGINE_METAL, TURBO_Q4_K_M, TURBO_Q4_K, VAE, VAE_ORIGINAL, TEXT_ENCODER_Q4_K_M, TEXT_ENCODER_Q8_0, VISION_PROJECTOR, UPSCALER, SUPERSCALE, ULTRASHARP];
+        let all = [
+            ENGINE_CUDA,
+            CUDA_RUNTIME,
+            ENGINE_VULKAN,
+            ENGINE_METAL,
+            TURBO_Q4_K_M,
+            TURBO_Q4_K,
+            VAE,
+            VAE_ORIGINAL,
+            TEXT_ENCODER_Q4_K_M,
+            TEXT_ENCODER_Q8_0,
+            VISION_PROJECTOR,
+            UPSCALER,
+            SUPERSCALE,
+            ULTRASHARP,
+        ];
         for d in all {
             assert!(d.urls().all(|u| u.starts_with("https://")), "{}", d.id);
             assert_eq!(d.sha256.len(), 64, "{}", d.id);
-            assert!(d.sha256.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()), "{}", d.id);
+            assert!(
+                d.sha256
+                    .chars()
+                    .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+                "{}",
+                d.id
+            );
             assert!(d.size > 0);
-            assert!(!d.dest.contains('\\') && d.provides.iter().all(|f| !f.contains('\\')), "portable paths: {}", d.id);
+            assert!(
+                !d.dest.contains('\\') && d.provides.iter().all(|f| !f.contains('\\')),
+                "portable paths: {}",
+                d.id
+            );
             assert_eq!(d.is_zip(), d.kind == FileKind::Engine, "{}", d.id);
         }
         // Every engine build is marked with this release; the unchanged CUDA runtime is not.
@@ -842,29 +1220,61 @@ mod tests {
         }
         assert_eq!(CUDA_RUNTIME.engine_tag, None);
         // sd-server finds the upscaler by file stem in the upscalers folder.
-        assert_eq!(UPSCALER.dest, format!("{UPSCALERS_SUBDIR}/{UPSCALER_NAME}.pth"));
-        assert_eq!(UPSCALER.urls().count(), 2, "mirror, then the author's release");
-        assert!(LEGACY_UPSCALERS.iter().all(|f| f.starts_with(UPSCALERS_SUBDIR) && *f != UPSCALER.dest));
+        assert_eq!(
+            UPSCALER.dest,
+            format!("{UPSCALERS_SUBDIR}/{UPSCALER_NAME}.pth")
+        );
+        assert_eq!(
+            UPSCALER.urls().count(),
+            2,
+            "mirror, then the author's release"
+        );
+        assert!(
+            LEGACY_UPSCALERS
+                .iter()
+                .all(|f| f.starts_with(UPSCALERS_SUBDIR) && *f != UPSCALER.dest)
+        );
         // Every model offered in Settings can be installed, except the plain resize.
         for (name, _) in crate::config::UPSCALER_CHOICES {
-            assert_eq!(upscaler_download(name).is_some(), *name != crate::config::LANCZOS, "{name}");
+            assert_eq!(
+                upscaler_download(name).is_some(),
+                *name != crate::config::LANCZOS,
+                "{name}"
+            );
         }
-        assert_eq!(upscaler_download(crate::config::UPSCALER_CHOICES[0].0).unwrap().id, "upscaler_superscale");
+        assert_eq!(
+            upscaler_download(crate::config::UPSCALER_CHOICES[0].0)
+                .unwrap()
+                .id,
+            "upscaler_superscale"
+        );
         let metal = downloads_for(&PRESETS[0], GpuBackend::Metal, Path::new("new"));
-        assert!(metal.iter().all(|d| d.id != "upscaler_superscale"), "Macs default to Lanczos: no Superscale download");
+        assert!(
+            metal.iter().all(|d| d.id != "upscaler_superscale"),
+            "Macs default to Lanczos: no Superscale download"
+        );
         for p in PRESETS {
             let cuda = downloads_for(p, GpuBackend::Cuda, Path::new("new"));
             assert_eq!(cuda.len(), 8);
-            assert!(cuda.iter().any(|d| d.id == "upscaler") && cuda.iter().any(|d| d.id == "upscaler_superscale"), "MoSR (bundled) and the default model");
+            assert!(
+                cuda.iter().any(|d| d.id == "upscaler")
+                    && cuda.iter().any(|d| d.id == "upscaler_superscale"),
+                "MoSR (bundled) and the default model"
+            );
             let vk = downloads_for(p, GpuBackend::Vulkan, Path::new("new"));
             assert_eq!(vk.len(), 7);
-            assert!(vk.iter().all(|d| d.id != "engine_cuda" && d.id != "cuda_runtime"));
+            assert!(
+                vk.iter()
+                    .all(|d| d.id != "engine_cuda" && d.id != "cuda_runtime")
+            );
         }
     }
 
     fn manifest(n: u32) -> EngineManifest {
         let asset = |f: &str| ManifestAsset {
-            url: format!("https://github.com/GabrieleLozupone/stable-diffusion.cpp/releases/download/kokon-{n}-abcdef0/sd-kokon-abcdef0-bin-{f}.zip"),
+            url: format!(
+                "https://github.com/GabrieleLozupone/stable-diffusion.cpp/releases/download/kokon-{n}-abcdef0/sd-kokon-abcdef0-bin-{f}.zip"
+            ),
             size: 1,
             sha256: "0".repeat(64),
         };
@@ -891,9 +1301,17 @@ mod tests {
     fn engine_manifest_overrides_only_newer_releases() {
         let _guard = ENGINE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(release_number(ENGINE_TAG), Some(1013));
-        assert_eq!(apply_engine_release(&manifest(1013), "0.10.0"), Ok(false), "same as built in");
+        assert_eq!(
+            apply_engine_release(&manifest(1013), "0.10.0"),
+            Ok(false),
+            "same as built in"
+        );
         assert_eq!(engine_tag(), ENGINE_TAG);
-        assert_eq!(apply_engine_release(&manifest(1100), "0.9.4"), Ok(false), "too old an app");
+        assert_eq!(
+            apply_engine_release(&manifest(1100), "0.9.4"),
+            Ok(false),
+            "too old an app"
+        );
         assert_eq!(apply_engine_release(&manifest(1100), "0.10.0"), Ok(true));
         assert_eq!(engine_tag(), "kokon-1100-abcdef0");
         let cuda = &engine_downloads(GpuBackend::Cuda);
@@ -903,20 +1321,58 @@ mod tests {
         assert_eq!(cuda[1].id, "cuda_runtime");
         let vulkan = engine_downloads(GpuBackend::Vulkan)[0];
         if cfg!(target_os = "linux") {
-            assert_eq!(cuda[0].dest, "sd-kokon-abcdef0-bin-Linux-Ubuntu-22.04-x86_64-cuda12.zip");
-            assert_eq!(vulkan.dest, "engine-vulkan/sd-kokon-abcdef0-bin-Linux-Ubuntu-22.04-x86_64-vulkan.zip");
+            assert_eq!(
+                cuda[0].dest,
+                "sd-kokon-abcdef0-bin-Linux-Ubuntu-22.04-x86_64-cuda12.zip"
+            );
+            assert_eq!(
+                vulkan.dest,
+                "engine-vulkan/sd-kokon-abcdef0-bin-Linux-Ubuntu-22.04-x86_64-vulkan.zip"
+            );
         } else {
             assert_eq!(cuda[0].dest, "sd-kokon-abcdef0-bin-win-cuda12-x64.zip");
-            assert_eq!(vulkan.dest, "engine-vulkan/sd-kokon-abcdef0-bin-win-vulkan-x64.zip");
+            assert_eq!(
+                vulkan.dest,
+                "engine-vulkan/sd-kokon-abcdef0-bin-win-vulkan-x64.zip"
+            );
         }
-        assert_eq!(engine_downloads(GpuBackend::Metal)[0].dest, "engine-metal/sd-kokon-abcdef0-bin-Darwin-macOS-15.0-universal.zip");
+        assert_eq!(
+            engine_downloads(GpuBackend::Metal)[0].dest,
+            "engine-metal/sd-kokon-abcdef0-bin-Darwin-macOS-15.0-universal.zip"
+        );
         // Only that release's downloads in the fork, with a real hash; any bad build rejects it all.
-        assert!(apply_engine_release(&edit(1101, |k| k.win_cuda.url = "https://example.com/sd.zip".into()), "0.10.0").is_err());
-        assert!(apply_engine_release(&edit(1101, |k| k.macos.sha256 = "xyz".into()), "0.10.0").is_err());
+        assert!(
+            apply_engine_release(
+                &edit(1101, |k| k.win_cuda.url =
+                    "https://example.com/sd.zip".into()),
+                "0.10.0"
+            )
+            .is_err()
+        );
+        assert!(
+            apply_engine_release(&edit(1101, |k| k.macos.sha256 = "xyz".into()), "0.10.0").is_err()
+        );
         let other_commit = "https://github.com/GabrieleLozupone/stable-diffusion.cpp/releases/download/kokon-1101-abcdef0/sd-kokon-1234567-bin-win-vulkan-x64.zip";
-        assert!(apply_engine_release(&edit(1101, |k| k.linux_vulkan.url = other_commit.into()), "0.10.0").is_err(), "another commit's build");
-        assert!(apply_engine_release(&edit(1101, |k| k.tag = "master-1101-abcdef0".into()), "0.10.0").is_err());
-        assert_eq!(engine_tag(), "kokon-1100-abcdef0", "a bad manifest keeps the last good release");
+        assert!(
+            apply_engine_release(
+                &edit(1101, |k| k.linux_vulkan.url = other_commit.into()),
+                "0.10.0"
+            )
+            .is_err(),
+            "another commit's build"
+        );
+        assert!(
+            apply_engine_release(
+                &edit(1101, |k| k.tag = "master-1101-abcdef0".into()),
+                "0.10.0"
+            )
+            .is_err()
+        );
+        assert_eq!(
+            engine_tag(),
+            "kokon-1100-abcdef0",
+            "a bad manifest keeps the last good release"
+        );
         // An app that pins a newer engine drops an older manifest release.
         assert_eq!(apply_engine_release(&manifest(980), "0.10.0"), Ok(false));
         assert_eq!(engine_tag(), ENGINE_TAG);
@@ -924,7 +1380,10 @@ mod tests {
         let json = include_str!("../../../engine.json");
         let m: EngineManifest = serde_json::from_str(json).unwrap();
         assert!(apply_engine_release(&m, "0.10.0").is_ok());
-        assert_eq!(apply_engine_release(&EngineManifest::default(), "0.10.0"), Ok(false));
+        assert_eq!(
+            apply_engine_release(&EngineManifest::default(), "0.10.0"),
+            Ok(false)
+        );
         assert_eq!(engine_tag(), ENGINE_TAG);
     }
 
@@ -935,18 +1394,53 @@ mod tests {
         let m: EngineManifest = serde_json::from_str(include_str!("../../../engine.json")).unwrap();
         let k = m.kokon.expect("engine.json has a kokon entry");
         assert_eq!(k.tag, ENGINE_TAG);
-        assert!(version_tuple(env!("CARGO_PKG_VERSION")) >= version_tuple(&k.min_app), "min_app {} above this app", k.min_app);
-        assert_eq!((k.macos.size, k.macos.sha256.as_str()), (MACOS_METAL_SIZE, MACOS_METAL_SHA256));
+        assert!(
+            version_tuple(env!("CARGO_PKG_VERSION")) >= version_tuple(&k.min_app),
+            "min_app {} above this app",
+            k.min_app
+        );
+        assert_eq!(
+            (k.macos.size, k.macos.sha256.as_str()),
+            (MACOS_METAL_SIZE, MACOS_METAL_SHA256)
+        );
         assert_eq!(k.macos.url, ENGINE_METAL.url);
         #[cfg(not(target_os = "linux"))]
         {
-            assert_eq!((k.win_cuda.url.as_str(), k.win_cuda.size, k.win_cuda.sha256.as_str()), (ENGINE_CUDA.url, WIN_CUDA_SIZE, WIN_CUDA_SHA256));
-            assert_eq!((k.win_vulkan.url.as_str(), k.win_vulkan.size, k.win_vulkan.sha256.as_str()), (ENGINE_VULKAN.url, WIN_VULKAN_SIZE, WIN_VULKAN_SHA256));
+            assert_eq!(
+                (
+                    k.win_cuda.url.as_str(),
+                    k.win_cuda.size,
+                    k.win_cuda.sha256.as_str()
+                ),
+                (ENGINE_CUDA.url, WIN_CUDA_SIZE, WIN_CUDA_SHA256)
+            );
+            assert_eq!(
+                (
+                    k.win_vulkan.url.as_str(),
+                    k.win_vulkan.size,
+                    k.win_vulkan.sha256.as_str()
+                ),
+                (ENGINE_VULKAN.url, WIN_VULKAN_SIZE, WIN_VULKAN_SHA256)
+            );
         }
         #[cfg(target_os = "linux")]
         {
-            assert_eq!((k.linux_cuda.url.as_str(), k.linux_cuda.size, k.linux_cuda.sha256.as_str()), (ENGINE_CUDA.url, LINUX_CUDA_SIZE, LINUX_CUDA_SHA256));
-            assert_eq!((k.linux_vulkan.url.as_str(), k.linux_vulkan.size, k.linux_vulkan.sha256.as_str()), (ENGINE_VULKAN.url, LINUX_VULKAN_SIZE, LINUX_VULKAN_SHA256));
+            assert_eq!(
+                (
+                    k.linux_cuda.url.as_str(),
+                    k.linux_cuda.size,
+                    k.linux_cuda.sha256.as_str()
+                ),
+                (ENGINE_CUDA.url, LINUX_CUDA_SIZE, LINUX_CUDA_SHA256)
+            );
+            assert_eq!(
+                (
+                    k.linux_vulkan.url.as_str(),
+                    k.linux_vulkan.size,
+                    k.linux_vulkan.sha256.as_str()
+                ),
+                (ENGINE_VULKAN.url, LINUX_VULKAN_SIZE, LINUX_VULKAN_SHA256)
+            );
         }
     }
 
@@ -956,12 +1450,21 @@ mod tests {
         for f in ENGINE_CUDA.provides.iter().chain(CUDA_RUNTIME.provides) {
             std::fs::write(join_rel(dir.path(), f), b"x").unwrap();
         }
-        assert!(!ENGINE_CUDA.is_present(dir.path()), "an engine without the marker is from an older release");
-        assert!(CUDA_RUNTIME.is_present(dir.path()), "the runtime needs no marker");
+        assert!(
+            !ENGINE_CUDA.is_present(dir.path()),
+            "an engine without the marker is from an older release"
+        );
+        assert!(
+            CUDA_RUNTIME.is_present(dir.path()),
+            "the runtime needs no marker"
+        );
         std::fs::write(dir.path().join(ENGINE_MARKER), "kokon-old").unwrap();
         assert!(!ENGINE_CUDA.is_present(dir.path()));
         ENGINE_CUDA.write_tag(dir.path()).unwrap();
-        assert_eq!(ENGINE_CUDA.installed_tag(dir.path()).as_deref(), Some(ENGINE_TAG));
+        assert_eq!(
+            ENGINE_CUDA.installed_tag(dir.path()).as_deref(),
+            Some(ENGINE_TAG)
+        );
         assert!(ENGINE_CUDA.is_present(dir.path()));
         // Each build has its own marker: the CUDA one does not count for Vulkan.
         std::fs::create_dir_all(dir.path().join("engine-vulkan")).unwrap();
@@ -970,7 +1473,12 @@ mod tests {
         }
         assert!(!ENGINE_VULKAN.is_present(dir.path()));
         ENGINE_VULKAN.write_tag(dir.path()).unwrap();
-        assert!(dir.path().join("engine-vulkan").join(ENGINE_MARKER).is_file());
+        assert!(
+            dir.path()
+                .join("engine-vulkan")
+                .join(ENGINE_MARKER)
+                .is_file()
+        );
         assert!(ENGINE_VULKAN.is_present(dir.path()));
     }
 
@@ -983,17 +1491,41 @@ mod tests {
         // to download); the text encoder is the user's own and missing (a drive not connected).
         std::fs::write(own.join("turbo_int8.safetensors"), b"x").unwrap();
         let vae = own.join(VAE.file_name());
-        let p = crate::config::ModelProfile::user(own.join("turbo_int8.safetensors"), vae.clone(), own.join("mine.safetensors"), Some(dir.path().join("dl").join(VISION_PROJECTOR.file_name())));
+        let p = crate::config::ModelProfile::user(
+            own.join("turbo_int8.safetensors"),
+            vae.clone(),
+            own.join("mine.safetensors"),
+            Some(dir.path().join("dl").join(VISION_PROJECTOR.file_name())),
+        );
         let models = profile_model_downloads(&p);
-        assert_eq!(models.iter().map(|d| d.id).collect::<Vec<_>>(), ["vae", "vision_projector"], "own files are never downloaded");
-        assert_eq!(models[0].path(Path::new("ignored")), vae, "saved where the profile expects it");
-        assert_eq!(models[1].path(dir.path()), dir.path().join("dl").join(VISION_PROJECTOR.file_name()));
+        assert_eq!(
+            models.iter().map(|d| d.id).collect::<Vec<_>>(),
+            ["vae", "vision_projector"],
+            "own files are never downloaded"
+        );
+        assert_eq!(
+            models[0].path(Path::new("ignored")),
+            vae,
+            "saved where the profile expects it"
+        );
+        assert_eq!(
+            models[1].path(dir.path()),
+            dir.path().join("dl").join(VISION_PROJECTOR.file_name())
+        );
         assert_eq!((models[0].size, models[0].sha256), (VAE.size, VAE.sha256));
         // An official name with other content (wrong size) is the user's file: never replaced.
         std::fs::write(&vae, b"mine").unwrap();
         assert_eq!(profile_model_downloads(&p).len(), 1);
         let all = downloads_for_profile(&p, GpuBackend::Vulkan);
-        assert_eq!(all.iter().map(|d| d.id).collect::<Vec<_>>(), ["engine_vulkan", "upscaler", "upscaler_superscale", "vision_projector"]);
+        assert_eq!(
+            all.iter().map(|d| d.id).collect::<Vec<_>>(),
+            [
+                "engine_vulkan",
+                "upscaler",
+                "upscaler_superscale",
+                "vision_projector"
+            ]
+        );
     }
 
     #[test]
@@ -1001,8 +1533,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let d = dir.path();
         std::fs::create_dir_all(join_rel(d, MODEL_SUBDIR)).unwrap();
-        let fill = |f: Download| std::fs::File::create(f.path(d)).unwrap().set_len(f.size).unwrap();
-        let mut cfg = crate::config::AppConfig { sdcpp_dir: d.to_path_buf(), ..Default::default() };
+        let fill = |f: Download| {
+            std::fs::File::create(f.path(d))
+                .unwrap()
+                .set_len(f.size)
+                .unwrap()
+        };
+        let mut cfg = crate::config::AppConfig {
+            sdcpp_dir: d.to_path_buf(),
+            ..Default::default()
+        };
         cfg.normalize();
         // A new install gets the texture fix.
         assert_eq!(official_vae(d).id, "vae");
@@ -1012,7 +1552,12 @@ mod tests {
         cfg.normalize();
         assert_eq!(official_vae(d).id, "vae_original");
         assert_eq!(cfg.profile().vae, VAE_ORIGINAL.path(d));
-        assert!(downloads_for(preset("16gb").unwrap(), GpuBackend::Cuda, d).iter().all(|x| x.id != "vae"), "never downloaded uninvited");
+        assert!(
+            downloads_for(preset("16gb").unwrap(), GpuBackend::Cuda, d)
+                .iter()
+                .all(|x| x.id != "vae"),
+            "never downloaded uninvited"
+        );
         assert_eq!(unused_original_vae(&cfg), None, "in use");
         // Once downloaded, the official files switch and the original can go.
         fill(VAE);
@@ -1020,7 +1565,12 @@ mod tests {
         assert_eq!(cfg.profile().vae, VAE.path(d));
         assert_eq!(unused_original_vae(&cfg), Some(VAE_ORIGINAL.path(d)));
         // ...unless the user's own profile points to it.
-        cfg.set_user_files(crate::config::ModelProfile::user(d.join("m.gguf"), VAE_ORIGINAL.path(d), d.join("te.gguf"), None));
+        cfg.set_user_files(crate::config::ModelProfile::user(
+            d.join("m.gguf"),
+            VAE_ORIGINAL.path(d),
+            d.join("te.gguf"),
+            None,
+        ));
         assert_eq!(unused_original_vae(&cfg), None);
         assert!(!cfg.uses_improved_vae());
         // Accepting it moves that profile to the app's copy; the user's file is never deleted
@@ -1037,13 +1587,25 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let d = dir.path();
         std::fs::create_dir_all(join_rel(d, MODEL_SUBDIR)).unwrap();
-        let fill = |f: Download| std::fs::File::create(f.path(d)).unwrap().set_len(f.size).unwrap();
-        let mut cfg = AppConfig { sdcpp_dir: d.to_path_buf(), ..Default::default() };
+        let fill = |f: Download| {
+            std::fs::File::create(f.path(d))
+                .unwrap()
+                .set_len(f.size)
+                .unwrap()
+        };
+        let mut cfg = AppConfig {
+            sdcpp_dir: d.to_path_buf(),
+            ..Default::default()
+        };
         cfg.normalize();
         // A new install gets the Q4_K_M on every preset, and nothing is offered.
         for p in PRESETS {
             assert_eq!(official_dit(p, d).id, "turbo_q4_k_m", "{}", p.id);
-            assert!(downloads_for(p, GpuBackend::Cuda, d).iter().any(|x| x.id == "turbo_q4_k_m"));
+            assert!(
+                downloads_for(p, GpuBackend::Cuda, d)
+                    .iter()
+                    .any(|x| x.id == "turbo_q4_k_m")
+            );
         }
         assert_eq!(cfg.profile().diffusion_model, TURBO_Q4_K_M.path(d));
         assert_eq!(dit_update(&cfg), None);
@@ -1052,9 +1614,18 @@ mod tests {
         fill(TURBO_Q4_K);
         cfg.normalize();
         assert_eq!(cfg.profile().diffusion_model, TURBO_Q4_K.path(d));
-        assert_eq!(cfg.profile().display_name, "Qwen-Image 2.1 Turbo Q4_K (official)");
+        assert_eq!(
+            cfg.profile().display_name,
+            "Qwen-Image 2.1 Turbo Q4_K (official)"
+        );
         for p in PRESETS {
-            assert!(downloads_for(p, GpuBackend::Vulkan, d).iter().all(|x| x.id != "turbo_q4_k_m"), "{}", p.id);
+            assert!(
+                downloads_for(p, GpuBackend::Vulkan, d)
+                    .iter()
+                    .all(|x| x.id != "turbo_q4_k_m"),
+                "{}",
+                p.id
+            );
         }
         assert_eq!(dit_update(&cfg), Some(DitUpdate::Official));
         assert_eq!(unused_old_dit(&cfg), None, "in use");
@@ -1067,11 +1638,19 @@ mod tests {
         fill(TURBO_Q4_K_M);
         cfg.use_new_dit();
         assert_eq!(cfg.profile().diffusion_model, TURBO_Q4_K_M.path(d));
-        assert_eq!(cfg.profile().display_name, "Qwen-Image 2.1 Turbo Q4_K_M (official)");
+        assert_eq!(
+            cfg.profile().display_name,
+            "Qwen-Image 2.1 Turbo Q4_K_M (official)"
+        );
         assert_eq!(dit_update(&cfg), None);
         assert_eq!(unused_old_dit(&cfg), Some(TURBO_Q4_K.path(d)));
         // ...unless a profile of the user's points to it.
-        cfg.set_user_files(ModelProfile::user(TURBO_Q4_K.path(d), VAE.path(d), d.join("te.gguf"), None));
+        cfg.set_user_files(ModelProfile::user(
+            TURBO_Q4_K.path(d),
+            VAE.path(d),
+            d.join("te.gguf"),
+            None,
+        ));
         assert_eq!(unused_old_dit(&cfg), None);
     }
 
@@ -1085,8 +1664,18 @@ mod tests {
         std::fs::create_dir_all(mine.parent().unwrap()).unwrap();
         std::fs::write(&mine, b"the user's Q4_K").unwrap();
         let is_old = |p: &Path| p == mine;
-        let mut cfg = AppConfig { sdcpp_dir: d.clone(), ..Default::default() };
-        let own = |dit: &Path| ModelProfile::user(dit.to_path_buf(), dir.path().join("vae.safetensors"), dir.path().join("te.gguf"), None);
+        let mut cfg = AppConfig {
+            sdcpp_dir: d.clone(),
+            ..Default::default()
+        };
+        let own = |dit: &Path| {
+            ModelProfile::user(
+                dit.to_path_buf(),
+                dir.path().join("vae.safetensors"),
+                dir.path().join("te.gguf"),
+                None,
+            )
+        };
         // Their file is the old Q4_K (any name, any folder): a suggestion.
         cfg.set_user_files(own(&mine));
         assert_eq!(dit_update_with(&cfg, is_old), Some(DitUpdate::Own));
@@ -1098,7 +1687,10 @@ mod tests {
         // Accepted: the profile points to the app's copy; their file stays where it is and is
         // never a candidate for deletion.
         cfg.set_user_files(own(&mine));
-        std::fs::File::create(TURBO_Q4_K_M.path(&d)).unwrap().set_len(TURBO_Q4_K_M.size).unwrap();
+        std::fs::File::create(TURBO_Q4_K_M.path(&d))
+            .unwrap()
+            .set_len(TURBO_Q4_K_M.size)
+            .unwrap();
         cfg.use_new_dit();
         assert_eq!(cfg.active_profile, crate::config::USER_PROFILE_ID);
         assert_eq!(cfg.profile().diffusion_model, TURBO_Q4_K_M.path(&d));
@@ -1113,7 +1705,10 @@ mod tests {
         assert!(!VAE.is_present(dir.path()));
         std::fs::create_dir_all(join_rel(dir.path(), MODEL_SUBDIR)).unwrap();
         std::fs::write(VAE.path(dir.path()), b"short").unwrap();
-        assert!(!VAE.is_present(dir.path()), "a partial file is not installed");
+        assert!(
+            !VAE.is_present(dir.path()),
+            "a partial file is not installed"
+        );
         for f in ENGINE_CUDA.provides {
             std::fs::write(dir.path().join(f), b"x").unwrap();
         }
@@ -1134,11 +1729,18 @@ mod tests {
         cfg.gpu_backend = GpuBackend::Vulkan;
         if !cfg!(target_os = "macos") {
             // The Vulkan build is a Windows or Linux download (no Mac one).
-            assert_eq!(cfg.server_exe(), join_rel(dir.path(), ENGINE_VULKAN.provides[0]), "installer and launcher agree on the path");
+            assert_eq!(
+                cfg.server_exe(),
+                join_rel(dir.path(), ENGINE_VULKAN.provides[0]),
+                "installer and launcher agree on the path"
+            );
         }
         cfg.gpu_backend = GpuBackend::Metal;
         if !cfg!(windows) {
-            assert_eq!(cfg.server_exe(), join_rel(dir.path(), ENGINE_METAL.provides[0]));
+            assert_eq!(
+                cfg.server_exe(),
+                join_rel(dir.path(), ENGINE_METAL.provides[0])
+            );
         }
         assert!(manual_download_hint(&ENGINE_VULKAN, dir.path()).contains("engine-vulkan"));
     }

@@ -1,4 +1,4 @@
-import { Activity, Copy, Cpu, Download, FolderOpen, HardDrive, Heart, Layers, MonitorSmartphone, RefreshCw, RotateCcw, Settings2, Trash2, X } from "lucide-react";
+import { Activity, Copy, Cpu, Download, FolderOpen, HardDrive, Heart, Layers, MonitorSmartphone, Play, RefreshCw, RotateCcw, Settings2, SquarePen, Trash2, Video, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { api } from "../lib/api";
@@ -241,6 +241,44 @@ function Diagnostics() {
           onClick={async () => {
             setBusy(true);
             try {
+              await api.startBackend({ mode: "image" });
+              toastInfo("Image server (Qwen-Image 2.1) started");
+              load();
+            } catch (e) {
+              toastError(e);
+            } finally {
+              setBusy(false);
+              refreshStatus();
+            }
+          }}
+        >
+          <SquarePen size={14} /> Start Image Server
+        </button>
+        <button
+          className="btn"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await api.startBackend({ mode: "video" });
+              toastInfo("Video server (Wan 2.2) started");
+              load();
+            } catch (e) {
+              toastError(e);
+            } finally {
+              setBusy(false);
+              refreshStatus();
+            }
+          }}
+        >
+          <Video size={14} /> Start Video Server
+        </button>
+        <button
+          className="btn"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
               await api.restartBackend();
               toastInfo("Inference server restarted");
               load();
@@ -282,6 +320,8 @@ export function Settings() {
   const [theme, setTheme] = useState(themeChoice);
   const [enhancerDefaults, setEnhancerDefaults] = useState<{ t2i: string; edit: string; compose?: string; max_chars: number } | null>(null);
   const textGeneration = useStore((s) => s.status?.server.text_generation);
+  const server = useStore((s) => s.server);
+  const serverModel = useStore((s) => s.status?.server.model);
 
   useEffect(() => {
     api.config().then(setCfg, toastError);
@@ -429,7 +469,7 @@ export function Settings() {
             <>
               <RepoCard />
               <SupportCard />
-              <PathField label="Save images to" value={cfg.outputDir} folder open onChange={(v) => set({ outputDir: v })} />
+              <PathField label="Save images and videos to" value={cfg.outputDir} folder open onChange={(v) => set({ outputDir: v })} />
               <div className="field">
                 <span>Appearance</span>
                 <Seg<ThemeChoice>
@@ -542,7 +582,7 @@ export function Settings() {
               <div className="setting-card">
                 <div className="setting-card-text">
                   <strong>Model setup</strong>
-                  <span className="muted">Downloads the official Qwen-Image 2.1 weights for your graphics card, uses model files you already have, or switches between the 12, 16, 24 and 32 GB presets.</span>
+                  <span className="muted">Downloads the official Qwen-Image 2.1 and Wan2.2 Video weights for your graphics card, uses model files you already have, or switches between VRAM presets.</span>
                 </div>
                 <button
                   className="btn primary"
@@ -570,13 +610,19 @@ export function Settings() {
                 // The official files follow the install folder and preset; own files get their own profile.
                 <div className="setting-card">
                   <div className="setting-card-text">
-                    <strong>Official model</strong>
+                    <strong>{profile.model === "wan-2.2" ? "Official video model" : "Official image model"}</strong>
                     <span className="muted">
-                      {ms === null
-                        ? "Qwen-Image 2.1 Turbo, tested with Kokon."
-                        : ms.official_installed
-                          ? "Qwen-Image 2.1 Turbo, tested with Kokon. Downloaded."
-                          : "Qwen-Image 2.1 Turbo, tested with Kokon. Not downloaded into this folder yet: Download… gets it, or use model files you already have."}
+                      {profile.model === "wan-2.2"
+                        ? ms === null
+                          ? "Wan 2.2 Video, tested with Kokon."
+                          : ms.video_official_installed
+                            ? "Wan 2.2 Video, tested with Kokon. Downloaded."
+                            : "Wan 2.2 Video, tested with Kokon. Not downloaded into this folder yet: Set up models… gets it."
+                        : ms === null
+                          ? "Qwen-Image 2.1 Turbo, tested with Kokon."
+                          : ms.official_installed
+                            ? "Qwen-Image 2.1 Turbo, tested with Kokon. Downloaded."
+                            : "Qwen-Image 2.1 Turbo, tested with Kokon. Not downloaded into this folder yet: Download… gets it, or use model files you already have."}
                     </span>
                     <details className="model-files">
                       <summary>Files</summary>
@@ -586,15 +632,46 @@ export function Settings() {
                     </details>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {ms && !ms.official_installed && (
+                    {profile.model === "wan-2.2"
+                      ? ms && !ms.video_official_installed && (
+                          <button
+                            className="btn primary"
+                            onClick={() => {
+                              if (dirty && !window.confirm("Discard the unsaved changes and open the model setup?")) return;
+                              setState({ overlay: null, needsSetup: true });
+                            }}
+                          >
+                            <Download size={15} /> Download…
+                          </button>
+                        )
+                      : ms && !ms.official_installed && (
+                          <button
+                            className="btn primary"
+                            onClick={() => {
+                              if (dirty && !window.confirm("Discard the unsaved changes and open the model setup?")) return;
+                              openModelSetup("official");
+                            }}
+                          >
+                            <Download size={15} /> Download…
+                          </button>
+                        )}
+                    {((profile.model === "wan-2.2" && ms?.video_official_installed) || (profile.model !== "wan-2.2" && ms?.official_installed)) && (
                       <button
                         className="btn primary"
-                        onClick={() => {
-                          if (dirty && !window.confirm("Discard the unsaved changes and open the model setup?")) return;
-                          openModelSetup("official");
+                        disabled={server.state === "starting"}
+                        onClick={async () => {
+                          try {
+                            if (dirty) await save();
+                            await api.startBackend({ profile: profile.id });
+                            toastInfo(`Inference server loaded ${profile.displayName}`);
+                          } catch (e) {
+                            toastError(e);
+                          } finally {
+                            refreshStatus();
+                          }
                         }}
                       >
-                        <Download size={15} /> Download…
+                        <Play size={14} /> {server.state === "ready" && serverModel && profile.diffusionModel.endsWith(serverModel) ? "Restart server" : "Start server"}
                       </button>
                     )}
                     {!inBrowser && (
@@ -615,11 +692,13 @@ export function Settings() {
                   <span className="muted">Your own files: not tested by Kokon. Set up models… checks them and finds them again if they move.</span>
                   <PathField label="Diffusion model" value={profile.diffusionModel} onChange={(v) => setProfile({ diffusionModel: v })} />
                   <PathField label="VAE" value={profile.vae} onChange={(v) => setProfile({ vae: v })} />
-                  <PathField label="Text encoder (Qwen3-VL)" value={profile.textEncoder} onChange={(v) => setProfile({ textEncoder: v })} />
-                  <PathField label="Vision projector (mmproj)" value={profile.visionProjector ?? ""} onChange={(v) => setProfile({ visionProjector: v || null })} />
+                  <PathField label={profile.model === "wan-2.2" ? "Text encoder (UMT5-XXL)" : "Text encoder (Qwen3-VL)"} value={profile.textEncoder} onChange={(v) => setProfile({ textEncoder: v })} />
+                  {profile.model !== "wan-2.2" && (
+                    <PathField label="Vision projector (mmproj)" value={profile.visionProjector ?? ""} onChange={(v) => setProfile({ visionProjector: v || null })} />
+                  )}
                 </>
               )}
-              {ms?.dit.update && (
+              {profile.model !== "wan-2.2" && ms?.dit?.update && (
                 <div className="setting-card">
                   <div className="setting-card-text">
                     <strong>Image model file</strong>
@@ -639,7 +718,7 @@ export function Settings() {
                   </button>
                 </div>
               )}
-              {ms && (
+              {ms && profile.model !== "wan-2.2" && (
                 <div className="setting-card">
                   <div className="setting-card-text">
                     <strong>Image decoder (VAE)</strong>

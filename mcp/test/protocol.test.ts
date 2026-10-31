@@ -50,11 +50,23 @@ afterAll(async () => {
 });
 
 describe("MCP protocol", () => {
-  it("lists the eight tools with schemas", async () => {
+  it("lists the tools with schemas", async () => {
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["edit_image", "edit_images", "generate_image", "get_generator_status", "get_image_info", "inpaint_image", "outpaint_image", "upscale_image"]);
+    expect(tools.map((t) => t.name).sort()).toEqual([
+      "edit_image",
+      "edit_images",
+      "generate_image",
+      "generate_video",
+      "get_generator_status",
+      "get_image_info",
+      "inpaint_image",
+      "outpaint_image",
+      "upscale_image",
+    ]);
     const gen = tools.find((t) => t.name === "generate_image")!;
     expect(gen.inputSchema.required).toEqual(["prompt"]);
+    const vid = tools.find((t) => t.name === "generate_video")!;
+    expect(vid.inputSchema.required).toEqual(["prompt"]);
   });
 
   it("rejects invalid arguments", async () => {

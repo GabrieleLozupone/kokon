@@ -28,6 +28,9 @@ export interface Composer {
   customWidth: number;
   customHeight: number;
   seed: number | null;
+  video_frames?: number | null;
+  fps?: number | null;
+  video_loop?: boolean | null;
   advanced: Advanced;
   /** Prompt enhancer on (remembered; used only where `enhancerApplies`). */
   enhance: boolean;
@@ -64,6 +67,9 @@ export const emptyComposer = (prefs?: Partial<Composer>): Composer => ({
   resolution: prefs?.resolution ?? "auto",
   customWidth: prefs?.customWidth ?? 1024,
   customHeight: prefs?.customHeight ?? 1024,
+  video_frames: prefs?.video_frames ?? null,
+  fps: prefs?.fps ?? null,
+  video_loop: prefs?.video_loop ?? false,
   seed: null,
   advanced: newChatAdvanced(prefs?.advanced),
   enhance: prefs?.enhance === true,
@@ -154,6 +160,9 @@ export function buildRequest(c: Composer, parentId?: string | null): GenerationR
     aspect_ratio: shaped && c.aspect !== "auto" && !custom ? c.aspect : null,
     width: custom ? c.customWidth : null,
     height: custom ? c.customHeight : null,
+    video_frames: c.video_frames ?? null,
+    fps: c.fps ?? null,
+    video_loop: c.video_loop ?? null,
     seed: c.seed,
     preserve_dimensions: true,
     advanced: cleanAdvanced(c.advanced),
@@ -174,7 +183,7 @@ export function reviewRequest(c: Composer): GenerationRequest {
   return { ...buildRequest(c), enhance: true, enhance_only: true };
 }
 
-/** The prompt enhancer works on new images, edits and combines; a painted area or an expansion
+/** The prompt enhancer works on new images, edits, combines and video; a painted area or an expansion
  * wraps the prompt in its own instruction. */
 export function enhancerApplies(c: Composer): boolean {
   return !maskInUse(c) && !outpaintInUse(c);
@@ -263,6 +272,7 @@ export const MODE_LABEL: Record<Mode | "lut", string> = {
   multi_reference: "Combine",
   compose: "From references",
   upscale: "Upscale",
+  video: "Video",
   lut: "LUT",
 };
 

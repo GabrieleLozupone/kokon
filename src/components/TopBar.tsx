@@ -17,7 +17,10 @@ import { IconButton } from "./ui";
 export function StatusIndicator({ quiet = false }: { quiet?: boolean }) {
   const connected = useStore((s) => s.connected);
   const server = useStore((s) => s.server);
+  const serverModel = useStore((s) => s.status?.server.model);
+  const composerMode = useStore((s) => s.composer.mode);
   const busy = useStore((s) => Object.values(s.jobs).some((j) => !["done", "failed", "cancelled"].includes(j.status)));
+  const isVideoServer = serverModel ? serverModel.toLowerCase().includes("wan") : false;
   let cls = "dot";
   let text = "Connecting";
   let title = "";
@@ -26,7 +29,7 @@ export function StatusIndicator({ quiet = false }: { quiet?: boolean }) {
       case "ready":
         cls = "dot ready";
         text = busy ? "Working" : "Ready";
-        title = server.owned ? "Model loaded" : "Using an inference server that was already running";
+        title = server.owned ? `${isVideoServer ? "Wan 2.2 Video" : "Qwen 2.1 Image"} model loaded` : "Using an inference server that was already running";
         break;
       case "starting":
         cls = "dot busy";
@@ -49,8 +52,8 @@ export function StatusIndicator({ quiet = false }: { quiet?: boolean }) {
       title={title}
       onClick={() => {
         if (server.state === "error" && isMissingModel(server.error)) openModelSetup();
-        else if (server.state === "error") setState({ overlay: "settings" });
-        else if (server.state === "stopped" && connected) api.startBackend().then(refreshStatus, toastError);
+        else if (server.state === "error") setState({ overlay: "settings", settingsTab: "diagnostics" });
+        else if (server.state === "stopped" && connected) api.startBackend({ mode: composerMode === "video" ? "video" : "image" }).then(refreshStatus, toastError);
       }}
     >
       {cls === "dot busy" || (cls === "dot ready" && busy) ? <SilkSpin size={18} /> : <span className={cls} />}

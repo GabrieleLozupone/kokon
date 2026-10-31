@@ -57,10 +57,19 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new ApiError({ code: "server_unavailable", message: inBrowser ? "Kokon is not reachable." : "The local service is not reachable.", detail: String(e) }, 0);
   }
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
+  let data: any = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = null;
+    }
+  }
   if (!res.ok) {
     if (inBrowser && data?.error?.code === "login_required" && !path.startsWith("/auth/")) onSignedOut();
-    throw new ApiError(data?.error ?? { code: "internal", message: `HTTP ${res.status}` }, res.status);
+    const message = data?.error?.message ?? (text.trim() || `HTTP ${res.status}`);
+    const code = data?.error?.code ?? "internal";
+    throw new ApiError({ code, message, detail: data?.error?.detail ?? (data ? undefined : text.trim()) }, res.status);
   }
   return data as T;
 }
@@ -129,9 +138,9 @@ export const api = {
   /** The prompt enhancer's built-in instructions. */
   enhancerDefaults: () => call<{ t2i: string; edit: string; compose: string; max_chars: number }>("/enhancer/defaults"),
   saveConfig: (c: AppConfig) => call<{ saved: boolean; backend_restart_needed: boolean }>("/config", { method: "PUT", body: json(c) }),
-  startBackend: () => call<{ ready: boolean }>("/backend/start", { method: "POST" }),
+  startBackend: (opts?: { profile?: string; mode?: "image" | "video" }) => call<{ ready: boolean; model?: string }>("/backend/start", { method: "POST", body: json(opts ?? {}) }),
   stopBackend: () => call<{ stopped: boolean }>("/backend/stop", { method: "POST" }),
-  restartBackend: () => call<{ ready: boolean }>("/backend/restart", { method: "POST" }),
+  restartBackend: (opts?: { profile?: string; mode?: "image" | "video" }) => call<{ ready: boolean; model?: string }>("/backend/restart", { method: "POST", body: json(opts ?? {}) }),
   diagnostics: () => call<{ text: string }>("/diagnostics"),
   plan: (r: GenerationRequest) => call<Plan>("/plan", { method: "POST", body: json(r) }),
   submit: (r: GenerationRequest) => call<JobView>("/jobs", { method: "POST", body: json(r) }),
