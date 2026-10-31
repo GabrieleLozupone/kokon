@@ -6,6 +6,7 @@
 // opened again.
 
 import { inBrowser, isNarrow } from "./platform";
+import { native } from "./native";
 import { useSyncExternalStore } from "react";
 import { markFresh } from "../components/Cocoon";
 import { api, ApiError, setPrivateInputs, subscribe, urls } from "./api";
@@ -79,6 +80,7 @@ export interface State {
   needsSetup: boolean;
   /** Setup opens on "Use models I already have" or on the official download (Settings → Models). */
   setupMode: "own" | "official" | null;
+  setupTarget?: "image" | "video" | null;
   /** Before/after view for results made from another image; kept while switching results. */
   compare: CompareMode;
   /** Flicker period in ms. */
@@ -411,6 +413,7 @@ let state: State = {
   macBench: null,
   needsSetup: false,
   setupMode: null,
+  setupTarget: null,
   compare: "off",
   flickerMs: 500,
   privateMode: false,
@@ -455,6 +458,61 @@ export function useStore<T>(sel: (s: State) => T): T {
   );
 }
 
+let switchingServerMode: Promise<void> | null = null;
+
+export async function isVideoModelDownloaded(): Promise<boolean> {
+  const s = getState();
+  if (s.status?.video_model_installed !== undefined) {
+    return s.status.video_model_installed;
+  }
+  try {
+    const m = await api.models();
+    return !!m.video_official_installed;
+  } catch {
+    return false;
+  }
+}
+
+export async function promptVideoModelDownload(): Promise<boolean> {
+  const confirmed = await native.confirm(
+    "To animate photos or generate videos, Kokon needs the Wan 2.2 video model.\n\nWould you like to open Setup to download it now?",
+    "Download Video Model"
+  );
+  if (confirmed) {
+    openModelSetup("official", "video");
+  }
+  return confirmed;
+}
+
+/** Switches the workflow and composer to Animate (video) mode, verifying model download first. */
+export async function switchToAnimate(refs?: Ref[]): Promise<boolean> {
+  const installed = await isVideoModelDownloaded();
+  if (!installed) {
+    await promptVideoModelDownload();
+    return false;
+  }
+
+  setState((st) => {
+    const existingRef = refs ?? (st.composer.refs.length > 0 ? st.composer.refs : null);
+    const selected = selectedItem(st);
+    const fallbackRef = selected?.gen ? refFromGen(selected.gen) : selected?.input ? refFromInput(selected.input) : null;
+    const targetRefs = existingRef ?? (fallbackRef ? [fallbackRef] : []);
+
+    return {
+      composer: {
+        ...emptyComposer(st.composer),
+        mode: "video",
+        refs: targetRefs,
+        prompt: st.composer.prompt || "cinematic subtle motion, vivid details",
+      },
+    };
+  });
+
+  await ensureServerMode("video");
+  focusPrompt();
+  return true;
+}
+
 export function updateComposer(patch: Partial<Composer>) {
   setState((s) => ({ composer: { ...s.composer, ...patch } }));
   if (patch.mode === "video") {
@@ -466,12 +524,15 @@ export function updateComposer(patch: Partial<Composer>) {
 
 /** Ensures the inference server is running the model suited for the active mode (image or video). */
 export async function ensureServerMode(mode: "image" | "video") {
+  if (switchingServerMode) {
+    await switchingServerMode;
+  }
   const s = getState();
   if (!s.connected) return;
   const busy = Object.values(s.jobs).some((j) => !["done", "failed", "cancelled"].includes(j.status));
   if (busy) return;
 
-  const currentModel = s.status?.server.model?.toLowerCase() ?? "";
+  const currentModel = (s.status?.server.model ?? "").toLowerCase();
   const isVideoServer = currentModel.includes("wan");
   const desiredVideo = mode === "video";
 
@@ -479,12 +540,30 @@ export async function ensureServerMode(mode: "image" | "video") {
     return;
   }
 
-  try {
-    await api.startBackend({ mode });
-    await refreshStatus();
-  } catch (e) {
-    toastError(e);
+  if (desiredVideo) {
+    const installed = await isVideoModelDownloaded();
+    if (!installed) {
+      await promptVideoModelDownload();
+      return;
+    }
   }
+
+  switchingServerMode = (async () => {
+    try {
+      await api.startBackend({ mode });
+      await refreshStatus();
+    } catch (e) {
+      if (isMissingModel(e) && mode === "video") {
+        await promptVideoModelDownload();
+      } else {
+        toastError(e);
+      }
+      await refreshStatus();
+    } finally {
+      switchingServerMode = null;
+    }
+  })();
+  await switchingServerMode;
 }
 
 // ---------------------------------------------------------------------------------------
@@ -497,8 +576,8 @@ export function toastError(e: unknown) {
 }
 
 /** Opens Setup (also over a finished setup): to fix missing model files, or to choose own files. */
-export function openModelSetup(mode: "own" | "official" | null = null) {
-  setState({ overlay: null, needsSetup: true, setupMode: mode });
+export function openModelSetup(mode: "own" | "official" | null = null, target?: "image" | "video") {
+  setState({ overlay: null, needsSetup: true, setupMode: mode, setupTarget: target ?? null });
 }
 
 /** The engine or a model file is missing (drive not connected, moved, deleted). */
@@ -1062,16 +1141,7 @@ export function editShownImage() {
 export function animateItem(item: SessionItem) {
   const ref = item.gen ? refFromGen(item.gen) : item.input ? refFromInput(item.input) : null;
   if (!ref) return;
-  setState((s) => ({
-    composer: {
-      ...emptyComposer(s.composer),
-      mode: "video",
-      refs: [ref],
-      prompt: s.composer.prompt || "cinematic subtle motion, vivid details",
-    },
-  }));
-  ensureServerMode("video");
-  focusPrompt();
+  switchToAnimate([ref]);
 }
 
 /** The sources ("gen:<id>"/"input:<id>") a version was made from; `variant` when it is the

@@ -263,6 +263,7 @@ export interface StatusResponse {
   /** The installed engine predates `release` (needed for the upscaler): Setup updates it. */
   engine?: { release: string; update_needed: boolean };
   setup_complete: boolean;
+  video_model_installed?: boolean;
   /** Kokon's Mac engine: installed (inside the app or by hand) and switched on. */
   mac_engine?: { available: boolean; on: boolean };
 }

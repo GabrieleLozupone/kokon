@@ -148,8 +148,9 @@ export function Setup() {
   const [models, setModels] = useState<ModelsStatus | null>(null);
   // Official files, or files the user already has.
   const requestedMode = useStore((s) => s.setupMode);
+  const requestedTarget = useStore((s) => s.setupTarget);
   const [mode, setMode] = useState<"official" | "own" | null>(requestedMode);
-  const [modelType, setModelType] = useState<"image" | "video">("image");
+  const [modelType, setModelType] = useState<"image" | "video">(requestedTarget ?? "image");
   const [scan, setScan] = useState<ModelScan | null>(null);
   const wasRunning = useRef(false);
   const setupDone = useStore((s) => s.status?.setup_complete ?? false);

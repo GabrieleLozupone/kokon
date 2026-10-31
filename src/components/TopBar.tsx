@@ -28,7 +28,7 @@ export function StatusIndicator({ quiet = false }: { quiet?: boolean }) {
     switch (server.state) {
       case "ready":
         cls = "dot ready";
-        text = busy ? (isVideoServer ? "Working (Video)" : "Working (Image)") : isVideoServer ? "Ready (Video)" : "Ready (Image)";
+        text = busy ? "Working" : "Ready";
         title = server.owned ? `${isVideoServer ? "Wan 2.2 Video" : "Qwen 2.1 Image"} model loaded` : "Using an inference server that was already running";
         break;
       case "starting":
@@ -41,8 +41,8 @@ export function StatusIndicator({ quiet = false }: { quiet?: boolean }) {
         title = isMissingModel(server.error) ? "Find or download the missing file" : "Open Diagnostics";
         break;
       default:
-        text = composerMode === "video" ? "Video model not loaded" : "Image model not loaded";
-        title = `Click to load the ${composerMode === "video" ? "video" : "image"} model now`;
+        text = "Model not loaded";
+        title = "Click to load the model now";
     }
   }
   if (quiet && cls === "dot ready" && !busy) return null;

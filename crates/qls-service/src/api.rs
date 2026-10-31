@@ -363,6 +363,7 @@ async fn status(State(s): St) -> Json<Value> {
         "active_job": s.engine.active_job(),
         "queue": { "queued": queued, "jobs": jobs.iter().filter(|j| !j.status.is_terminal()).collect::<Vec<_>>() },
         "setup_complete": cfg.setup_complete,
+        "video_model_installed": cfg.missing_files_for_mode(qls_core::planner::Mode::Video).is_empty(),
         // Kokon's Mac engine: installed (inside the app or by hand) and switched on.
         "mac_engine": { "available": cfg.gpu_backend == GpuBackend::Metal && cfg.mac_engine_exe().is_file(), "on": cfg.uses_mac_engine() },
     }))
@@ -2164,7 +2165,7 @@ async fn models_status(State(s): St) -> ApiResult<Json<Value>> {
             .collect();
         let downloadable: Vec<&str> = catalog::profile_model_downloads(p).iter().map(|d| d.label).collect();
         let official_installed = cfg.profiles.iter().find(|q| q.id == OFFICIAL_PROFILE_ID).is_some_and(|q| q.files().iter().all(|(_, f, _)| f.is_file()));
-        let video_official_installed = cfg.profiles.iter().find(|q| q.id == qls_core::config::WAN_OFFICIAL_PROFILE_ID).is_some_and(|q| q.files().iter().all(|(_, f, _)| f.is_file()));
+        let video_official_installed = cfg.missing_files_for_mode(qls_core::planner::Mode::Video).is_empty();
         json!({
             "active": { "id": p.id, "display_name": p.display_name, "source": p.source, "model": p.model },
             "slots": slots,

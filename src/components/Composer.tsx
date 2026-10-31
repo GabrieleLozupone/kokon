@@ -6,7 +6,7 @@ import { native } from "../lib/native";
 import { haptic } from "../lib/haptics";
 import { inBrowser, useNarrow } from "../lib/platform";
 import {
-  addAsReference, addInputs, cancelPromptReview, editShownImage, enhancerAvailable, getState, itemSource, openSettings, selectedItem, sessionLabels, setProjectLoras, setState, startNewImage, submitComposer, toastError, undoEnhancedPrompt, updateComposer, useStore, type SessionItem,
+  addAsReference, addInputs, cancelPromptReview, editShownImage, enhancerAvailable, getState, itemSource, openSettings, selectedItem, sessionLabels, setProjectLoras, setState, startNewImage, submitComposer, switchToAnimate, toastError, undoEnhancedPrompt, updateComposer, useStore, type SessionItem,
 } from "../lib/store";
 import type { InpaintAction, Plan, Quality } from "../lib/types";
 import { AdvancedPanel } from "./Advanced";
@@ -194,7 +194,11 @@ function ModeSwitch({ editing }: { editing: boolean }) {
           className={isVideo ? "on" : ""}
           role="radio"
           aria-checked={isVideo}
-          onClick={() => updateComposer({ mode: "video" })}
+          onClick={() => {
+            if (!isVideo) {
+              switchToAnimate();
+            }
+          }}
           title="Animate: turn this image into a video"
         >
           <Video size={14} /> <span className="lbl">Animate</span>
