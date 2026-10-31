@@ -189,15 +189,17 @@ function ModeSwitch({ editing }: { editing: boolean }) {
           <Pencil size={14} /> <span className="lbl">Edit image</span>
         </button>
       )}
-      <button
-        className={isVideo ? "on" : ""}
-        role="radio"
-        aria-checked={isVideo}
-        onClick={() => updateComposer({ mode: "video" })}
-        title="Generate a video (Wan2.2 local diffusion)"
-      >
-        <Video size={14} /> <span className="lbl">Video</span>
-      </button>
+      {(isVideo || img) && (
+        <button
+          className={isVideo ? "on" : ""}
+          role="radio"
+          aria-checked={isVideo}
+          onClick={() => updateComposer({ mode: "video" })}
+          title="Animate: turn this image into a video"
+        >
+          <Video size={14} /> <span className="lbl">Animate</span>
+        </button>
+      )}
     </div>
   );
 }

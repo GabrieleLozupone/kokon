@@ -1,15 +1,11 @@
 # Status
 
-**Updated 2026-10-29.** What is in progress, what comes next, and where help is welcome. Kept current at the end
+**Updated 2026-10-28.** What is in progress, what comes next, and where help is welcome. Kept current at the end
 of every task (see [AGENTS.md](../AGENTS.md#keeping-docsstatusmd-current)); GitHub is the source of truth.
 
 ## Current version: [0.11.2](https://github.com/GabrieleLozupone/kokon/releases/tag/v0.11.2) (2026-10-28)
 
 Windows, macOS (Apple Silicon, 15+) and Linux (`.deb`, `.rpm`). Installed copies update from the app.
-
-## In progress / ready for PR
-
-- **Video generation (Wan 2.2 TI2V)**: Text-to-video and image-to-video powered by Wan 2.2 (5B & 14B MoE GGUF). Features hardware-tailored presets (8GB, 12GB, 16GB, 24GB+), 24 FPS temporal alignment ($4k+1$ frames), seamless looping option, EasyCache DiT acceleration, HTTP 206 Partial Content streaming for smooth playback, one-click "Animate" button in Stage and Gallery, universal MP4 export via ffmpeg, and `generate_video` MCP tool.
 
 ## Next
 

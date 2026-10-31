@@ -10,8 +10,9 @@ use serde::{Deserialize, Serialize};
 use crate::config::RecommendedSettings;
 use crate::error::{AppError, ErrorCode};
 use crate::geometry::{
-    self, CanvasLimits, Expansion, ExpansionUnits, OutpaintPlan, Rect, Size, WorkingCanvas, aspect_label, dims_for_area,
-    expansion_for_aspect, expansion_to_pixels, plan_outpaint, plan_working_canvas,
+    self, CanvasLimits, Expansion, ExpansionUnits, OutpaintPlan, Rect, Size, WorkingCanvas,
+    aspect_label, dims_for_area, expansion_for_aspect, expansion_to_pixels, plan_outpaint,
+    plan_working_canvas,
 };
 
 // ---------------------------------------------------------------------------------------
@@ -79,20 +80,28 @@ pub enum InpaintAction {
     Add,
 }
 
-static REMOVE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^\s*(?:please\s+)?(?:remove|erase|delete|get rid of|take out|clear away|clean up)\b\s*").unwrap());
+static REMOVE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)^\s*(?:please\s+)?(?:remove|erase|delete|get rid of|take out|clear away|clean up)\b\s*").unwrap()
+});
 
 impl InpaintAction {
     /// The action actually run: an Edit whose prompt asks to remove something is a Remove.
     pub fn resolve(self, prompt: &str) -> Self {
-        if self == Self::Edit && REMOVE_RE.is_match(prompt) { Self::Remove } else { self }
+        if self == Self::Edit && REMOVE_RE.is_match(prompt) {
+            Self::Remove
+        } else {
+            self
+        }
     }
 
     /// The prompt without the action's own verb ("Remove the girl" → "the girl").
     pub fn subject(self, prompt: &str) -> String {
-        static ADD_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^\s*(?:please\s+)?(?:add|put|place|insert)\b\s*").unwrap());
-        static REPLACE_RE: LazyLock<Regex> =
-            LazyLock::new(|| Regex::new(r"(?i)^\s*(?:please\s+)?(?:replace(?:\s+(?:it|this|that|them))?\s+with|change(?:\s+(?:it|this|that))?\s+(?:in)?to|with)\b\s*").unwrap());
+        static ADD_RE: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r"(?i)^\s*(?:please\s+)?(?:add|put|place|insert)\b\s*").unwrap()
+        });
+        static REPLACE_RE: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r"(?i)^\s*(?:please\s+)?(?:replace(?:\s+(?:it|this|that|them))?\s+with|change(?:\s+(?:it|this|that))?\s+(?:in)?to|with)\b\s*").unwrap()
+        });
         let p = prompt.trim();
         let s = match self {
             Self::Edit => p.into(),
@@ -425,12 +434,17 @@ pub struct PlanInputs {
 // Prompt understanding (deliberately small and predictable)
 // ---------------------------------------------------------------------------------------
 
-static RATIO_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\b(\d{1,2})\s*:\s*(\d{1,2})\b").unwrap());
-static DIMS_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\b(\d{3,4})\s*[x×]\s*(\d{3,4})\b").unwrap());
-static OUTPAINT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\b(extend|expand|outpaint|uncrop|zoom(?:ed)? out|widen|make (?:it|the image) (?:wider|taller))\b").unwrap());
-static AMOUNT_PCT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\b(\d{1,3})\s*(%|percent)").unwrap());
-static AMOUNT_PX_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\b(\d{2,4})\s*(px|pixels?)\b").unwrap());
+static RATIO_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\b(\d{1,2})\s*:\s*(\d{1,2})\b").unwrap());
+static DIMS_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\b(\d{3,4})\s*[x×]\s*(\d{3,4})\b").unwrap());
+static OUTPAINT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(extend|expand|outpaint|uncrop|zoom(?:ed)? out|widen|make (?:it|the image) (?:wider|taller))\b").unwrap()
+});
+static AMOUNT_PCT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\b(\d{1,3})\s*(%|percent)").unwrap());
+static AMOUNT_PX_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\b(\d{2,4})\s*(px|pixels?)\b").unwrap());
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AspectHint {
@@ -447,7 +461,23 @@ pub fn aspect_hint(prompt: &str) -> Option<AspectHint> {
         }
     }
     // Only well-known ratios, so times like "10:30" are not mistaken for aspect ratios.
-    const KNOWN: &[(u32, u32)] = &[(1, 1), (4, 3), (3, 4), (3, 2), (2, 3), (16, 9), (9, 16), (21, 9), (9, 21), (5, 4), (4, 5), (2, 1), (1, 2), (16, 10), (10, 16)];
+    const KNOWN: &[(u32, u32)] = &[
+        (1, 1),
+        (4, 3),
+        (3, 4),
+        (3, 2),
+        (2, 3),
+        (16, 9),
+        (9, 16),
+        (21, 9),
+        (9, 21),
+        (5, 4),
+        (4, 5),
+        (2, 1),
+        (1, 2),
+        (16, 10),
+        (10, 16),
+    ];
     for c in RATIO_RE.captures_iter(prompt) {
         let (a, b): (u32, u32) = (c[1].parse().ok()?, c[2].parse().ok()?);
         if KNOWN.contains(&(a, b)) {
@@ -456,19 +486,58 @@ pub fn aspect_hint(prompt: &str) -> Option<AspectHint> {
     }
     let p = prompt.to_lowercase();
     let has = |words: &[&str]| words.iter().any(|w| p.contains(w));
-    if has(&["panorama", "panoramic", "ultrawide", "ultra-wide", "cinematic banner"]) {
+    if has(&[
+        "panorama",
+        "panoramic",
+        "ultrawide",
+        "ultra-wide",
+        "cinematic banner",
+    ]) {
         return Some(AspectHint::Ratio(21.0 / 9.0, "21:9".into()));
     }
-    if has(&["hero image", "hero banner", "banner", "landscape", "widescreen", "wide shot", "desktop wallpaper", "youtube thumbnail", "cinematic"]) {
+    if has(&[
+        "hero image",
+        "hero banner",
+        "banner",
+        "landscape",
+        "widescreen",
+        "wide shot",
+        "desktop wallpaper",
+        "youtube thumbnail",
+        "cinematic",
+    ]) {
         return Some(AspectHint::Ratio(16.0 / 9.0, "16:9".into()));
     }
-    if has(&["phone wallpaper", "mobile wallpaper", "instagram story", "story format", "vertical video", "tiktok", "smartphone wallpaper"]) {
+    if has(&[
+        "phone wallpaper",
+        "mobile wallpaper",
+        "instagram story",
+        "story format",
+        "vertical video",
+        "tiktok",
+        "smartphone wallpaper",
+    ]) {
         return Some(AspectHint::Ratio(9.0 / 16.0, "9:16".into()));
     }
-    if has(&["portrait", "poster", "full-body", "full body", "book cover", "vertical"]) {
+    if has(&[
+        "portrait",
+        "poster",
+        "full-body",
+        "full body",
+        "book cover",
+        "vertical",
+    ]) {
         return Some(AspectHint::Ratio(3.0 / 4.0, "3:4".into()));
     }
-    if has(&["square", "profile picture", "avatar", "app icon", "icon", "logo", "instagram post"]) {
+    if has(&[
+        "square",
+        "profile picture",
+        "avatar",
+        "app icon",
+        "icon",
+        "logo",
+        "instagram post",
+    ]) {
         return Some(AspectHint::Ratio(1.0, "1:1".into()));
     }
     None
@@ -490,15 +559,24 @@ pub fn outpaint_intent(prompt: &str, source: Size) -> Option<Expansion> {
         return None;
     }
     let p = prompt.to_lowercase();
-    let amount_pct = AMOUNT_PCT_RE.captures(&p).and_then(|c| c[1].parse::<f64>().ok()).filter(|v| *v > 0.0 && *v <= 200.0);
-    let amount_px = AMOUNT_PX_RE.captures(&p).and_then(|c| c[1].parse::<f64>().ok());
+    let amount_pct = AMOUNT_PCT_RE
+        .captures(&p)
+        .and_then(|c| c[1].parse::<f64>().ok())
+        .filter(|v| *v > 0.0 && *v <= 200.0);
+    let amount_px = AMOUNT_PX_RE
+        .captures(&p)
+        .and_then(|c| c[1].parse::<f64>().ok());
     let side = |pct_base: u32| -> u32 {
         if let Some(px) = amount_px {
             return px as u32;
         }
         (pct_base as f64 * amount_pct.unwrap_or(25.0) / 100.0).round() as u32
     };
-    let word = |w: &str| Regex::new(&format!(r"\b{w}\b")).map(|r| r.is_match(&p)).unwrap_or(false);
+    let word = |w: &str| {
+        Regex::new(&format!(r"\b{w}\b"))
+            .map(|r| r.is_match(&p))
+            .unwrap_or(false)
+    };
     let mut e = Expansion::default();
     if word("left") {
         e.left = side(source.width);
@@ -536,7 +614,12 @@ pub fn outpaint_intent(prompt: &str, source: Size) -> Option<Expansion> {
         // "zoom out" / "expand the image": every side.
         let h = side(source.width);
         let v = side(source.height);
-        e = Expansion { left: h, right: h, top: v, bottom: v };
+        e = Expansion {
+            left: h,
+            right: h,
+            top: v,
+            bottom: v,
+        };
     }
     Some(e)
 }
@@ -559,13 +642,21 @@ const OFFICIAL_2K: &[(f64, u32, u32)] = &[
 /// Output size for an aspect ratio and pixel area: the official 2K bucket when one matches,
 /// else the closest aligned size.
 fn size_for_aspect(aspect: f64, area: u64, rec: &RecommendedSettings) -> Size {
-    match OFFICIAL_2K.iter().find(|(a, w, h)| (a / aspect - 1.0).abs() < 0.01 && (*w as u64 * *h as u64) as f64 <= area as f64 * 1.02 && area >= 2048 * 2048) {
+    match OFFICIAL_2K.iter().find(|(a, w, h)| {
+        (a / aspect - 1.0).abs() < 0.01
+            && (*w as u64 * *h as u64) as f64 <= area as f64 * 1.02
+            && area >= 2048 * 2048
+    }) {
         Some((_, w, h)) => Size::new(*w, *h),
         None => dims_for_area(aspect, area as f64, rec.align, 256, rec.max_side),
     }
 }
 
-pub fn resolution_area(mode: ResolutionMode, quality: Quality, rec: &RecommendedSettings) -> Option<u64> {
+pub fn resolution_area(
+    mode: ResolutionMode,
+    quality: Quality,
+    rec: &RecommendedSettings,
+) -> Option<u64> {
     match mode {
         ResolutionMode::Auto => Some(match quality {
             Quality::Fast => rec.area_fast,
@@ -582,7 +673,9 @@ pub fn resolution_area(mode: ResolutionMode, quality: Quality, rec: &Recommended
 /// Transformer token budget for the whole sequence (target + references), from total
 /// VRAM. 16384 tokens = one 2048² image, verified to run on a 16 GB card.
 pub fn token_budget(vram_total_mib: Option<u64>) -> u64 {
-    let Some(mib) = vram_total_mib else { return 12_288 };
+    let Some(mib) = vram_total_mib else {
+        return 12_288;
+    };
     let gib = mib as f64 / 1024.0;
     // Anchored on measurement: a 16 GB card (≈15.9 GiB reported) runs 2048² text-to-image.
     let tokens = if gib < 15.0 {
@@ -607,7 +700,9 @@ pub const DISCRETE_LARGE_GPU_BONUS: u64 = 20_736 - 16_384;
 pub fn planning_token_budget(vram_total_mib: Option<u64>, unified_memory: bool) -> u64 {
     let base = token_budget(vram_total_mib);
     match vram_total_mib {
-        Some(mib) if !unified_memory && mib as f64 / 1024.0 >= 15.0 => base + DISCRETE_LARGE_GPU_BONUS,
+        Some(mib) if !unified_memory && mib as f64 / 1024.0 >= 15.0 => {
+            base + DISCRETE_LARGE_GPU_BONUS
+        }
         _ => base,
     }
 }
@@ -646,8 +741,10 @@ pub fn max_untiled_vae_area(vram_total_mib: Option<u64>) -> u64 {
     match vram_total_mib {
         None => LARGE_GPU_VAE_TILE_AREA,
         Some(mib) => {
-            let budget_mib = mib as f64 - (VAE_DECODE_OTHER_APPS_MIB + VAE_DECODE_RESIDENT_MIB) as f64;
-            ((budget_mib.max(0.0) * 1024.0 * 1024.0 / VAE_DECODE_BYTES_PER_PIXEL) as u64).min(UNTILED_VAE_MAX_AREA)
+            let budget_mib =
+                mib as f64 - (VAE_DECODE_OTHER_APPS_MIB + VAE_DECODE_RESIDENT_MIB) as f64;
+            ((budget_mib.max(0.0) * 1024.0 * 1024.0 / VAE_DECODE_BYTES_PER_PIXEL) as u64)
+                .min(UNTILED_VAE_MAX_AREA)
         }
     }
 }
@@ -678,7 +775,12 @@ fn vae_axis_tiles(dim: u32, tile: u32, overlap: f32) -> u32 {
     let lower = (target.floor() as i64).clamp(min_i, max_i.max(min_i));
     let upper = (target.ceil() as i64).clamp(min_i, max_i.max(min_i));
     let err = |n: i64| (1.0 / n as f32 - 1.0 / target).abs();
-    (if err(upper) < err(lower) { upper } else { lower }) as u32 + 1
+    (if err(upper) < err(lower) {
+        upper
+    } else {
+        lower
+    }) as u32
+        + 1
 }
 
 /// Decode tile (width, height in pixels) for a `size` image whose tiles may cover at most
@@ -688,16 +790,26 @@ fn vae_axis_tiles(dim: u32, tile: u32, overlap: f32) -> u32 {
 pub fn vae_decode_tile(size: Size, max_area: u64) -> (u32, u32) {
     let (lw, lh) = (size.width / VAE_SCALE, size.height / VAE_SCALE);
     // Tile length for `n` tiles along an axis (sd.cpp's relative size > 1).
-    let len = |dim: u32, n: u32| if n <= 1 { dim } else { ((dim as f32 / (n as f32 * (1.0 - VAE_TILE_OVERLAP) + VAE_TILE_OVERLAP)).floor() as u32).max(4) };
+    let len = |dim: u32, n: u32| {
+        if n <= 1 {
+            dim
+        } else {
+            ((dim as f32 / (n as f32 * (1.0 - VAE_TILE_OVERLAP) + VAE_TILE_OVERLAP)).floor() as u32)
+                .max(4)
+        }
+    };
     let mut best: Option<(u64, u32, (u32, u32))> = None;
     for nx in 1..=12 {
         for ny in 1..=12 {
             let (tw, th) = (len(lw, nx), len(lh, ny));
             // Thin strips decode least but leave little context at the seams.
-            if (tw * th * VAE_SCALE * VAE_SCALE) as u64 > max_area || tw.min(th) < MIN_VAE_TILE_SIDE.min(lw).min(lh) {
+            if (tw * th * VAE_SCALE * VAE_SCALE) as u64 > max_area
+                || tw.min(th) < MIN_VAE_TILE_SIDE.min(lw).min(lh)
+            {
                 continue;
             }
-            let count = vae_axis_tiles(lw, tw, VAE_TILE_OVERLAP) * vae_axis_tiles(lh, th, VAE_TILE_OVERLAP);
+            let count =
+                vae_axis_tiles(lw, tw, VAE_TILE_OVERLAP) * vae_axis_tiles(lh, th, VAE_TILE_OVERLAP);
             let cost = count as u64 * (tw * th) as u64;
             if best.map(|(c, n, _)| (cost, count) < (c, n)).unwrap_or(true) {
                 best = Some((cost, count, (tw * VAE_SCALE, th * VAE_SCALE)));
@@ -718,7 +830,11 @@ pub fn vae_decode_tile(size: Size, max_area: u64) -> (u32, u32) {
 /// 24 GB → ~9.8 GiB (12 GB preset), 32 GB → ~15 GiB (16 GB preset, 2K),
 /// 64 GB → ~42 GiB (32 GB+ preset).
 pub fn unified_memory_planning_mib(ram_mib: u64, text_encoder_mib: u64) -> u64 {
-    let gpu_share = if ram_mib >= 64 * 1024 { ram_mib * 3 / 4 } else { ram_mib * 2 / 3 };
+    let gpu_share = if ram_mib >= 64 * 1024 {
+        ram_mib * 3 / 4
+    } else {
+        ram_mib * 2 / 3
+    };
     gpu_share.saturating_sub(text_encoder_mib)
 }
 
@@ -727,7 +843,9 @@ pub const PIXELS_PER_TOKEN: u64 = 256; // 8x VAE downscale, 2x2 patches
 /// The noise schedule of every diffusion job: `sample_sigmas` of Qwen/Qwen-Image-2.1-Turbo's model_index.json
 /// (8 steps, fixed at every resolution, no dynamic shift), sent verbatim because sd.cpp's
 /// own Qwen schedule shifts by resolution and has a 0.02 terminal shift.
-pub const TURBO_SIGMAS: [f32; 9] = [1.0, 0.978453, 0.95418, 0.926626, 0.89508, 0.845148, 0.704534, 0.414568, 0.0];
+pub const TURBO_SIGMAS: [f32; 9] = [
+    1.0, 0.978453, 0.95418, 0.926626, 0.89508, 0.845148, 0.704534, 0.414568, 0.0,
+];
 /// Turbo's step count (fixed: Qwen evaluated no other schedule).
 pub const TURBO_STEPS: u32 = TURBO_SIGMAS.len() as u32 - 1;
 
@@ -747,7 +865,11 @@ pub const INPAINT_MIN_AREA: u64 = 1024 * 1024;
 /// SageAttention). CFG 1 (always, with Turbo) runs one pass, so half of that.
 fn step_seconds(tokens: f32, ref_tokens: f32, sage: bool, cfg: f32) -> f32 {
     let x = tokens / 4096.0;
-    let base = if sage { 1.6 * x.powf(1.1) } else { 2.0 * x.powf(1.4) };
+    let base = if sage {
+        1.6 * x.powf(1.1)
+    } else {
+        2.0 * x.powf(1.4)
+    };
     let passes = if uses_guidance(cfg) { 1.0 } else { 0.5 };
     base * passes * (1.0 + 0.12 * ref_tokens / tokens.max(1.0))
 }
@@ -807,7 +929,14 @@ fn decode_seconds(area: u64) -> f32 {
 }
 
 /// Rough wall-clock estimate of one diffusion job (single pass), excluding enlargement.
-pub fn estimate_seconds(working: Size, refs: &[RefPlan], steps: u32, batch: u32, sage: bool, cfg: f32) -> f32 {
+pub fn estimate_seconds(
+    working: Size,
+    refs: &[RefPlan],
+    steps: u32,
+    batch: u32,
+    sage: bool,
+    cfg: f32,
+) -> f32 {
     let tokens = |s: Size| (s.area() / PIXELS_PER_TOKEN) as f32;
     let ref_tokens: f32 = refs.iter().map(|r| tokens(r.canvas.canvas)).sum();
     let encode = 4.0 + ref_tokens / 4096.0 * 3.0;
@@ -818,11 +947,23 @@ pub fn estimate_seconds(working: Size, refs: &[RefPlan], steps: u32, batch: u32,
 /// Uncalibrated prediction of the backend part of a planned job (what `crate::speed`
 /// compares with the measured time): encode, sampling and decode, no enlargement.
 pub fn backend_seconds(p: &Plan, sage: bool) -> f32 {
-    estimate_seconds(p.working, &p.references, p.steps, p.batch_count, sage, p.cfg)
+    estimate_seconds(
+        p.working,
+        &p.references,
+        p.steps,
+        p.batch_count,
+        sage,
+        p.cfg,
+    )
 }
 
 fn limits(max_area: u64, rec: &RecommendedSettings) -> CanvasLimits {
-    CanvasLimits { max_area, align: rec.align, max_side: rec.max_side, ..Default::default() }
+    CanvasLimits {
+        max_area,
+        align: rec.align,
+        max_side: rec.max_side,
+        ..Default::default()
+    }
 }
 
 /// Exact upscale target for a source size.
@@ -835,38 +976,68 @@ pub fn upscale_target(src: Size, spec: &UpscaleSpec) -> Result<Size, AppError> {
         (None, None) => {
             let s = spec.scale.unwrap_or(2.0);
             if !(s.is_finite() && s > 0.0) {
-                return Err(AppError::invalid("The upscale factor must be a positive number."));
+                return Err(AppError::invalid(
+                    "The upscale factor must be a positive number.",
+                ));
             }
-            Size::new(((src.width as f64 * s).round() as u32).max(1), ((src.height as f64 * s).round() as u32).max(1))
+            Size::new(
+                ((src.width as f64 * s).round() as u32).max(1),
+                ((src.height as f64 * s).round() as u32).max(1),
+            )
         }
     };
     if t.width < 64 || t.height < 64 || t.width > MAX_UPSCALE_SIDE || t.height > MAX_UPSCALE_SIDE {
-        return Err(AppError::invalid(format!("The upscaled size must be between 64 and {MAX_UPSCALE_SIDE} pixels per side.")));
+        return Err(AppError::invalid(format!(
+            "The upscaled size must be between 64 and {MAX_UPSCALE_SIDE} pixels per side."
+        )));
     }
     if t.area() > MAX_UPSCALE_AREA {
-        return Err(AppError::invalid(format!("{}×{} is too large; the limit is about 40 megapixels.", t.width, t.height)));
+        return Err(AppError::invalid(format!(
+            "{}×{} is too large; the limit is about 40 megapixels.",
+            t.width, t.height
+        )));
     }
     Ok(t)
 }
 
-fn detect_mode(req: &GenerationRequest, inputs: &PlanInputs) -> Result<(ResolvedMode, bool, String), AppError> {
+fn detect_mode(
+    req: &GenerationRequest,
+    inputs: &PlanInputs,
+) -> Result<(ResolvedMode, bool, String), AppError> {
     let n = inputs.image_sizes.len();
     let has_mask = req.mask.is_some() && inputs.mask.as_ref().map(|m| m.2 > 0.0).unwrap_or(false);
-    let has_outpaint = req.outpaint.map(|o| o.left > 0.0 || o.right > 0.0 || o.top > 0.0 || o.bottom > 0.0).unwrap_or(false);
-    let need = |ok: bool, msg: &str| if ok { Ok(()) } else { Err(AppError::invalid(msg)) };
+    let has_outpaint = req
+        .outpaint
+        .map(|o| o.left > 0.0 || o.right > 0.0 || o.top > 0.0 || o.bottom > 0.0)
+        .unwrap_or(false);
+    let need = |ok: bool, msg: &str| {
+        if ok {
+            Ok(())
+        } else {
+            Err(AppError::invalid(msg))
+        }
+    };
     let explicit = |m: ResolvedMode, why: &str| Ok((m, false, why.to_string()));
     match req.mode {
         Mode::Generate => explicit(ResolvedMode::Generate, "Selected"),
         Mode::Edit => {
             need(n >= 1, "Add an image to edit.")?;
-            if n >= 2 { explicit(ResolvedMode::MultiReference, "Selected (several images)") } else { explicit(ResolvedMode::Edit, "Selected") }
+            if n >= 2 {
+                explicit(ResolvedMode::MultiReference, "Selected (several images)")
+            } else {
+                explicit(ResolvedMode::Edit, "Selected")
+            }
         }
         Mode::MultiReference => {
             need(n >= 1, "Add at least one reference image.")?;
             explicit(ResolvedMode::MultiReference, "Selected")
         }
         Mode::Compose => {
-            if n == 0 { explicit(ResolvedMode::Generate, "Selected (no reference images)") } else { explicit(ResolvedMode::Compose, "Selected") }
+            if n == 0 {
+                explicit(ResolvedMode::Generate, "Selected (no reference images)")
+            } else {
+                explicit(ResolvedMode::Compose, "Selected")
+            }
         }
         Mode::Inpaint => {
             need(n >= 1, "Add an image to inpaint.")?;
@@ -893,10 +1064,18 @@ fn detect_mode(req: &GenerationRequest, inputs: &PlanInputs) -> Result<(Resolved
                 return Ok((ResolvedMode::Outpaint, true, "Expansion requested".into()));
             }
             if n >= 2 {
-                return Ok((ResolvedMode::MultiReference, true, format!("{n} reference images")));
+                return Ok((
+                    ResolvedMode::MultiReference,
+                    true,
+                    format!("{n} reference images"),
+                ));
             }
             if outpaint_intent(&req.prompt, inputs.image_sizes[0]).is_some() {
-                return Ok((ResolvedMode::Outpaint, true, "The prompt asks to extend the image".into()));
+                return Ok((
+                    ResolvedMode::Outpaint,
+                    true,
+                    "The prompt asks to extend the image".into(),
+                ));
             }
             Ok((ResolvedMode::Edit, true, "An image was provided".into()))
         }
@@ -909,7 +1088,13 @@ fn detect_mode(req: &GenerationRequest, inputs: &PlanInputs) -> Result<(Resolved
 fn ref_canvas(src: Size, max_canvas_area: u64, rec: &RecommendedSettings) -> WorkingCanvas {
     let mut area = src.area().min(max_canvas_area);
     loop {
-        let c = plan_working_canvas(src, &CanvasLimits { min_side: 64, ..limits(area, rec) });
+        let c = plan_working_canvas(
+            src,
+            &CanvasLimits {
+                min_side: 64,
+                ..limits(area, rec)
+            },
+        );
         if c.canvas.area() <= max_canvas_area || area < 64 * 64 {
             return c;
         }
@@ -918,42 +1103,63 @@ fn ref_canvas(src: Size, max_canvas_area: u64, rec: &RecommendedSettings) -> Wor
 }
 
 /// Produces the generation plan. `rec` comes from the active model profile.
-pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSettings) -> Result<Plan, AppError> {
+pub fn plan(
+    req: &GenerationRequest,
+    inputs: &PlanInputs,
+    rec: &RecommendedSettings,
+) -> Result<Plan, AppError> {
     if req.prompt.len() > 8000 {
-        return Err(AppError::invalid("The prompt is too long (8000 characters max)."));
+        return Err(AppError::invalid(
+            "The prompt is too long (8000 characters max).",
+        ));
     }
     if inputs.image_sizes.len() > rec.max_references as usize {
-        return Err(AppError::invalid(format!("Use at most {} reference images.", rec.max_references)));
+        return Err(AppError::invalid(format!(
+            "Use at most {} reference images.",
+            rec.max_references
+        )));
     }
     let (mode, auto_mode, mode_reason) = detect_mode(req, inputs)?;
     if req.enhance_only && !(req.enhance && crate::enhancer::applies(mode)) {
-        return Err(AppError::invalid("Prompt+ writes prompts for new images, edits and combines only."));
+        return Err(AppError::invalid(
+            "Prompt+ writes prompts for new images, edits and combines only.",
+        ));
     }
-    let inpaint_action = (mode == ResolvedMode::Inpaint).then(|| req.inpaint_action.resolve(&req.prompt));
+    let inpaint_action =
+        (mode == ResolvedMode::Inpaint).then(|| req.inpaint_action.resolve(&req.prompt));
     // Upscales and removals need no description.
-    let prompt_optional = mode == ResolvedMode::Upscale || inpaint_action == Some(InpaintAction::Remove);
+    let prompt_optional =
+        mode == ResolvedMode::Upscale || inpaint_action == Some(InpaintAction::Remove);
     if req.prompt.trim().is_empty() && !prompt_optional {
         return Err(AppError::invalid("Describe what to generate or change."));
     }
     let mut notes = Vec::new();
     let quality = req.quality;
     // Turbo: its fixed 8-step schedule without CFG (model card).
-    // Video: Wan flow matching requires 20-40 steps and CFG ~5.0.
-    let cfg = if mode == ResolvedMode::Video { 5.0 } else { 1.0 };
+    // Video: Wan flow matching runs in 4–8 steps with distillation LoRA / high noise, CFG ~3.5.
+    let cfg = if mode == ResolvedMode::Video {
+        3.5
+    } else {
+        1.0
+    };
     let budget_tokens = planning_token_budget(inputs.vram_total_mib, inputs.unified_memory);
     let budget_area = budget_tokens * PIXELS_PER_TOKEN;
     let tier_area = resolution_area(req.resolution, quality, rec);
     let adv = &req.advanced;
     let mut steps = if mode == ResolvedMode::Video {
         match quality {
-            Quality::Fast => 20,
-            Quality::Balanced => 30,
-            Quality::Quality => 40,
+            Quality::Fast => 4,
+            Quality::Balanced => 8,
+            Quality::Quality => 12,
         }
     } else {
         TURBO_STEPS
     };
-    let batch_count = if mode == ResolvedMode::Upscale { 1 } else { adv.batch_count.unwrap_or(1).clamp(1, 8) };
+    let batch_count = if mode == ResolvedMode::Upscale {
+        1
+    } else {
+        adv.batch_count.unwrap_or(1).clamp(1, 8)
+    };
     let mut optimized = false;
     // Diffusion always runs in one pass; larger outputs are enlarged with the upscaler
     // model (user A/B test, 2026-10-06: the two-pass refine made results worse).
@@ -978,7 +1184,13 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
     };
     // Edit/combine: largest area `a <= wanted` with `a + Σ min(ref_i, a, ref_cap)` within the budget.
     let cap_for_sources = |wanted: u64, refs: &[Size], notes: &mut Vec<String>| -> u64 {
-        let fits = |a: u64| a + refs.iter().map(|r| r.area().min(a).min(ref_cap)).sum::<u64>() <= budget_area;
+        let fits = |a: u64| {
+            a + refs
+                .iter()
+                .map(|r| r.area().min(a).min(ref_cap))
+                .sum::<u64>()
+                <= budget_area
+        };
         if fits(wanted) {
             return wanted;
         }
@@ -1003,7 +1215,11 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
         ResolvedMode::Generate | ResolvedMode::Compose => {
             // A new image: sized from the chosen size, ratio or prompt, never from the
             // references, which share the token budget with it (as in edits).
-            let refs: &[Size] = if mode == ResolvedMode::Compose { &inputs.image_sizes } else { &[] };
+            let refs: &[Size] = if mode == ResolvedMode::Compose {
+                &inputs.image_sizes
+            } else {
+                &[]
+            };
             let mut cap = |wanted: u64, notes: &mut Vec<String>| {
                 if refs.is_empty() {
                     return cap_for_refs(wanted, 0.0, notes);
@@ -1017,19 +1233,36 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
                 _ => match req.aspect_ratio.as_deref().and_then(parse_aspect) {
                     Some(_) => None,
                     None => match aspect_hint(&req.prompt) {
-                        Some(AspectHint::Dimensions(w, h)) if req.aspect_ratio.as_deref().map(|a| a == "auto").unwrap_or(true) => Some((w, h)),
+                        Some(AspectHint::Dimensions(w, h))
+                            if req
+                                .aspect_ratio
+                                .as_deref()
+                                .map(|a| a == "auto")
+                                .unwrap_or(true) =>
+                        {
+                            Some((w, h))
+                        }
                         _ => None,
                     },
                 },
             };
             if let Some((w, h)) = explicit_dims {
                 if !(64..=rec.max_side).contains(&w) || !(64..=rec.max_side).contains(&h) {
-                    return Err(AppError::invalid(format!("Width and height must be between 64 and {}.", rec.max_side)));
+                    return Err(AppError::invalid(format!(
+                        "Width and height must be between 64 and {}.",
+                        rec.max_side
+                    )));
                 }
                 let src = Size::new(w, h);
                 // Above the VRAM budget: render smaller, then enlarge to the exact size.
                 let area = cap(src.area(), &mut notes);
-                working = plan_working_canvas(src, &CanvasLimits { min_side: 64, ..limits(area, rec) });
+                working = plan_working_canvas(
+                    src,
+                    &CanvasLimits {
+                        min_side: 64,
+                        ..limits(area, rec)
+                    },
+                );
                 output = src;
             } else {
                 let (aspect, _label) = req
@@ -1050,19 +1283,33 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
             // Each reference at most the reference cap and never larger than the output.
             let ref_area = ref_cap.min(working.canvas.area());
             for (i, s) in refs.iter().enumerate() {
-                references.push(RefPlan { index: i, source: *s, canvas: ref_canvas(*s, ref_area, rec) });
+                references.push(RefPlan {
+                    index: i,
+                    source: *s,
+                    canvas: ref_canvas(*s, ref_area, rec),
+                });
             }
         }
         ResolvedMode::Edit | ResolvedMode::MultiReference => {
             let first = inputs.image_sizes[0];
             // Output shape: the chosen aspect ratio, else image 1's.
-            let chosen_aspect = req.aspect_ratio.as_deref().and_then(parse_aspect).map(|(a, _)| a);
+            let chosen_aspect = req
+                .aspect_ratio
+                .as_deref()
+                .and_then(parse_aspect)
+                .map(|(a, _)| a);
             let aspect = chosen_aspect.unwrap_or(first.width as f64 / first.height as f64);
-            let tier = matches!(req.resolution, ResolutionMode::K1 | ResolutionMode::K15 | ResolutionMode::K2);
+            let tier = matches!(
+                req.resolution,
+                ResolutionMode::K1 | ResolutionMode::K15 | ResolutionMode::K2
+            );
             let target = match (req.width, req.height) {
                 (Some(w), Some(h)) => {
                     if !(64..=rec.max_side).contains(&w) || !(64..=rec.max_side).contains(&h) {
-                        return Err(AppError::invalid(format!("Width and height must be between 64 and {}.", rec.max_side)));
+                        return Err(AppError::invalid(format!(
+                            "Width and height must be between 64 and {}.",
+                            rec.max_side
+                        )));
                     }
                     Size::new(w, h)
                 }
@@ -1088,30 +1335,58 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
             working = full;
             // Within 10 % of the cap (1 MP outputs, after alignment) the source keeps the
             // output's own canvas, as with Full.
-            let ref_area = if working.canvas.area() <= ref_cap.saturating_add(ref_cap / 10) { working.canvas.area() } else { ref_cap };
+            let ref_area = if working.canvas.area() <= ref_cap.saturating_add(ref_cap / 10) {
+                working.canvas.area()
+            } else {
+                ref_cap
+            };
             for (i, s) in inputs.image_sizes.iter().enumerate() {
-                let c = if i == 0 && *s == target && ref_area == working.canvas.area() { working } else { ref_canvas(*s, ref_area, rec) };
-                references.push(RefPlan { index: i, source: *s, canvas: c });
+                let c = if i == 0 && *s == target && ref_area == working.canvas.area() {
+                    working
+                } else {
+                    ref_canvas(*s, ref_area, rec)
+                };
+                references.push(RefPlan {
+                    index: i,
+                    source: *s,
+                    canvas: c,
+                });
             }
-            output = if req.preserve_dimensions || tier || chosen_aspect.is_some() { target } else { full.content };
+            output = if req.preserve_dimensions || tier || chosen_aspect.is_some() {
+                target
+            } else {
+                full.content
+            };
             strength = adv.strength.map(|s| s.clamp(0.0, 1.0));
         }
         ResolvedMode::Upscale => {
             let src = inputs.image_sizes[0];
             let spec = req.upscale.unwrap_or_default();
             output = upscale_target(src, &spec)?;
-            upscale = Some(UpscalePlan { method: spec.method, source: src });
+            upscale = Some(UpscalePlan {
+                method: spec.method,
+                source: src,
+            });
             // No diffusion: the upscaler model works on the source itself.
-            working = WorkingCanvas { source: src, content: src, canvas: src, content_offset: (0, 0), scale: 1.0 };
+            working = WorkingCanvas {
+                source: src,
+                content: src,
+                canvas: src,
+                content_offset: (0, 0),
+                scale: 1.0,
+            };
             steps = 0;
         }
         ResolvedMode::Inpaint => {
             let src = inputs.image_sizes[0];
-            let (mask_size, bbox, _) = inputs.mask.ok_or_else(|| AppError::invalid("Paint the area to change first."))?;
+            let (mask_size, bbox, _) = inputs
+                .mask
+                .ok_or_else(|| AppError::invalid("Paint the area to change first."))?;
             if mask_size != src {
                 notes.push("The mask was resized to match the image.".into());
             }
-            let bbox = bbox.ok_or_else(|| AppError::invalid("The mask is empty. Paint the area to change."))?;
+            let bbox = bbox
+                .ok_or_else(|| AppError::invalid("The mask is empty. Paint the area to change."))?;
             let sx = src.width as f64 / mask_size.width as f64;
             let sy = src.height as f64 / mask_size.height as f64;
             let bbox = Rect::new(
@@ -1124,24 +1399,48 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
             // smaller copy with the area marked. Full: both at the output's area (the server's
             // own resize), as before 0.9.4.
             let wanted = tier_area.unwrap_or(src.area());
-            let image1_share = if wanted > ref_cap.saturating_add(ref_cap / 10) { ref_cap as f64 / wanted as f64 } else { 1.0 };
+            let image1_share = if wanted > ref_cap.saturating_add(ref_cap / 10) {
+                ref_cap as f64 / wanted as f64
+            } else {
+                1.0
+            };
             let area = cap_for_refs(wanted, image1_share + INPAINT_GUIDE_AREA, &mut notes);
             // At least the working size of context around the mask, so the model sees the scene.
             let min_ctx = (area as f64).sqrt() as u32;
             let region = geometry::inpaint_region(src, bbox, min_ctx, 0.55);
-            let paint_area = area.min(((region.area() as f64 * INPAINT_MAX_ENLARGE) as u64).max(INPAINT_MIN_AREA));
-            let l = CanvasLimits { upscale_to_area: Some(paint_area), max_upscale: 4.0, ..limits(paint_area, rec) };
+            let paint_area = area
+                .min(((region.area() as f64 * INPAINT_MAX_ENLARGE) as u64).max(INPAINT_MIN_AREA));
+            let l = CanvasLimits {
+                upscale_to_area: Some(paint_area),
+                max_upscale: 4.0,
+                ..limits(paint_area, rec)
+            };
             working = plan_working_canvas(region.size(), &l);
             if region.size() != src {
-                notes.push(format!("Focused on a {}×{} area around the mask.", region.width, region.height));
+                notes.push(format!(
+                    "Focused on a {}×{} area around the mask.",
+                    region.width, region.height
+                ));
             }
             inpaint_region = Some(region);
             output = src;
             // The image being painted stays at the working size; only the model's view of it shrinks.
-            let image1 = if working.canvas.area() <= ref_cap.saturating_add(ref_cap / 10) { working } else { ref_canvas(region.size(), ref_cap, rec) };
-            references.push(RefPlan { index: 0, source: region.size(), canvas: image1 });
+            let image1 = if working.canvas.area() <= ref_cap.saturating_add(ref_cap / 10) {
+                working
+            } else {
+                ref_canvas(region.size(), ref_cap, rec)
+            };
+            references.push(RefPlan {
+                index: 0,
+                source: region.size(),
+                canvas: image1,
+            });
             let guide_area = (working.canvas.area() as f64 * INPAINT_GUIDE_AREA) as u64;
-            references.push(RefPlan { index: 0, source: region.size(), canvas: ref_canvas(region.size(), guide_area, rec) });
+            references.push(RefPlan {
+                index: 0,
+                source: region.size(),
+                canvas: ref_canvas(region.size(), guide_area, rec),
+            });
             strength = Some(adv.strength.unwrap_or(1.0).clamp(0.05, 1.0));
         }
         ResolvedMode::Outpaint => {
@@ -1150,9 +1449,14 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
                 Some(o) if o.left > 0.0 || o.right > 0.0 || o.top > 0.0 || o.bottom > 0.0 => {
                     expansion_to_pixels(src, o.left, o.right, o.top, o.bottom, o.units)
                 }
-                _ => outpaint_intent(&req.prompt, src).ok_or_else(|| AppError::invalid("Choose how far to expand the image."))?,
+                _ => outpaint_intent(&req.prompt, src)
+                    .ok_or_else(|| AppError::invalid("Choose how far to expand the image."))?,
             };
-            let final_area = Size::new(src.width + exp.left + exp.right, src.height + exp.top + exp.bottom).area();
+            let final_area = Size::new(
+                src.width + exp.left + exp.right,
+                src.height + exp.top + exp.bottom,
+            )
+            .area();
             let wanted = match req.resolution {
                 ResolutionMode::Source | ResolutionMode::Custom => final_area,
                 _ => tier_area.unwrap().min(final_area.max(256 * 256)),
@@ -1161,7 +1465,11 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
             let p = plan_outpaint(src, exp, &limits(area, rec), 32).map_err(AppError::invalid)?;
             working = p.working;
             output = p.final_size;
-            references.push(RefPlan { index: 0, source: src, canvas: ref_canvas(src, p.working.canvas.area(), rec) });
+            references.push(RefPlan {
+                index: 0,
+                source: src,
+                canvas: ref_canvas(src, p.working.canvas.area(), rec),
+            });
             outpaint = Some(p);
             strength = Some(adv.strength.unwrap_or(1.0).clamp(0.05, 1.0));
         }
@@ -1179,7 +1487,11 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
             working = plan_working_canvas(size, &limits(size.area(), rec));
             output = size;
             if !inputs.image_sizes.is_empty() {
-                references.push(RefPlan { index: 0, source: inputs.image_sizes[0], canvas: working });
+                references.push(RefPlan {
+                    index: 0,
+                    source: inputs.image_sizes[0],
+                    canvas: working,
+                });
             }
         }
     }
@@ -1187,9 +1499,16 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
     optimized |= sources_reduced;
     let quick_upscale = upscale.is_some();
     if !quick_upscale && !working.canvas.is_aligned(rec.align) {
-        return Err(AppError::new(ErrorCode::Internal, "Working size is not aligned.").detail(format!("{:?}", working.canvas)));
+        return Err(
+            AppError::new(ErrorCode::Internal, "Working size is not aligned.")
+                .detail(format!("{:?}", working.canvas)),
+        );
     }
-    let max_ref_area = references.iter().map(|r| r.canvas.canvas.area()).max().unwrap_or(0);
+    let max_ref_area = references
+        .iter()
+        .map(|r| r.canvas.canvas.area())
+        .max()
+        .unwrap_or(0);
     let total_area = working.canvas.area();
     // Untiled decodes are only planned from the card's memory on discrete GPUs of 23 GiB
     // and up. 12/16 GB cards and Macs keep the measured fixed thresholds and the server's
@@ -1197,17 +1516,28 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
     let is_video = mode == ResolvedMode::Video;
     let untile_from_memory = !is_video
         && !inputs.unified_memory
-        && inputs.vram_total_mib.is_some_and(|mib| mib >= UNTILED_VAE_MIN_VRAM_MIB);
+        && inputs
+            .vram_total_mib
+            .is_some_and(|mib| mib >= UNTILED_VAE_MIN_VRAM_MIB);
     let (auto_tiling, server_tiling) = if untile_from_memory {
         // `resident + area * bytes/pixel` must fit in this GPU's share of memory
         // (`max_untiled_vae_area`), up to about 1.5K: 2K and larger always tile.
         // Encoding the references and decoding the result are sequential phases, so each
         // is judged against the budget on its own rather than added together.
         let untiled_area = max_untiled_vae_area(inputs.vram_total_mib);
-        (total_area > untiled_area || max_ref_area > untiled_area, false)
+        (
+            total_area > untiled_area || max_ref_area > untiled_area,
+            false,
+        )
     } else {
-        let ref_tokens: u64 = references.iter().map(|r| r.canvas.canvas.area() / PIXELS_PER_TOKEN).sum();
-        (total_area > 1_600_000 || (ref_tokens * PIXELS_PER_TOKEN + total_area) > 6_000_000, inputs.server_vae_tiling)
+        let ref_tokens: u64 = references
+            .iter()
+            .map(|r| r.canvas.canvas.area() / PIXELS_PER_TOKEN)
+            .sum();
+        (
+            total_area > 1_600_000 || (ref_tokens * PIXELS_PER_TOKEN + total_area) > 6_000_000,
+            inputs.server_vae_tiling,
+        )
     };
     // The server's `--vae-tiling` is only a fallback on large GPUs: a decode within the
     // budget is sent with tiling turned off (only an explicit choice overrides).
@@ -1215,22 +1545,40 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
     let vae_tiling = if is_video {
         true
     } else {
-        adv.vae_tiling.unwrap_or(inputs.vulkan || server_tiling || auto_tiling)
+        adv.vae_tiling
+            .unwrap_or(inputs.vulkan || server_tiling || auto_tiling)
     };
-    if vae_tiling && adv.vae_tiling.is_none() && !inputs.server_vae_tiling && !inputs.vulkan && !quick_upscale {
+    if vae_tiling
+        && adv.vae_tiling.is_none()
+        && !inputs.server_vae_tiling
+        && !inputs.vulkan
+        && !quick_upscale
+    {
         optimized = true;
         notes.push("Memory optimization enabled for this size.".into());
     }
     // Large discrete GPUs: decode tiles shaped to the image (fewer, larger tiles); others keep
     // the server's square tiles.
-    let large_gpu = !inputs.unified_memory && inputs.vram_total_mib.map(|m| m as f64 / 1024.0 >= 15.0).unwrap_or(false);
+    let large_gpu = !inputs.unified_memory
+        && inputs
+            .vram_total_mib
+            .map(|m| m as f64 / 1024.0 >= 15.0)
+            .unwrap_or(false);
     let vae_tile = if inputs.vulkan {
         (vae_tiling && !quick_upscale).then_some((VULKAN_VAE_TILE, VULKAN_VAE_TILE))
     } else {
         (vae_tiling && large_gpu && !quick_upscale && total_area > LARGE_GPU_VAE_TILE_AREA)
             .then(|| vae_decode_tile(working.canvas, LARGE_GPU_VAE_TILE_AREA))
     };
-    if (working.content.area() as f64) < output.area() as f64 * 0.98 && matches!(mode, ResolvedMode::Generate | ResolvedMode::Edit | ResolvedMode::MultiReference | ResolvedMode::Compose) {
+    if (working.content.area() as f64) < output.area() as f64 * 0.98
+        && matches!(
+            mode,
+            ResolvedMode::Generate
+                | ResolvedMode::Edit
+                | ResolvedMode::MultiReference
+                | ResolvedMode::Compose
+        )
+    {
         notes.push(format!(
             "Rendered at {}×{}, then enlarged to {}×{} with {}.",
             working.content.width,
@@ -1242,12 +1590,27 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
     }
     // Results are enlarged with ESRGAN when the model exists (Lanczos otherwise).
     let enlarge = output.area() as f64 > working.content.area() as f64 * 1.21;
-    let mut estimated_seconds =
-        if quick_upscale { 2.0 } else { estimate_seconds(working.canvas, &references, steps, batch_count, inputs.sage_attention, cfg) };
+    let mut estimated_seconds = if quick_upscale {
+        2.0
+    } else {
+        estimate_seconds(
+            working.canvas,
+            &references,
+            steps,
+            batch_count,
+            inputs.sage_attention,
+            cfg,
+        )
+    };
     let mut upscale_seconds = 0.0;
     if inputs.upscaler.is_some() && (enlarge || quick_upscale) {
         let mosr = inputs.upscaler.as_deref().is_some_and(is_mosr);
-        upscale_seconds = esrgan_seconds(working.content.area(), inputs.upscale_tile, inputs.metal, mosr) * batch_count as f32;
+        upscale_seconds = esrgan_seconds(
+            working.content.area(),
+            inputs.upscale_tile,
+            inputs.metal,
+            mosr,
+        ) * batch_count as f32;
         estimated_seconds += upscale_seconds;
     }
     let upscale_share = upscale_seconds / estimated_seconds;
@@ -1262,7 +1625,11 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
         } else {
             ""
         };
-        if let Some(np) = req.negative_prompt.as_deref().filter(|s| !s.trim().is_empty()) {
+        if let Some(np) = req
+            .negative_prompt
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+        {
             format!("{np}{loop_neg}")
         } else {
             format!("static, blurry, hazy, washed out, low quality, distorted, deformed{loop_neg}")
@@ -1284,7 +1651,11 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
         content: working.content_rect(),
         steps,
         cfg,
-        sampler: adv.sampler.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| rec.sampler.clone()),
+        sampler: adv
+            .sampler
+            .clone()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| rec.sampler.clone()),
         strength,
         batch_count,
         vae_tiling,
@@ -1301,11 +1672,26 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
         estimated_seconds,
         upscale_share,
         upscaler: inputs.upscaler.clone(),
-        upscale_tile: if inputs.upscale_tile > 0 { inputs.upscale_tile } else { LARGE_UPSCALE_TILE },
+        upscale_tile: if inputs.upscale_tile > 0 {
+            inputs.upscale_tile
+        } else {
+            LARGE_UPSCALE_TILE
+        },
         upscale,
-        custom_sigmas: if quick_upscale || mode == ResolvedMode::Video { Vec::new() } else { TURBO_SIGMAS.to_vec() },
+        custom_sigmas: if quick_upscale || mode == ResolvedMode::Video {
+            Vec::new()
+        } else {
+            TURBO_SIGMAS.to_vec()
+        },
         vae_tile,
-        reference_detail: matches!(mode, ResolvedMode::Edit | ResolvedMode::MultiReference | ResolvedMode::Compose | ResolvedMode::Inpaint).then(|| adv.reference_detail.unwrap_or_default()),
+        reference_detail: matches!(
+            mode,
+            ResolvedMode::Edit
+                | ResolvedMode::MultiReference
+                | ResolvedMode::Compose
+                | ResolvedMode::Inpaint
+        )
+        .then(|| adv.reference_detail.unwrap_or_default()),
         video_frames: if mode == ResolvedMode::Video {
             let vpreset = crate::catalog::recommended_video_preset(inputs.vram_total_mib);
             Some(req.video_frames.unwrap_or(vpreset.default_frames))
@@ -1330,20 +1716,59 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
 mod tests {
     #[test]
     fn estimates_follow_the_measured_speed() {
-        let r = GenerationRequest { prompt: "a lighthouse at dusk".into(), ..Default::default() };
-        let base = PlanInputs { vram_total_mib: Some(16303), ..Default::default() };
-        let raw = plan(&r, &base, &RecommendedSettings::default()).unwrap().estimated_seconds;
+        let r = GenerationRequest {
+            prompt: "a lighthouse at dusk".into(),
+            ..Default::default()
+        };
+        let base = PlanInputs {
+            vram_total_mib: Some(16303),
+            ..Default::default()
+        };
+        let raw = plan(&r, &base, &RecommendedSettings::default())
+            .unwrap()
+            .estimated_seconds;
         assert!(raw > 0.0);
-        let slow = PlanInputs { speed_factor: Some(13.0), ..base.clone() };
+        let slow = PlanInputs {
+            speed_factor: Some(13.0),
+            ..base.clone()
+        };
         let s = plan(&r, &slow, &RecommendedSettings::default()).unwrap();
         assert!((s.estimated_seconds / raw - 13.0).abs() < 0.01);
-        assert!((backend_seconds(&s, false) - raw).abs() < 0.5, "the calibration compares against the uncalibrated backend time");
-        let unknown = PlanInputs { hide_uncalibrated: true, upscaler: Some("4xNomos2_hq_mosr".into()), ..base.clone() };
-        let u = plan(&GenerationRequest { quality: Quality::Quality, ..r.clone() }, &unknown, &RecommendedSettings::default()).unwrap();
+        assert!(
+            (backend_seconds(&s, false) - raw).abs() < 0.5,
+            "the calibration compares against the uncalibrated backend time"
+        );
+        let unknown = PlanInputs {
+            hide_uncalibrated: true,
+            upscaler: Some("4xNomos2_hq_mosr".into()),
+            ..base.clone()
+        };
+        let u = plan(
+            &GenerationRequest {
+                quality: Quality::Quality,
+                ..r.clone()
+            },
+            &unknown,
+            &RecommendedSettings::default(),
+        )
+        .unwrap();
         assert_eq!(u.estimated_seconds, 0.0, "unknown until measured");
-        assert!(u.upscale_share >= 0.0 && u.upscale_share < 1.0, "the share is known anyway: {}", u.upscale_share);
-        let known = PlanInputs { hide_uncalibrated: true, speed_factor: Some(2.0), ..base };
-        assert!(plan(&r, &known, &RecommendedSettings::default()).unwrap().estimated_seconds > 0.0);
+        assert!(
+            u.upscale_share >= 0.0 && u.upscale_share < 1.0,
+            "the share is known anyway: {}",
+            u.upscale_share
+        );
+        let known = PlanInputs {
+            hide_uncalibrated: true,
+            speed_factor: Some(2.0),
+            ..base
+        };
+        assert!(
+            plan(&r, &known, &RecommendedSettings::default())
+                .unwrap()
+                .estimated_seconds
+                > 0.0
+        );
     }
 
     #[test]
@@ -1359,10 +1784,23 @@ mod tests {
         assert_eq!(recommended_preset(Some(mac(64)), true).id, "32gb");
         assert_eq!(unified_memory_planning_mib(4096, te), 0, "never underflows");
         // The Mac names of the presets match what each memory size gets.
-        for (gb, id) in [(16, "12gb"), (24, "12gb"), (32, "16gb"), (36, "16gb"), (48, "24gb"), (64, "32gb"), (128, "32gb")] {
+        for (gb, id) in [
+            (16, "12gb"),
+            (24, "12gb"),
+            (32, "16gb"),
+            (36, "16gb"),
+            (48, "24gb"),
+            (64, "32gb"),
+            (128, "32gb"),
+        ] {
             let p = recommended_preset(Some(mac(gb)), true);
             assert_eq!(p.id, id, "{gb} GB Mac");
-            assert!(p.unified_label.contains(&gb.to_string()) || (gb > 64 && p.unified_label.contains('+')), "{gb} GB Mac labelled {}", p.unified_label);
+            assert!(
+                p.unified_label.contains(&gb.to_string())
+                    || (gb > 64 && p.unified_label.contains('+')),
+                "{gb} GB Mac labelled {}",
+                p.unified_label
+            );
         }
     }
 
@@ -1372,10 +1810,20 @@ mod tests {
         RecommendedSettings::default()
     }
     fn req(prompt: &str) -> GenerationRequest {
-        GenerationRequest { prompt: prompt.into(), preserve_dimensions: true, quality: Quality::Balanced, ..Default::default() }
+        GenerationRequest {
+            prompt: prompt.into(),
+            preserve_dimensions: true,
+            quality: Quality::Balanced,
+            ..Default::default()
+        }
     }
     fn inputs(sizes: &[(u32, u32)]) -> PlanInputs {
-        PlanInputs { image_sizes: sizes.iter().map(|(w, h)| Size::new(*w, *h)).collect(), mask: None, vram_total_mib: Some(16303), ..Default::default() }
+        PlanInputs {
+            image_sizes: sizes.iter().map(|(w, h)| Size::new(*w, *h)).collect(),
+            mask: None,
+            vram_total_mib: Some(16303),
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -1385,14 +1833,22 @@ mod tests {
         assert!(p.auto_mode);
         assert_eq!(p.output, Size::new(1536, 1536), "Balanced = 1.5K");
         assert_eq!(p.working, Size::new(1536, 1536));
-        assert_eq!((p.steps, p.cfg, p.sampler.as_str()), (8, 1.0, "euler"), "Turbo: 8 steps, no CFG (official)");
+        assert_eq!(
+            (p.steps, p.cfg, p.sampler.as_str()),
+            (8, 1.0, "euler"),
+            "Turbo: 8 steps, no CFG (official)"
+        );
         assert!(p.vae_tiling, "1.5K is above a 16 GB card's untiled budget");
         assert!(p.references.is_empty());
     }
 
     #[test]
     fn every_job_runs_turbos_schedule() {
-        assert_eq!(GenerationRequest::default().quality, Quality::Fast, "the default");
+        assert_eq!(
+            GenerationRequest::default().quality,
+            Quality::Fast,
+            "the default"
+        );
         for q in [Quality::Fast, Quality::Balanced, Quality::Quality] {
             for sizes in [&[][..], &[(1200, 800)][..], &[(1200, 800), (900, 900)][..]] {
                 let mut r = req("a lighthouse at dusk");
@@ -1403,19 +1859,44 @@ mod tests {
             }
         }
         let r = req("a lighthouse at dusk");
-        assert_eq!(plan(&GenerationRequest { quality: Quality::Fast, ..r }, &inputs(&[]), &rec()).unwrap().working, Size::new(1024, 1024), "Fast = ~1 MP");
+        assert_eq!(
+            plan(
+                &GenerationRequest {
+                    quality: Quality::Fast,
+                    ..r
+                },
+                &inputs(&[]),
+                &rec()
+            )
+            .unwrap()
+            .working,
+            Size::new(1024, 1024),
+            "Fast = ~1 MP"
+        );
         // Older clients' quality names still load.
         let q = |s: &str| serde_json::from_str::<Quality>(s).unwrap();
-        assert_eq!((q(r#""turbo""#), q(r#""ultra""#), q(r#""quality""#)), (Quality::Fast, Quality::Quality, Quality::Quality));
+        assert_eq!(
+            (q(r#""turbo""#), q(r#""ultra""#), q(r#""quality""#)),
+            (Quality::Fast, Quality::Quality, Quality::Quality)
+        );
     }
 
     #[test]
     fn mac_fast_renders_the_full_size() {
-        let mac = |sizes: &[(u32, u32)]| PlanInputs { unified_memory: true, vram_total_mib: Some(4600), upscaler: Some("4xNomos2_hq_mosr".into()), ..inputs(sizes) };
+        let mac = |sizes: &[(u32, u32)]| PlanInputs {
+            unified_memory: true,
+            vram_total_mib: Some(4600),
+            upscaler: Some("4xNomos2_hq_mosr".into()),
+            ..inputs(sizes)
+        };
         let mut r = req("a lighthouse at dusk");
         r.quality = Quality::Fast;
         let p = plan(&r, &mac(&[]), &rec()).unwrap();
-        assert_eq!((p.output, p.working), (Size::new(1024, 1024), Size::new(1024, 1024)), "no smaller render + upscale");
+        assert_eq!(
+            (p.output, p.working),
+            (Size::new(1024, 1024), Size::new(1024, 1024)),
+            "no smaller render + upscale"
+        );
         assert!(p.upscale.is_none());
         let p = plan(&r, &mac(&[(1024, 768)]), &rec()).unwrap();
         assert_eq!(p.output, Size::new(1024, 768));
@@ -1427,14 +1908,32 @@ mod tests {
         let mut r = req("a lighthouse at dusk");
         r.negative_prompt = Some("blurry".into());
         let p = plan(&r, &inputs(&[]), &rec()).unwrap();
-        assert_eq!(p.negative_prompt, "blurry", "still sent; the server ignores it at CFG 1");
-        assert!(p.notes.iter().any(|n| n.contains("negative prompt is ignored")));
-        assert!(!plan(&req("a fox"), &inputs(&[]), &rec()).unwrap().notes.iter().any(|n| n.contains("negative prompt")));
+        assert_eq!(
+            p.negative_prompt, "blurry",
+            "still sent; the server ignores it at CFG 1"
+        );
+        assert!(
+            p.notes
+                .iter()
+                .any(|n| n.contains("negative prompt is ignored"))
+        );
+        assert!(
+            !plan(&req("a fox"), &inputs(&[]), &rec())
+                .unwrap()
+                .notes
+                .iter()
+                .any(|n| n.contains("negative prompt"))
+        );
     }
 
     #[test]
     fn prompt_implies_aspect() {
-        let p = plan(&req("Generate a hero image for the landing page, 16:9"), &inputs(&[]), &rec()).unwrap();
+        let p = plan(
+            &req("Generate a hero image for the landing page, 16:9"),
+            &inputs(&[]),
+            &rec(),
+        )
+        .unwrap();
         assert_eq!(p.output, Size::new(2048, 1152));
         let p = plan(&req("a phone wallpaper of mountains"), &inputs(&[]), &rec()).unwrap();
         assert!(p.output.height > p.output.width);
@@ -1458,16 +1957,28 @@ mod tests {
         assert!(p.output.area() <= 1_100_000);
         r.quality = Quality::Balanced;
         let p = plan(&r, &inputs(&[]), &rec()).unwrap();
-        assert!(p.output.area() > 1_100_000 && p.output.area() <= 1536 * 1536 * 102 / 100, "Balanced = about 1.5K");
+        assert!(
+            p.output.area() > 1_100_000 && p.output.area() <= 1536 * 1536 * 102 / 100,
+            "Balanced = about 1.5K"
+        );
         r.quality = Quality::Quality;
         let p = plan(&r, &inputs(&[]), &rec()).unwrap();
-        assert_eq!(p.working, Size::new(2752, 1536), "Quality = official native 2K bucket");
+        assert_eq!(
+            p.working,
+            Size::new(2752, 1536),
+            "Quality = official native 2K bucket"
+        );
         assert_eq!(p.output, p.working);
     }
 
     #[test]
     fn single_image_means_edit_and_preserves_dimensions() {
-        let p = plan(&req("change the red car to a black Porsche"), &inputs(&[(1920, 1080)]), &rec()).unwrap();
+        let p = plan(
+            &req("change the red car to a black Porsche"),
+            &inputs(&[(1920, 1080)]),
+            &rec(),
+        )
+        .unwrap();
         assert_eq!(p.mode, ResolvedMode::Edit);
         assert_eq!(p.output, Size::new(1920, 1080));
         assert!(p.working.is_aligned(32));
@@ -1476,8 +1987,15 @@ mod tests {
         assert_eq!(p.references.len(), 1);
         // Standard detail (default): the source is given at ~1 MP, same shape.
         let rc = p.references[0].canvas;
-        assert!(rc.canvas.area() <= STANDARD_REFERENCE_AREA, "{:?}", rc.canvas);
-        assert!((rc.content.width as f64 / rc.content.height as f64 / (1920.0 / 1080.0) - 1.0).abs() < 0.02);
+        assert!(
+            rc.canvas.area() <= STANDARD_REFERENCE_AREA,
+            "{:?}",
+            rc.canvas
+        );
+        assert!(
+            (rc.content.width as f64 / rc.content.height as f64 / (1920.0 / 1080.0) - 1.0).abs()
+                < 0.02
+        );
         assert_eq!(p.reference_detail, Some(ReferenceDetail::Standard));
         assert!(p.strength.is_none());
         assert_eq!(p.cfg, 1.0, "official: edits run without CFG too");
@@ -1514,7 +2032,10 @@ mod tests {
         // Standard detail: a 1 MP reference leaves ~3 MP for the image being drawn.
         assert!(p.references[0].canvas.canvas.area() <= STANDARD_REFERENCE_AREA);
         assert!(p.working.area() > 2_900_000, "{:?}", p.working);
-        assert!((p.working.area() + p.references[0].canvas.canvas.area()) as f64 <= budget, "target + reference share the budget");
+        assert!(
+            (p.working.area() + p.references[0].canvas.canvas.area()) as f64 <= budget,
+            "target + reference share the budget"
+        );
         assert_eq!(p.output, Size::new(4032, 3024));
         assert!(p.notes.iter().any(|n| n.contains("enlarged to 4032×3024")));
         // Full detail: the reference takes the output's canvas, half the budget each.
@@ -1526,22 +2047,38 @@ mod tests {
     }
 
     fn env(upscaler: bool) -> PlanInputs {
-        PlanInputs { upscaler: upscaler.then(|| "4xNomos2_hq_mosr".to_string()), sage_attention: true, ..inputs(&[]) }
+        PlanInputs {
+            upscaler: upscaler.then(|| "4xNomos2_hq_mosr".to_string()),
+            sage_attention: true,
+            ..inputs(&[])
+        }
     }
 
     #[test]
     fn generation_is_always_one_pass() {
         // Any size: one diffusion pass within the budget.
-        for (res, aspect) in [(ResolutionMode::Auto, "16:9"), (ResolutionMode::K15, "1:1"), (ResolutionMode::K2, "9:16")] {
+        for (res, aspect) in [
+            (ResolutionMode::Auto, "16:9"),
+            (ResolutionMode::K15, "1:1"),
+            (ResolutionMode::K2, "9:16"),
+        ] {
             for q in [Quality::Fast, Quality::Balanced, Quality::Quality] {
                 let mut r = req("a cozy mountain cabin");
                 r.aspect_ratio = Some(aspect.into());
                 r.resolution = res;
                 r.quality = q;
                 let p = plan(&r, &env(true), &rec()).unwrap();
-                assert!(!p.notes.iter().any(|n| n.contains("Two passes")), "{res:?} {aspect} {q:?}");
+                assert!(
+                    !p.notes.iter().any(|n| n.contains("Two passes")),
+                    "{res:?} {aspect} {q:?}"
+                );
                 assert!(p.working.is_aligned(32));
-                assert!(p.working.area() as f64 <= (planning_token_budget(Some(16303), false) * 256) as f64 * 1.02, "{:?}", p.working);
+                assert!(
+                    p.working.area() as f64
+                        <= (planning_token_budget(Some(16303), false) * 256) as f64 * 1.02,
+                    "{:?}",
+                    p.working
+                );
             }
         }
     }
@@ -1562,15 +2099,35 @@ mod tests {
         r.width = Some(3840);
         r.height = Some(2160);
         let p = plan(&r, &env(true), &rec()).unwrap();
-        assert_eq!(p.output, Size::new(3840, 2160), "exact requested size is delivered");
-        assert!(p.working.area() as f64 <= (planning_token_budget(Some(16303), false) * 256) as f64 * 1.02, "alignment padding only");
-        assert!((p.content.width as f64 / p.content.height as f64 / (3840.0 / 2160.0) - 1.0).abs() < 0.01);
-        assert!(p.notes.iter().any(|n| n.contains("enlarged to 3840×2160 with 4xNomos2_hq_mosr")), "{:?}", p.notes);
+        assert_eq!(
+            p.output,
+            Size::new(3840, 2160),
+            "exact requested size is delivered"
+        );
+        assert!(
+            p.working.area() as f64
+                <= (planning_token_budget(Some(16303), false) * 256) as f64 * 1.02,
+            "alignment padding only"
+        );
+        assert!(
+            (p.content.width as f64 / p.content.height as f64 / (3840.0 / 2160.0) - 1.0).abs()
+                < 0.01
+        );
+        assert!(
+            p.notes
+                .iter()
+                .any(|n| n.contains("enlarged to 3840×2160 with 4xNomos2_hq_mosr")),
+            "{:?}",
+            p.notes
+        );
     }
 
     #[test]
     fn edits_are_one_pass_and_enlarged_to_the_source() {
-        let i = PlanInputs { image_sizes: vec![Size::new(5120, 2880)], ..env(true) };
+        let i = PlanInputs {
+            image_sizes: vec![Size::new(5120, 2880)],
+            ..env(true)
+        };
         let mut r = req("make it a dark version");
         r.quality = Quality::Fast;
         let p = plan(&r, &i, &rec()).unwrap();
@@ -1580,11 +2137,26 @@ mod tests {
         assert_eq!(p.output, Size::new(5120, 2880));
         assert_eq!((p.steps, p.cfg), (8, 1.0));
         let esrgan = p.estimated_seconds;
-        let p2 = plan(&r, &PlanInputs { upscaler: None, ..i.clone() }, &rec()).unwrap();
-        assert!(esrgan > p2.estimated_seconds, "the enlargement is included in the estimate");
+        let p2 = plan(
+            &r,
+            &PlanInputs {
+                upscaler: None,
+                ..i.clone()
+            },
+            &rec(),
+        )
+        .unwrap();
+        assert!(
+            esrgan > p2.estimated_seconds,
+            "the enlargement is included in the estimate"
+        );
         assert!(p2.notes.iter().any(|n| n.ends_with("with Lanczos.")));
         // Its share of the time, for the progress: the part added by the upscaler.
-        assert!((p.upscale_share - (esrgan - p2.estimated_seconds) / esrgan).abs() < 1e-4, "{}", p.upscale_share);
+        assert!(
+            (p.upscale_share - (esrgan - p2.estimated_seconds) / esrgan).abs() < 1e-4,
+            "{}",
+            p.upscale_share
+        );
         assert_eq!(p2.upscale_share, 0.0, "Lanczos takes no time worth showing");
     }
 
@@ -1592,10 +2164,17 @@ mod tests {
     fn quality_edit_shares_the_2k_budget_with_its_reference() {
         let mut r = req("remove the people");
         r.quality = Quality::Quality;
-        let i = PlanInputs { image_sizes: vec![Size::new(5712, 4284)], ..env(true) };
+        let i = PlanInputs {
+            image_sizes: vec![Size::new(5712, 4284)],
+            ..env(true)
+        };
         // Standard detail on 16 GB: 1 MP reference and the full native 2K area (~4.2 MP) drawn.
         let p = plan(&r, &i, &rec()).unwrap();
-        assert!((4_100_000..=4_300_000).contains(&p.working.area()), "{:?}", p.working);
+        assert!(
+            (4_100_000..=4_300_000).contains(&p.working.area()),
+            "{:?}",
+            p.working
+        );
         assert!(p.references[0].canvas.canvas.area() <= STANDARD_REFERENCE_AREA);
         assert_eq!(p.output, Size::new(5712, 4284));
         r.advanced.reference_detail = Some(ReferenceDetail::Full);
@@ -1603,10 +2182,20 @@ mod tests {
         assert_eq!((p.steps, p.cfg), (8, 1.0));
         // Full: native 2K plus a 2K reference exceeds 16 GB, so both get half the budget (~2.65 MP each).
         // Each side rounds to 32 px, so allow the same 5 % slack as many_references_share_the_budget.
-        assert!((2_450_000..=2_800_000).contains(&p.working.area()), "{:?}", p.working);
-        assert_eq!(p.references[0].canvas.canvas, p.working, "the model sees the source at the canvas size");
+        assert!(
+            (2_450_000..=2_800_000).contains(&p.working.area()),
+            "{:?}",
+            p.working
+        );
+        assert_eq!(
+            p.references[0].canvas.canvas, p.working,
+            "the model sees the source at the canvas size"
+        );
         assert!(p.notes.iter().any(|n| n.contains("Resolution reduced")));
-        assert!((p.working.area() + p.references[0].canvas.canvas.area()) as f64 <= (planning_token_budget(Some(16303), false) * PIXELS_PER_TOKEN) as f64 * 1.05);
+        assert!(
+            (p.working.area() + p.references[0].canvas.canvas.area()) as f64
+                <= (planning_token_budget(Some(16303), false) * PIXELS_PER_TOKEN) as f64 * 1.05
+        );
         assert_eq!(p.output, Size::new(5712, 4284));
     }
 
@@ -1619,13 +2208,31 @@ mod tests {
         let p = plan(&r, &inputs(&[(800, 800), (800, 800)]), &rec()).unwrap();
         assert_eq!(p.mode, ResolvedMode::MultiReference);
         assert_eq!(p.output, Size::new(1536, 1536));
-        assert!(p.working.area() > 1_500_000, "small references leave room for the target: {:?}", p.working);
-        assert!((p.working.area() + p.references.iter().map(|r| r.canvas.canvas.area()).sum::<u64>()) as f64 <= budget);
+        assert!(
+            p.working.area() > 1_500_000,
+            "small references leave room for the target: {:?}",
+            p.working
+        );
+        assert!(
+            (p.working.area()
+                + p.references
+                    .iter()
+                    .map(|r| r.canvas.canvas.area())
+                    .sum::<u64>()) as f64
+                <= budget
+        );
         r.resolution = ResolutionMode::K2;
         r.aspect_ratio = Some("16:9".into());
         let p = plan(&r, &inputs(&[(800, 800), (600, 900)]), &rec()).unwrap();
         assert_eq!(p.output, Size::new(2752, 1536), "official 2K bucket");
-        assert!((p.working.area() + p.references.iter().map(|r| r.canvas.canvas.area()).sum::<u64>()) as f64 <= budget);
+        assert!(
+            (p.working.area()
+                + p.references
+                    .iter()
+                    .map(|r| r.canvas.canvas.area())
+                    .sum::<u64>()) as f64
+                <= budget
+        );
         let a = p.content.width as f64 / p.content.height as f64;
         assert!((a / (16.0 / 9.0) - 1.0).abs() < 0.02);
         // A single small photo edited at 1K.
@@ -1633,7 +2240,11 @@ mod tests {
         r.resolution = ResolutionMode::K1;
         let p = plan(&r, &inputs(&[(640, 480)]), &rec()).unwrap();
         assert_eq!(p.mode, ResolvedMode::Edit);
-        assert!((1_000_000..=1_100_000).contains(&p.output.area()), "{:?}", p.output);
+        assert!(
+            (1_000_000..=1_100_000).contains(&p.output.area()),
+            "{:?}",
+            p.output
+        );
         assert!((p.output.width as f64 / p.output.height as f64 / (4.0 / 3.0) - 1.0).abs() < 0.02);
     }
 
@@ -1644,7 +2255,10 @@ mod tests {
         let p = plan(&r, &inputs(&[(1024, 1024)]), &rec()).unwrap();
         assert_eq!(p.mode, ResolvedMode::Edit);
         assert!(p.output.width > p.output.height);
-        assert!((p.output.area() as f64 / (1024.0 * 1024.0) - 1.0).abs() < 0.05, "Auto keeps the source's pixel count");
+        assert!(
+            (p.output.area() as f64 / (1024.0 * 1024.0) - 1.0).abs() < 0.05,
+            "Auto keeps the source's pixel count"
+        );
         let mut r = req("same scene, poster");
         r.resolution = ResolutionMode::Custom;
         (r.width, r.height) = (Some(1200), Some(1800));
@@ -1658,25 +2272,93 @@ mod tests {
     fn many_references_share_the_budget() {
         let mut r = req("combine");
         r.resolution = ResolutionMode::Source;
-        let i = PlanInputs { image_sizes: vec![Size::new(3000, 2000), Size::new(2000, 2000), Size::new(2000, 2000)], ..env(true) };
+        let i = PlanInputs {
+            image_sizes: vec![
+                Size::new(3000, 2000),
+                Size::new(2000, 2000),
+                Size::new(2000, 2000),
+            ],
+            ..env(true)
+        };
         let p = plan(&r, &i, &rec()).unwrap();
         assert!(p.optimized_for_vram);
-        let total: u64 = p.working.area() + p.references.iter().map(|r| r.canvas.canvas.area()).sum::<u64>();
-        assert!(total as f64 <= (planning_token_budget(Some(16303), false) * 256) as f64 * 1.05, "{total}");
+        let total: u64 = p.working.area()
+            + p.references
+                .iter()
+                .map(|r| r.canvas.canvas.area())
+                .sum::<u64>();
+        assert!(
+            total as f64 <= (planning_token_budget(Some(16303), false) * 256) as f64 * 1.05,
+            "{total}"
+        );
     }
 
     #[test]
     fn upscale_targets() {
         let src = Size::new(1376, 768);
         let t = |spec: UpscaleSpec| upscale_target(src, &spec);
-        assert_eq!(t(UpscaleSpec::default()).unwrap(), Size::new(2752, 1536), "default 2x");
-        assert_eq!(t(UpscaleSpec { scale: Some(4.0), ..Default::default() }).unwrap(), Size::new(5504, 3072));
-        assert_eq!(t(UpscaleSpec { width: Some(3840), ..Default::default() }).unwrap(), Size::new(3840, 2143));
-        assert_eq!(t(UpscaleSpec { height: Some(2880), ..Default::default() }).unwrap(), Size::new(5160, 2880));
-        assert_eq!(t(UpscaleSpec { width: Some(5120), height: Some(2880), ..Default::default() }).unwrap(), Size::new(5120, 2880));
-        assert!(t(UpscaleSpec { scale: Some(8.0), ..Default::default() }).is_err(), "over 8192 px");
-        assert!(t(UpscaleSpec { width: Some(8000), height: Some(8000), ..Default::default() }).is_err(), "over 40 MP");
-        assert!(t(UpscaleSpec { scale: Some(-1.0), ..Default::default() }).is_err());
+        assert_eq!(
+            t(UpscaleSpec::default()).unwrap(),
+            Size::new(2752, 1536),
+            "default 2x"
+        );
+        assert_eq!(
+            t(UpscaleSpec {
+                scale: Some(4.0),
+                ..Default::default()
+            })
+            .unwrap(),
+            Size::new(5504, 3072)
+        );
+        assert_eq!(
+            t(UpscaleSpec {
+                width: Some(3840),
+                ..Default::default()
+            })
+            .unwrap(),
+            Size::new(3840, 2143)
+        );
+        assert_eq!(
+            t(UpscaleSpec {
+                height: Some(2880),
+                ..Default::default()
+            })
+            .unwrap(),
+            Size::new(5160, 2880)
+        );
+        assert_eq!(
+            t(UpscaleSpec {
+                width: Some(5120),
+                height: Some(2880),
+                ..Default::default()
+            })
+            .unwrap(),
+            Size::new(5120, 2880)
+        );
+        assert!(
+            t(UpscaleSpec {
+                scale: Some(8.0),
+                ..Default::default()
+            })
+            .is_err(),
+            "over 8192 px"
+        );
+        assert!(
+            t(UpscaleSpec {
+                width: Some(8000),
+                height: Some(8000),
+                ..Default::default()
+            })
+            .is_err(),
+            "over 40 MP"
+        );
+        assert!(
+            t(UpscaleSpec {
+                scale: Some(-1.0),
+                ..Default::default()
+            })
+            .is_err()
+        );
     }
 
     #[test]
@@ -1685,12 +2367,28 @@ mod tests {
         assert_eq!(upscale_tile(0, Some(16_303), m), 768, "16 GB card");
         assert_eq!(upscale_tile(0, Some(12_282), m), 256, "12 GB card");
         assert_eq!(upscale_tile(0, Some(8_192), m), 256);
-        assert_eq!(upscale_tile(0, None, m), 768, "unknown GPU: the default preset's");
+        assert_eq!(
+            upscale_tile(0, None, m),
+            768,
+            "unknown GPU: the default preset's"
+        );
         assert_eq!(upscale_tile(0, Some(LARGE_UPSCALE_TILE_MIB), m), 768);
         assert_eq!(upscale_tile(512, Some(8_192), m), 512, "the setting wins");
-        assert_eq!(upscale_tile(0, Some(16_303), "4x_NMKD-Superscale-SP_178000_G"), 128, "ESRGAN");
+        assert_eq!(
+            upscale_tile(0, Some(16_303), "4x_NMKD-Superscale-SP_178000_G"),
+            128,
+            "ESRGAN"
+        );
         // Planned with the job, so the engine and the estimate agree.
-        let p = plan(&req("a lighthouse"), &PlanInputs { upscale_tile: 256, ..env(true) }, &rec()).unwrap();
+        let p = plan(
+            &req("a lighthouse"),
+            &PlanInputs {
+                upscale_tile: 256,
+                ..env(true)
+            },
+            &rec(),
+        )
+        .unwrap();
         assert_eq!(p.upscale_tile, 256);
     }
 
@@ -1702,18 +2400,64 @@ mod tests {
         assert!((esrgan_seconds(mp, 256, false, true) - 5.0).abs() < 0.6);
         assert!((esrgan_seconds(mp, 768, true, true) - 54.6).abs() < 3.0);
         assert!(esrgan_seconds(mp, 256, true, true) > esrgan_seconds(mp, 768, true, true));
-        assert!((esrgan_seconds(mp, 128, false, false) - 13.2).abs() < 1.0, "Superscale-SP");
-        let r = GenerationRequest { mode: Mode::Upscale, upscale: Some(UpscaleSpec { scale: Some(2.0), ..Default::default() }), ..Default::default() };
-        let i = PlanInputs { image_sizes: vec![Size::new(1472, 1472)], upscale_tile: 768, upscaler: Some("4xNomos2_hq_mosr".into()), ..env(true) };
-        let (pc, mac) = (plan(&r, &i, &rec()).unwrap(), plan(&r, &PlanInputs { metal: true, ..i.clone() }, &rec()).unwrap());
-        assert!(mac.estimated_seconds > pc.estimated_seconds * 5.0, "{} vs {}", mac.estimated_seconds, pc.estimated_seconds);
-        assert!(pc.upscale_share > 0.5 && mac.upscale_share > 0.9, "an upscale is mostly upscaler: {} {}", pc.upscale_share, mac.upscale_share);
+        assert!(
+            (esrgan_seconds(mp, 128, false, false) - 13.2).abs() < 1.0,
+            "Superscale-SP"
+        );
+        let r = GenerationRequest {
+            mode: Mode::Upscale,
+            upscale: Some(UpscaleSpec {
+                scale: Some(2.0),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let i = PlanInputs {
+            image_sizes: vec![Size::new(1472, 1472)],
+            upscale_tile: 768,
+            upscaler: Some("4xNomos2_hq_mosr".into()),
+            ..env(true)
+        };
+        let (pc, mac) = (
+            plan(&r, &i, &rec()).unwrap(),
+            plan(
+                &r,
+                &PlanInputs {
+                    metal: true,
+                    ..i.clone()
+                },
+                &rec(),
+            )
+            .unwrap(),
+        );
+        assert!(
+            mac.estimated_seconds > pc.estimated_seconds * 5.0,
+            "{} vs {}",
+            mac.estimated_seconds,
+            pc.estimated_seconds
+        );
+        assert!(
+            pc.upscale_share > 0.5 && mac.upscale_share > 0.9,
+            "an upscale is mostly upscaler: {} {}",
+            pc.upscale_share,
+            mac.upscale_share
+        );
     }
 
     #[test]
     fn upscale_plans() {
-        let mut r = GenerationRequest { mode: Mode::Upscale, upscale: Some(UpscaleSpec { scale: Some(2.0), ..Default::default() }), ..Default::default() };
-        let i = PlanInputs { image_sizes: vec![Size::new(1376, 768)], ..env(true) };
+        let mut r = GenerationRequest {
+            mode: Mode::Upscale,
+            upscale: Some(UpscaleSpec {
+                scale: Some(2.0),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let i = PlanInputs {
+            image_sizes: vec![Size::new(1376, 768)],
+            ..env(true)
+        };
         let p = plan(&r, &i, &rec()).unwrap();
         assert_eq!(p.mode, ResolvedMode::Upscale);
         assert_eq!(p.output, Size::new(2752, 1536));
@@ -1728,20 +2472,38 @@ mod tests {
 
     #[test]
     fn server_vae_tiling_is_reflected_in_the_plan() {
-        let i = PlanInputs { server_vae_tiling: true, ..inputs(&[]) };
+        let i = PlanInputs {
+            server_vae_tiling: true,
+            ..inputs(&[])
+        };
         let p = plan(&req("a fox"), &i, &rec()).unwrap();
         assert!(p.vae_tiling, "16 GB keeps the server's tiling");
-        assert!(!p.notes.iter().any(|n| n.contains("Memory optimization")), "nothing to announce");
+        assert!(
+            !p.notes.iter().any(|n| n.contains("Memory optimization")),
+            "nothing to announce"
+        );
         let mut r = req("a fox");
         r.advanced.vae_tiling = Some(false);
-        assert!(!plan(&r, &i, &rec()).unwrap().vae_tiling, "explicit off wins");
+        assert!(
+            !plan(&r, &i, &rec()).unwrap().vae_tiling,
+            "explicit off wins"
+        );
         let mut r = req("a fox");
         r.quality = Quality::Fast;
-        assert!(plan(&r, &i, &rec()).unwrap().vae_tiling, "16 GB: the server still tiles the 1 MP decode");
+        assert!(
+            plan(&r, &i, &rec()).unwrap().vae_tiling,
+            "16 GB: the server still tiles the 1 MP decode"
+        );
         // On 23 GiB and up, --vae-tiling is only a fallback: a decode within the budget
         // runs untiled (the request then turns tiling off, see pipeline::vae_tiling_params).
-        let big = PlanInputs { vram_total_mib: Some(32_607), ..i };
-        assert!(!plan(&r, &big, &rec()).unwrap().vae_tiling, "1 MP fits: untiled even though the server tiles");
+        let big = PlanInputs {
+            vram_total_mib: Some(32_607),
+            ..i
+        };
+        assert!(
+            !plan(&r, &big, &rec()).unwrap().vae_tiling,
+            "1 MP fits: untiled even though the server tiles"
+        );
     }
 
     #[test]
@@ -1751,27 +2513,48 @@ mod tests {
         let at = |vram: Option<u64>, unified_memory: bool, quality: Quality| {
             let mut r = req("a lighthouse at dusk");
             r.quality = quality;
-            let i = PlanInputs { vram_total_mib: vram, unified_memory, server_vae_tiling: true, ..inputs(&[]) };
+            let i = PlanInputs {
+                vram_total_mib: vram,
+                unified_memory,
+                server_vae_tiling: true,
+                ..inputs(&[])
+            };
             plan(&r, &i, &rec()).unwrap().vae_tiling
         };
         // 32 GB (RTX 5090) untiles up to 1.5K; 2K always tiles (it saved only ~3 % for ~13 GB
         // more VRAM).
         assert!(!at(Some(32_607), false, Quality::Fast), "32 GB: 1 MP");
         assert!(!at(Some(32_607), false, Quality::Balanced), "32 GB: 1.5K");
-        assert!(at(Some(32_607), false, Quality::Quality), "32 GB: 2K still tiles");
+        assert!(
+            at(Some(32_607), false, Quality::Quality),
+            "32 GB: 2K still tiles"
+        );
         // 24 GB (RTX 4090) untiles Fast only: 1536² untiled ran out of memory with ~7.3 GB
         // used elsewhere. Below the 23 GiB gate (22 GiB) nothing changes.
         assert!(!at(Some(24_564), false, Quality::Fast), "24 GB: 1 MP");
-        assert!(at(Some(24_564), false, Quality::Balanced), "24 GB: 1.5K tiles");
+        assert!(
+            at(Some(24_564), false, Quality::Balanced),
+            "24 GB: 1.5K tiles"
+        );
         assert!(at(Some(24_564), false, Quality::Quality), "24 GB: 2K tiles");
-        assert!(at(Some(22 * 1024), false, Quality::Fast), "22 GiB: below the gate");
+        assert!(
+            at(Some(22 * 1024), false, Quality::Fast),
+            "22 GiB: below the gate"
+        );
         // Custom sizes between 1.5K and 2K (~4 MP, ~25 GB untiled) tile too.
         let mut r = req("a lighthouse at dusk");
         r.resolution = ResolutionMode::Custom;
         r.width = Some(2016);
         r.height = Some(2016);
-        let i = PlanInputs { vram_total_mib: Some(32_607), server_vae_tiling: true, ..inputs(&[]) };
-        assert!(plan(&r, &i, &rec()).unwrap().vae_tiling, "32 GB: 2016×2016 tiles");
+        let i = PlanInputs {
+            vram_total_mib: Some(32_607),
+            server_vae_tiling: true,
+            ..inputs(&[])
+        };
+        assert!(
+            plan(&r, &i, &rec()).unwrap().vae_tiling,
+            "32 GB: 2016×2016 tiles"
+        );
         // 16 GB (RTX 5070 Ti) and 12 GB keep today's behavior exactly.
         for vram in [16_303, 12_282] {
             for q in [Quality::Fast, Quality::Balanced, Quality::Quality] {
@@ -1785,30 +2568,54 @@ mod tests {
         let auto = |quality: Quality| {
             let mut r = req("a lighthouse at dusk");
             r.quality = quality;
-            let i = PlanInputs { vram_total_mib: Some(16_303), ..inputs(&[]) };
+            let i = PlanInputs {
+                vram_total_mib: Some(16_303),
+                ..inputs(&[])
+            };
             plan(&r, &i, &rec()).unwrap().vae_tiling
         };
-        assert!(!auto(Quality::Fast), "16 GB: 1 MP untiles with no server tiling");
+        assert!(
+            !auto(Quality::Fast),
+            "16 GB: 1 MP untiles with no server tiling"
+        );
         assert!(auto(Quality::Balanced), "16 GB: 1.5K");
         assert!(auto(Quality::Quality), "16 GB: 2K");
     }
 
     #[test]
     fn untiled_decode_budget_scales_with_vram() {
-        assert_eq!(max_untiled_vae_area(None), LARGE_GPU_VAE_TILE_AREA, "unknown GPU");
+        assert_eq!(
+            max_untiled_vae_area(None),
+            LARGE_GPU_VAE_TILE_AREA,
+            "unknown GPU"
+        );
         // 23–24 GB cards untile 1 MP but not 1.5K; 32 GB and up stop at about 1.5K, never 2K.
         for vram in [23 * 1024, 24_564] {
-            assert!((1376 * 768..1536 * 1536).contains(&max_untiled_vae_area(Some(vram))), "{vram} MiB");
+            assert!(
+                (1376 * 768..1536 * 1536).contains(&max_untiled_vae_area(Some(vram))),
+                "{vram} MiB"
+            );
         }
         for vram in [32_607, 96 * 1024] {
-            assert_eq!(max_untiled_vae_area(Some(vram)), UNTILED_VAE_MAX_AREA, "{vram} MiB");
+            assert_eq!(
+                max_untiled_vae_area(Some(vram)),
+                UNTILED_VAE_MAX_AREA,
+                "{vram} MiB"
+            );
         }
         const { assert!(UNTILED_VAE_MAX_AREA >= 1536 * 1536 && UNTILED_VAE_MAX_AREA < 2_500_000) };
         // The estimate covers the measured cold untiled peaks of sd-server on an RTX 5090.
-        let est_gib = |px: f64| VAE_DECODE_RESIDENT_MIB as f64 / 1024.0 + px * VAE_DECODE_BYTES_PER_PIXEL / (1u64 << 30) as f64;
+        let est_gib = |px: f64| {
+            VAE_DECODE_RESIDENT_MIB as f64 / 1024.0
+                + px * VAE_DECODE_BYTES_PER_PIXEL / (1u64 << 30) as f64
+        };
         assert!(est_gib(1024.0 * 1024.0) >= 11.7, "1 MP");
         assert!(est_gib(1536.0 * 1536.0) >= 16.5, "1.5K");
-        assert_eq!(max_untiled_vae_area(Some(4_608)), 0, "a 16 GB Mac's planning budget: nothing untiled");
+        assert_eq!(
+            max_untiled_vae_area(Some(4_608)),
+            0,
+            "a 16 GB Mac's planning budget: nothing untiled"
+        );
     }
 
     #[test]
@@ -1824,7 +2631,10 @@ mod tests {
         assert_eq!(idx, vec![0, 1, 2]);
         assert_eq!(p.references[0].source, Size::new(1080, 1920));
         assert_eq!(p.references[2].source, Size::new(4032, 3024));
-        assert!(p.output.height > p.output.width, "image 1 defines the output shape");
+        assert!(
+            p.output.height > p.output.width,
+            "image 1 defines the output shape"
+        );
         for r in &p.references {
             assert!(r.canvas.canvas.is_aligned(32));
             assert!(r.canvas.canvas.area() <= p.working.area());
@@ -1840,36 +2650,78 @@ mod tests {
         let sizes = [(480, 720), (1200, 1200)];
         let p = plan(&r, &inputs(&sizes), &rec()).unwrap();
         assert_eq!((p.mode, p.auto_mode), (ResolvedMode::Compose, false));
-        assert_eq!(p.output, Size::new(1536, 1536), "the preset's size, not image 1's");
+        assert_eq!(
+            p.output,
+            Size::new(1536, 1536),
+            "the preset's size, not image 1's"
+        );
         let idx: Vec<usize> = p.references.iter().map(|r| r.index).collect();
         assert_eq!(idx, vec![0, 1]);
         for x in &p.references {
-            assert!(x.canvas.canvas.area() <= STANDARD_REFERENCE_AREA && x.canvas.canvas.is_aligned(32));
+            assert!(
+                x.canvas.canvas.area() <= STANDARD_REFERENCE_AREA && x.canvas.canvas.is_aligned(32)
+            );
         }
-        assert!((p.working.area() + p.references.iter().map(|r| r.canvas.canvas.area()).sum::<u64>()) as f64 <= budget);
+        assert!(
+            (p.working.area()
+                + p.references
+                    .iter()
+                    .map(|r| r.canvas.canvas.area())
+                    .sum::<u64>()) as f64
+                <= budget
+        );
         assert_eq!(p.reference_detail, Some(ReferenceDetail::Standard));
         assert_eq!(p.strength, None);
         // The chosen ratio, a ratio in the prompt and an exact size all apply, as in text-to-image.
         r.aspect_ratio = Some("16:9".into());
         let p = plan(&r, &inputs(&sizes), &rec()).unwrap();
-        assert!((p.output.width as f64 / p.output.height as f64 / (16.0 / 9.0) - 1.0).abs() < 0.02, "{:?}", p.output);
+        assert!(
+            (p.output.width as f64 / p.output.height as f64 / (16.0 / 9.0) - 1.0).abs() < 0.02,
+            "{:?}",
+            p.output
+        );
         r.aspect_ratio = None;
         r.prompt = "poster 9:16 of the person from image 1".into();
-        assert!(plan(&r, &inputs(&sizes), &rec()).unwrap().output.height > plan(&r, &inputs(&sizes), &rec()).unwrap().output.width);
+        assert!(
+            plan(&r, &inputs(&sizes), &rec()).unwrap().output.height
+                > plan(&r, &inputs(&sizes), &rec()).unwrap().output.width
+        );
         r.resolution = ResolutionMode::Custom;
         (r.width, r.height) = (Some(1200), Some(800));
-        assert_eq!(plan(&r, &inputs(&sizes), &rec()).unwrap().output, Size::new(1200, 800));
+        assert_eq!(
+            plan(&r, &inputs(&sizes), &rec()).unwrap().output,
+            Size::new(1200, 800)
+        );
         // Quality on 16 GB: native 2K shares the budget with the references.
         let mut r = req("both of them on a beach");
         (r.mode, r.quality) = (Mode::Compose, Quality::Quality);
-        let p = plan(&r, &inputs(&[(4000, 3000), (4000, 3000), (3000, 4000)]), &rec()).unwrap();
-        assert!((p.working.area() + p.references.iter().map(|r| r.canvas.canvas.area()).sum::<u64>()) as f64 <= budget);
-        assert!(p.references.iter().all(|x| x.canvas.canvas.area() <= p.working.area()));
+        let p = plan(
+            &r,
+            &inputs(&[(4000, 3000), (4000, 3000), (3000, 4000)]),
+            &rec(),
+        )
+        .unwrap();
+        assert!(
+            (p.working.area()
+                + p.references
+                    .iter()
+                    .map(|r| r.canvas.canvas.area())
+                    .sum::<u64>()) as f64
+                <= budget
+        );
+        assert!(
+            p.references
+                .iter()
+                .all(|x| x.canvas.canvas.area() <= p.working.area())
+        );
         // Full detail: references up to the output's area.
         r.advanced.reference_detail = Some(ReferenceDetail::Full);
         r.quality = Quality::Fast;
         let p = plan(&r, &inputs(&[(4000, 3000)]), &rec()).unwrap();
-        assert!(p.references[0].canvas.canvas.area() <= p.working.area() && p.references[0].canvas.canvas.area() > STANDARD_REFERENCE_AREA / 2);
+        assert!(
+            p.references[0].canvas.canvas.area() <= p.working.area()
+                && p.references[0].canvas.canvas.area() > STANDARD_REFERENCE_AREA / 2
+        );
         // Without images it is text-to-image.
         let p = plan(&r, &inputs(&[]), &rec()).unwrap();
         assert!(p.mode == ResolvedMode::Generate && p.references.is_empty());
@@ -1879,14 +2731,29 @@ mod tests {
     fn prompt_review_needs_the_enhancer_and_a_prompt_it_writes() {
         let mut r = req("un gatto");
         r.enhance_only = true;
-        assert!(plan(&r, &inputs(&[]), &rec()).is_err(), "review without Prompt+");
+        assert!(
+            plan(&r, &inputs(&[]), &rec()).is_err(),
+            "review without Prompt+"
+        );
         r.enhance = true;
         assert!(plan(&r, &inputs(&[]), &rec()).is_ok());
         r.mode = Mode::Compose;
-        assert_eq!(plan(&r, &inputs(&[(800, 800)]), &rec()).unwrap().mode, ResolvedMode::Compose);
+        assert_eq!(
+            plan(&r, &inputs(&[(800, 800)]), &rec()).unwrap().mode,
+            ResolvedMode::Compose
+        );
         r.mode = Mode::Outpaint;
-        r.outpaint = Some(OutpaintSpec { left: 0.2, right: 0.0, top: 0.0, bottom: 0.0, units: Default::default() });
-        assert!(plan(&r, &inputs(&[(800, 800)]), &rec()).is_err(), "expansions wrap the prompt themselves");
+        r.outpaint = Some(OutpaintSpec {
+            left: 0.2,
+            right: 0.0,
+            top: 0.0,
+            bottom: 0.0,
+            units: Default::default(),
+        });
+        assert!(
+            plan(&r, &inputs(&[(800, 800)]), &rec()).is_err(),
+            "expansions wrap the prompt themselves"
+        );
         // The fields stay out of saved requests unless used.
         let v = serde_json::to_value(req("x")).unwrap();
         assert!(v.get("enhance_only").is_none() && v.get("enhanced_from").is_none());
@@ -1900,7 +2767,10 @@ mod tests {
 
     #[test]
     fn empty_prompt_rejected() {
-        assert_eq!(plan(&req("  "), &inputs(&[]), &rec()).unwrap_err().code, ErrorCode::InvalidInput);
+        assert_eq!(
+            plan(&req("  "), &inputs(&[]), &rec()).unwrap_err().code,
+            ErrorCode::InvalidInput
+        );
     }
 
     #[test]
@@ -1911,7 +2781,10 @@ mod tests {
         assert_eq!(p.mode, ResolvedMode::Generate);
         assert!(!p.auto_mode);
         r.mode = Mode::Inpaint;
-        assert!(plan(&r, &inputs(&[(800, 600)]), &rec()).is_err(), "inpaint needs a mask");
+        assert!(
+            plan(&r, &inputs(&[(800, 600)]), &rec()).is_err(),
+            "inpaint needs a mask"
+        );
         r.mode = Mode::Edit;
         assert!(plan(&r, &inputs(&[]), &rec()).is_err());
     }
@@ -1921,7 +2794,11 @@ mod tests {
         let mut r = req("remove the sign");
         r.mask = Some("input:m".into());
         let mut i = inputs(&[(4032, 3024)]);
-        i.mask = Some((Size::new(4032, 3024), Some(Rect::new(2000, 1500, 120, 90)), 0.001));
+        i.mask = Some((
+            Size::new(4032, 3024),
+            Some(Rect::new(2000, 1500, 120, 90)),
+            0.001,
+        ));
         let p = plan(&r, &i, &rec()).unwrap();
         assert_eq!(p.mode, ResolvedMode::Inpaint);
         let reg = p.inpaint_region.unwrap();
@@ -1940,16 +2817,29 @@ mod tests {
             r.quality = Quality::Quality;
             let mut i = inputs(&[(w, h)]);
             i.vram_total_mib = Some(32607);
-            i.mask = Some((Size::new(w, h), Some(Rect::new(w / 4, 0, w / 2, h / 3)), 0.1));
+            i.mask = Some((
+                Size::new(w, h),
+                Some(Rect::new(w / 4, 0, w / 2, h / 3)),
+                0.1,
+            ));
             let p = plan(&r, &i, &rec()).unwrap();
             assert_eq!(p.output, Size::new(w, h));
             p.working.area()
         };
         let a = painted(1024, 1024);
-        assert!(a <= 1_650_000 && a >= 1_400_000, "1 MP photo painted at ~1.5 MP, not the 2K tier: {a}");
+        assert!(
+            a <= 1_650_000 && a >= 1_400_000,
+            "1 MP photo painted at ~1.5 MP, not the 2K tier: {a}"
+        );
         let a = painted(600, 400);
-        assert!((1_000_000..=1_150_000).contains(&a), "small photos get the model's ~1 MP: {a}");
-        assert!(painted(4000, 3000) > 3_000_000, "large photos keep the tier");
+        assert!(
+            (1_000_000..=1_150_000).contains(&a),
+            "small photos get the model's ~1 MP: {a}"
+        );
+        assert!(
+            painted(4000, 3000) > 3_000_000,
+            "large photos keep the tier"
+        );
     }
 
     #[test]
@@ -1964,22 +2854,42 @@ mod tests {
     #[test]
     fn outpaint_from_numbers_and_from_words() {
         let mut r = req("continue the beach");
-        r.outpaint = Some(OutpaintSpec { left: 256.0, right: 256.0, top: 0.0, bottom: 0.0, units: ExpansionUnits::Pixels });
+        r.outpaint = Some(OutpaintSpec {
+            left: 256.0,
+            right: 256.0,
+            top: 0.0,
+            bottom: 0.0,
+            units: ExpansionUnits::Pixels,
+        });
         let p = plan(&r, &inputs(&[(1024, 1024)]), &rec()).unwrap();
         assert_eq!(p.mode, ResolvedMode::Outpaint);
         assert_eq!(p.output, Size::new(1536, 1024));
         let op = p.outpaint.unwrap();
         assert_eq!(op.source_rect_final, Rect::new(256, 0, 1024, 1024));
 
-        let p = plan(&req("extend the image to the left by 50%"), &inputs(&[(1000, 800)]), &rec()).unwrap();
+        let p = plan(
+            &req("extend the image to the left by 50%"),
+            &inputs(&[(1000, 800)]),
+            &rec(),
+        )
+        .unwrap();
         assert_eq!(p.mode, ResolvedMode::Outpaint);
         assert_eq!(p.output, Size::new(1500, 800));
 
-        let p = plan(&req("expand it to 16:9 landscape"), &inputs(&[(1024, 1024)]), &rec()).unwrap();
+        let p = plan(
+            &req("expand it to 16:9 landscape"),
+            &inputs(&[(1024, 1024)]),
+            &rec(),
+        )
+        .unwrap();
         assert_eq!(p.output, Size::new(1820, 1024));
 
         let mut r = req("more sky");
-        r.outpaint = Some(OutpaintSpec { top: 25.0, units: ExpansionUnits::Percent, ..Default::default() });
+        r.outpaint = Some(OutpaintSpec {
+            top: 25.0,
+            units: ExpansionUnits::Percent,
+            ..Default::default()
+        });
         let p = plan(&r, &inputs(&[(1920, 1080)]), &rec()).unwrap();
         assert_eq!(p.output, Size::new(1920, 1350));
     }
@@ -1988,16 +2898,49 @@ mod tests {
     fn outpaint_intent_parsing() {
         let s = Size::new(1000, 1000);
         assert_eq!(outpaint_intent("change the car color", s), None);
-        assert_eq!(outpaint_intent("extend right", s), Some(Expansion { right: 250, ..Default::default() }));
-        assert_eq!(outpaint_intent("expand upwards by 400 px", s), Some(Expansion { top: 400, ..Default::default() }));
-        assert_eq!(outpaint_intent("zoom out", s), Some(Expansion { left: 250, right: 250, top: 250, bottom: 250 }));
-        assert_eq!(outpaint_intent("make it wider", s), Some(Expansion { left: 250, right: 250, ..Default::default() }));
+        assert_eq!(
+            outpaint_intent("extend right", s),
+            Some(Expansion {
+                right: 250,
+                ..Default::default()
+            })
+        );
+        assert_eq!(
+            outpaint_intent("expand upwards by 400 px", s),
+            Some(Expansion {
+                top: 400,
+                ..Default::default()
+            })
+        );
+        assert_eq!(
+            outpaint_intent("zoom out", s),
+            Some(Expansion {
+                left: 250,
+                right: 250,
+                top: 250,
+                bottom: 250
+            })
+        );
+        assert_eq!(
+            outpaint_intent("make it wider", s),
+            Some(Expansion {
+                left: 250,
+                right: 250,
+                ..Default::default()
+            })
+        );
     }
 
     #[test]
     fn aspect_hints() {
-        assert_eq!(aspect_hint("a 16:9 banner"), Some(AspectHint::Ratio(16.0 / 9.0, "16:9".into())));
-        assert_eq!(aspect_hint("logo for a cafe"), Some(AspectHint::Ratio(1.0, "1:1".into())));
+        assert_eq!(
+            aspect_hint("a 16:9 banner"),
+            Some(AspectHint::Ratio(16.0 / 9.0, "16:9".into()))
+        );
+        assert_eq!(
+            aspect_hint("logo for a cafe"),
+            Some(AspectHint::Ratio(1.0, "1:1".into()))
+        );
         assert_eq!(aspect_hint("a street at 10:30 in the morning"), None);
         assert_eq!(aspect_hint("a cat"), None);
         assert_eq!(parse_aspect("4:3").unwrap().0, 4.0 / 3.0);
@@ -2013,28 +2956,56 @@ mod tests {
         assert_eq!(token_budget(None), 12_288);
         // Discrete 16 GB cards: native 2K plus a 1 MP reference; Macs and 12 GB cards unchanged.
         assert_eq!(planning_token_budget(Some(16303), false), 20_736);
-        assert!(planning_token_budget(Some(16303), false) * PIXELS_PER_TOKEN >= 2752 * 1536 + 1344 * 768);
+        assert!(
+            planning_token_budget(Some(16303), false) * PIXELS_PER_TOKEN
+                >= 2752 * 1536 + 1344 * 768
+        );
         assert_eq!(planning_token_budget(Some(16303), true), 16_384);
-        assert_eq!(planning_token_budget(Some(12282), false), token_budget(Some(12282)));
+        assert_eq!(
+            planning_token_budget(Some(12282), false),
+            token_budget(Some(12282))
+        );
         assert_eq!(planning_token_budget(None, false), 12_288);
     }
 
     #[test]
     fn vae_tiles_follow_sdcpp_and_fit_the_image() {
         // sd.cpp's own split of 2752×1536 (172×96 latents) with 768 px (48) tiles: 4×3.
-        assert_eq!((vae_axis_tiles(172, 48, 0.125), vae_axis_tiles(96, 48, 0.125)), (4, 3));
+        assert_eq!(
+            (
+                vae_axis_tiles(172, 48, 0.125),
+                vae_axis_tiles(96, 48, 0.125)
+            ),
+            (4, 3)
+        );
         assert_eq!(vae_axis_tiles(96, 96, 0.125), 1);
         let (w, h) = vae_decode_tile(Size::new(2752, 1536), LARGE_GPU_VAE_TILE_AREA);
         assert!((w * h) as u64 <= LARGE_GPU_VAE_TILE_AREA, "{w}x{h}");
-        let decoded = |w: u32, h: u32| vae_axis_tiles(172, w / 16, 0.125) * vae_axis_tiles(96, h / 16, 0.125) * (w / 16) * (h / 16);
-        assert!(decoded(w, h) * 10 < decoded(768, 768) * 8, "at least 20 % less decoding than 768² tiles: {w}x{h}");
+        let decoded = |w: u32, h: u32| {
+            vae_axis_tiles(172, w / 16, 0.125)
+                * vae_axis_tiles(96, h / 16, 0.125)
+                * (w / 16)
+                * (h / 16)
+        };
+        assert!(
+            decoded(w, h) * 10 < decoded(768, 768) * 8,
+            "at least 20 % less decoding than 768² tiles: {w}x{h}"
+        );
         assert_eq!((w % 16, h % 16), (0, 0));
         assert_eq!((w, h), (608, 1536), "5 full-height columns");
         assert!(w.min(h) >= 512, "no thin strips");
         // Every size gets a tile within the area.
-        for s in [Size::new(2048, 2048), Size::new(2368, 1792), Size::new(1536, 2752), Size::new(1376, 768)] {
+        for s in [
+            Size::new(2048, 2048),
+            Size::new(2368, 1792),
+            Size::new(1536, 2752),
+            Size::new(1376, 768),
+        ] {
             let (w, h) = vae_decode_tile(s, LARGE_GPU_VAE_TILE_AREA);
-            assert!((w * h) as u64 <= LARGE_GPU_VAE_TILE_AREA && w <= s.width && h <= s.height, "{s:?}: {w}x{h}");
+            assert!(
+                (w * h) as u64 <= LARGE_GPU_VAE_TILE_AREA && w <= s.width && h <= s.height,
+                "{s:?}: {w}x{h}"
+            );
         }
     }
 
@@ -2043,37 +3014,96 @@ mod tests {
         let mut r = req("a lighthouse at dusk");
         r.quality = Quality::Quality;
         r.aspect_ratio = Some("16:9".into());
-        let big = PlanInputs { vram_total_mib: Some(16303), server_vae_tiling: true, ..inputs(&[]) };
+        let big = PlanInputs {
+            vram_total_mib: Some(16303),
+            server_vae_tiling: true,
+            ..inputs(&[])
+        };
         let p = plan(&r, &big, &rec()).unwrap();
         assert!(p.vae_tile.is_some(), "16 GB card");
-        let p = plan(&r, &PlanInputs { vram_total_mib: Some(32_607), ..big.clone() }, &rec()).unwrap();
-        assert_eq!(p.vae_tile, plan(&r, &big, &rec()).unwrap().vae_tile, "32 GB card: 2K uses the same tiles as 16 GB");
-        let p = plan(&r, &PlanInputs { unified_memory: true, ..big.clone() }, &rec()).unwrap();
+        let p = plan(
+            &r,
+            &PlanInputs {
+                vram_total_mib: Some(32_607),
+                ..big.clone()
+            },
+            &rec(),
+        )
+        .unwrap();
+        assert_eq!(
+            p.vae_tile,
+            plan(&r, &big, &rec()).unwrap().vae_tile,
+            "32 GB card: 2K uses the same tiles as 16 GB"
+        );
+        let p = plan(
+            &r,
+            &PlanInputs {
+                unified_memory: true,
+                ..big.clone()
+            },
+            &rec(),
+        )
+        .unwrap();
         assert!(p.vae_tile.is_none(), "Mac: the server's tiles");
-        let p = plan(&r, &PlanInputs { vram_total_mib: Some(12282), ..big.clone() }, &rec()).unwrap();
+        let p = plan(
+            &r,
+            &PlanInputs {
+                vram_total_mib: Some(12282),
+                ..big.clone()
+            },
+            &rec(),
+        )
+        .unwrap();
         assert!(p.vae_tile.is_none(), "12 GB card: the server's tiles");
         r.advanced.vae_tiling = Some(false);
-        assert!(plan(&r, &big, &rec()).unwrap().vae_tile.is_none(), "tiling off");
+        assert!(
+            plan(&r, &big, &rec()).unwrap().vae_tile.is_none(),
+            "tiling off"
+        );
     }
 
     #[test]
     fn vulkan_decodes_every_size_in_small_tiles() {
         let t = Some((VULKAN_VAE_TILE, VULKAN_VAE_TILE));
-        for (quality, vram) in [(Quality::Fast, 12_282), (Quality::Fast, 16_303), (Quality::Quality, 16_303), (Quality::Quality, 24_560), (Quality::Fast, 32_607)] {
+        for (quality, vram) in [
+            (Quality::Fast, 12_282),
+            (Quality::Fast, 16_303),
+            (Quality::Quality, 16_303),
+            (Quality::Quality, 24_560),
+            (Quality::Fast, 32_607),
+        ] {
             let mut r = req("a lighthouse at dusk");
             r.quality = quality;
             for server_vae_tiling in [true, false] {
-                let i = PlanInputs { vram_total_mib: Some(vram), vulkan: true, server_vae_tiling, ..inputs(&[]) };
+                let i = PlanInputs {
+                    vram_total_mib: Some(vram),
+                    vulkan: true,
+                    server_vae_tiling,
+                    ..inputs(&[])
+                };
                 let p = plan(&r, &i, &rec()).unwrap();
                 assert!(p.vae_tiling, "{quality:?} {vram}");
-                assert_eq!(p.vae_tile, t, "{quality:?} {vram}: untiled or 1 MP tiles pass AMD's 2 GiB buffer limit");
-                assert!(!p.notes.iter().any(|n| n.contains("Memory optimization")), "not a memory note on Vulkan");
+                assert_eq!(
+                    p.vae_tile, t,
+                    "{quality:?} {vram}: untiled or 1 MP tiles pass AMD's 2 GiB buffer limit"
+                );
+                assert!(
+                    !p.notes.iter().any(|n| n.contains("Memory optimization")),
+                    "not a memory note on Vulkan"
+                );
             }
         }
         let mut r = req("a lighthouse at dusk");
         r.advanced.vae_tiling = Some(false);
-        let i = PlanInputs { vram_total_mib: Some(16_303), vulkan: true, ..inputs(&[]) };
-        assert!(plan(&r, &i, &rec()).unwrap().vae_tile.is_none(), "an explicit off is kept");
+        let i = PlanInputs {
+            vram_total_mib: Some(16_303),
+            vulkan: true,
+            ..inputs(&[])
+        };
+        assert!(
+            plan(&r, &i, &rec()).unwrap().vae_tile.is_none(),
+            "an explicit off is kept"
+        );
     }
 
     #[test]
@@ -2126,7 +3156,15 @@ mod tests {
             ..Default::default()
         };
         // 8 GB card
-        let p8 = plan(&r, &PlanInputs { vram_total_mib: Some(8 * 1024), ..Default::default() }, &rec()).unwrap();
+        let p8 = plan(
+            &r,
+            &PlanInputs {
+                vram_total_mib: Some(8 * 1024),
+                ..Default::default()
+            },
+            &rec(),
+        )
+        .unwrap();
         assert_eq!(p8.mode, ResolvedMode::Video);
         assert_eq!(p8.output.width, 832);
         assert_eq!(p8.output.height, 480);
@@ -2136,15 +3174,22 @@ mod tests {
         assert!(p8.negative_prompt.contains("jump cut"));
 
         // 16 GB card
-        let p16 = plan(&r, &PlanInputs { vram_total_mib: Some(16 * 1024), ..Default::default() }, &rec()).unwrap();
+        let p16 = plan(
+            &r,
+            &PlanInputs {
+                vram_total_mib: Some(16 * 1024),
+                ..Default::default()
+            },
+            &rec(),
+        )
+        .unwrap();
         assert_eq!(p16.mode, ResolvedMode::Video);
         assert_eq!(p16.output.width, 1280);
         assert_eq!(p16.output.height, 704);
         assert_eq!(p16.video_frames, Some(73));
         assert_eq!(p16.fps, Some(24));
-        assert_eq!(p16.steps, 20);
-        assert_eq!(p16.cfg, 5.0);
+        assert_eq!(p16.steps, 4);
+        assert_eq!(p16.cfg, 3.5);
         assert!(p16.custom_sigmas.is_empty());
     }
 }
-

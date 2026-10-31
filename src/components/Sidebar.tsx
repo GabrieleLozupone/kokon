@@ -1,9 +1,9 @@
-import { Check, Images, PanelLeftClose, Pencil, Settings, SquarePen, Trash2, Video, X } from "lucide-react";
+import { Check, Images, PanelLeftClose, Pencil, Settings, SquarePen, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { urls } from "../lib/api";
 import { timeAgo } from "../lib/logic";
 import { native } from "../lib/native";
-import { deleteProject, deleteProjects, newProject, newVideoProject, renameProject, setState, switchProject, useStore } from "../lib/store";
+import { deleteProject, deleteProjects, newProject, renameProject, setState, switchProject, useStore } from "../lib/store";
 import { IconButton, NameField } from "./ui";
 import { KokonMark } from "./Welcome";
 
@@ -23,7 +23,6 @@ export function Sidebar() {
   const projects = useStore((s) => s.projects);
   const current = useStore((s) => s.projectId);
   const empty = useStore((s) => s.session.length === 0);
-  const mode = useStore((s) => s.composer.mode);
   const overlay = useStore((s) => s.overlay);
   const gallery = overlay === "gallery";
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -79,11 +78,8 @@ export function Sidebar() {
         </IconButton>
       </div>
       <nav className="side-nav">
-        <button className={`side-item ${empty && !gallery && mode !== "video" ? "on" : ""}`} onClick={newProject}>
+        <button className={`side-item ${empty && !gallery ? "on" : ""}`} onClick={newProject}>
           <SquarePen size={16} /> New image
-        </button>
-        <button className={`side-item ${empty && !gallery && mode === "video" ? "on" : ""}`} onClick={newVideoProject}>
-          <Video size={16} /> New video
         </button>
         <button className={`side-item ${gallery ? "on" : ""}`} onClick={() => setState({ overlay: gallery ? null : "gallery" })}>
           <Images size={16} /> All images
