@@ -57,10 +57,19 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new ApiError({ code: "server_unavailable", message: inBrowser ? "Kokon is not reachable." : "The local service is not reachable.", detail: String(e) }, 0);
   }
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
+  let data: any = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = null;
+    }
+  }
   if (!res.ok) {
     if (inBrowser && data?.error?.code === "login_required" && !path.startsWith("/auth/")) onSignedOut();
-    throw new ApiError(data?.error ?? { code: "internal", message: `HTTP ${res.status}` }, res.status);
+    const message = data?.error?.message ?? (text.trim() || `HTTP ${res.status}`);
+    const code = data?.error?.code ?? "internal";
+    throw new ApiError({ code, message, detail: data?.error?.detail ?? (data ? undefined : text.trim()) }, res.status);
   }
   return data as T;
 }

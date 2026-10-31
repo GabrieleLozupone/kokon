@@ -782,6 +782,14 @@ async fn backend_start(State(s): St, body: axum::body::Bytes) -> ApiResult<Json<
             {
                 cfg.active_profile = vp.id.clone();
                 let _ = s.engine.set_config(cfg.clone());
+            } else {
+                let vp = qls_core::config::ModelProfile::official_video(
+                    &cfg.sdcpp_dir,
+                    cfg.video_preset(),
+                );
+                cfg.active_profile = vp.id.clone();
+                cfg.profiles.push(vp);
+                let _ = s.engine.set_config(cfg.clone());
             }
         } else if mode == "image" {
             if let Some(ip) = cfg
