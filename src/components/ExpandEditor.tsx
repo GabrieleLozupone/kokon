@@ -2,7 +2,7 @@ import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, ChevronDown, Lock, Lo
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { urls } from "../lib/api";
 import { LONG_SIDE_PRESETS, aspectLabel, expandToRatio, expandToSize, expansionPixels, expansionPreset, parseRatio, sizeForLongSide } from "../lib/logic";
-import { focusPrompt, setState, updateComposer, useStore } from "../lib/store";
+import { closeEditor, focusPrompt, updateComposer, useStore } from "../lib/store";
 import type { OutpaintSpec, Units } from "../lib/types";
 import { AspectGrid, RatioIcon } from "./SizeMenus";
 import { IconButton, Popover, Seg } from "./ui";
@@ -104,10 +104,10 @@ export function ExpandEditor() {
   }, []);
 
   useEffect(() => {
-    if (!ref0) setState({ overlay: null });
+    if (!ref0) closeEditor();
   }, [ref0]);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setState({ overlay: null });
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeEditor();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
@@ -176,7 +176,7 @@ export function ExpandEditor() {
           {W}×{H} ({aspectLabel(W, H)}) → <strong className="expand-final">{finalW}×{finalH} ({aspectLabel(finalW, finalH)})</strong>
         </span>
         <span className="spacer" />
-        <IconButton title="Cancel (Esc)" onClick={() => setState({ overlay: null })}>
+        <IconButton title="Cancel (Esc)" onClick={() => closeEditor()}>
           <X size={18} />
         </IconButton>
       </div>
@@ -280,7 +280,7 @@ export function ExpandEditor() {
             title={tooBig ? `Max ${MAX_FINAL}px per side` : undefined}
             onClick={() => {
               updateComposer({ outpaint: spec, mask: null, mode: "auto" });
-              setState({ overlay: null });
+              closeEditor();
               focusPrompt();
             }}
           >

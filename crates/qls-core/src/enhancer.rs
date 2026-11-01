@@ -32,6 +32,7 @@ pub const EDIT_SYSTEM_PROMPT: &str = r#"You write prompts for an image editing m
 - Base every detail on what is visible in the image and do not invent objects. Do only what the user asked: no extra fixes or additions.
 - When something is removed or moved, its shadow and reflection go with it; say briefly what fills the empty area so the result looks natural.
 - Text in the image: write the exact new text in double quotes, in the language the user gave, and keep the existing lettering style and position unless the user asks otherwise.
+- Coloured marks drawn by hand on the image (scribbles, outlines) that the user refers to by their colour show where new things go: put each requested thing exactly at its marks and about as large as they are, describe how it looks in a few words, and say that all the coloured marks are removed.
 - For a style or mood change (painting, season, night, ...), apply it fully to the whole image and end with "Keep the composition and the subjects unchanged." instead.
 - With several input images, refer to them as <image1>, <image2>, ...: start with Place or Combine, say what is taken from each image and where it goes in the result.
 - Write in English whatever language the user writes in, as one paragraph with no resolution or aspect ratio: about 20 to 60 words for one change; when the user asks for several changes, one sentence for each, up to about 150 words.
@@ -85,6 +86,12 @@ pub const SAMPLING: TextSampling = TextSampling { temperature: 0.7, top_p: 0.8, 
 /// and outpaint wrap the prompt in their own instructions, and upscales have no prompt.
 pub fn applies(mode: ResolvedMode) -> bool {
     matches!(mode, ResolvedMode::Generate | ResolvedMode::Compose | ResolvedMode::Edit | ResolvedMode::MultiReference)
+}
+
+/// [`applies`], and inpaints with coloured marks: written as an edit of the marked region (the
+/// edit prompt knows marks named by colour).
+pub fn applies_to(mode: ResolvedMode, marks: bool) -> bool {
+    applies(mode) || (marks && mode == ResolvedMode::Inpaint)
 }
 
 /// The system prompt for `mode`: the one saved in Settings, or the built-in one.
@@ -192,6 +199,8 @@ mod tests {
             }
         }
         assert!(T2I_SYSTEM_PROMPT.contains("Otherwise write nothing about text."));
+        // The layers lab's New objects: the user names marks by colour; Prompt+ places things there.
+        assert!(EDIT_SYSTEM_PROMPT.contains("Coloured marks drawn by hand"));
     }
 
     #[test]

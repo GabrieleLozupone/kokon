@@ -229,7 +229,7 @@ export function PhoneActions({ item, showOriginal, onLut }: { item: SessionItem;
   };
   return (
     <div className="actions phone-actions">
-      {g?.request && g.mode !== "upscale" && g.mode !== "lut" && (
+      {g?.request && g.mode !== "upscale" && g.mode !== "lut" && g.mode !== "layers" && (
         <ActionButton
           title="Again: same prompt and settings, new seed"
           icon={<RefreshCw size={17} />}
@@ -299,7 +299,7 @@ function PhoneMore({ item, g, showOriginal }: { item: SessionItem; g?: Generatio
                 <span>Reuse prompt</span>
               </button>
             )}
-            {g && g.mode !== "lut" && (
+            {g && g.mode !== "lut" && g.mode !== "layers" && (
               <button
                 className="opt"
                 onClick={() => {

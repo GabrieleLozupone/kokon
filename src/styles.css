@@ -528,6 +528,114 @@ pre.diag { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font
 .mask-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; mix-blend-mode: difference; opacity: 0.75; cursor: none; }
 .brush-cursor { position: absolute; pointer-events: none; border: 1.5px solid #fff; mix-blend-mode: difference; border-radius: 50%; transform: translate(-50%, -50%); }
 
+/* layers lab (LayersEditor.tsx) */
+.layers-status { font-size: 12px; color: var(--text-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The zoom viewport fills its stage edge to edge (inset 0): here the stage is a framed area with a
+   gap on both sides, so a zoomed image never runs into the window edge or the right bar. */
+.layers-body { flex: 1; min-height: 0; display: flex; gap: 16px; padding: 0 16px; }
+.layers-body .editor-stage { flex: 1; min-width: 0; padding: 0; border-radius: var(--radius); background: var(--surface); }
+.layers-body .mask-wrap canvas { mix-blend-mode: normal; opacity: 1; }
+/* Inpaint with colours: the marks as they go to the model (opaque), a little see-through here. */
+.mask-wrap canvas.marks { mix-blend-mode: normal; opacity: 0.85; }
+/* One area: pink with a light edge, as the painted area in the layers lab. */
+.mask-wrap canvas.area { mix-blend-mode: normal; opacity: 0.5; filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff); }
+.inpaint-kind { flex: none; background: transparent; padding: 0; }
+.inpaint-kind button { display: inline-flex; align-items: center; gap: 5px; padding: 0 10px; }
+.marks-panel { flex: none; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 16px 0; }
+.marks-help { margin: 0; font-size: 12px; color: var(--text-2); text-align: center; max-width: 560px; }
+.marks-want { display: flex; align-items: center; gap: 8px; width: min(480px, 100%); }
+.marks-want input { flex: 1; min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
+.marks-want input:focus { outline: none; border-color: var(--border-2); }
+.marks-colours { gap: 6px; padding: 5px 8px; }
+.layers-panel { width: 300px; flex: none; display: flex; flex-direction: column; gap: 6px; padding: 0 0 4px; overflow-y: auto; font-size: 12px; }
+.layers-title { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; }
+.layers-title .spacer { flex: 1; }
+.layer-row { display: flex; align-items: center; gap: 4px; padding: 4px 4px 4px 8px; border-radius: 10px; background: var(--bg); box-shadow: var(--lift); cursor: pointer; border: 1.5px solid transparent; }
+.layer-row.on { border-color: var(--text); }
+.layer-row.bg { cursor: default; color: var(--text-2); padding: 8px; }
+.layer-row .swatch { width: 12px; height: 12px; border-radius: 4px; flex: none; background: repeating-conic-gradient(var(--checker) 0 25%, var(--bg) 0 50%) 0 0 / 6px 6px; }
+.layer-row input { flex: 1; min-width: 0; border: none; background: transparent; color: var(--text); font: inherit; padding: 2px 4px; border-radius: 6px; }
+.layer-row input:focus { outline: 1px solid var(--border-2); }
+.doc-name { flex: 1; min-width: 0; padding: 2px 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.layer-pct { color: var(--text-3); font-variant-numeric: tabular-nums; }
+.layers-view { display: flex; align-items: center; gap: 4px; margin-top: 8px; }
+.layers-view span { color: var(--text-2); margin-right: 4px; }
+.layers-opt { display: flex; align-items: center; gap: 8px; color: var(--text-2); }
+.layers-opt input[type="range"] { flex: 1; }
+.layers-help { color: var(--text-3); line-height: 1.45; margin: 4px 0; }
+.layers-split { margin-top: auto; }
+.doc-frame { background: repeating-conic-gradient(var(--checker) 0 25%, var(--bg) 0 50%) 0 0 / 24px 24px; overflow: hidden; }
+.mask-wrap img.doc-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.doc-hit { position: absolute; inset: 0; }
+.mask-wrap img.doc-mask { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.mask-wrap div.doc-layer { position: absolute; inset: 0; pointer-events: none; }
+.mask-wrap img.doc-crop-mask { position: absolute; pointer-events: none; }
+.doc-mask-chip { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 3; padding: 6px 12px; border-radius: 999px; background: #ff3b6b; color: #fff; font-size: 12px; font-weight: 500; white-space: nowrap; pointer-events: none; box-shadow: var(--lift); }
+.doc-sel { position: absolute; border: 1.5px dashed #fff; outline: 1px solid rgba(0, 0, 0, 0.45); pointer-events: none; box-sizing: border-box; }
+.doc-handle { position: absolute; background: #fff; border: 1.5px solid #000; border-radius: 2px; pointer-events: auto; cursor: nwse-resize; box-sizing: border-box; }
+.brush-cursor.pencil { mix-blend-mode: normal; }
+.doc-sel-part { border-style: solid; outline: none; opacity: 0.6; }
+.layers-body .mask-wrap canvas.doc-marks { pointer-events: none; opacity: 0.9; }
+.doc-group { display: flex; color: var(--text-3); }
+.doc-actions-title { display: flex; align-items: center; gap: 6px; }
+.doc-want { display: flex; align-items: center; gap: 8px; }
+.doc-want input { flex: 1; min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
+.doc-want input:focus { outline: none; border-color: var(--border-2); }
+.doc-swatch { width: 14px; height: 14px; flex: none; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25); }
+.doc-colour { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25); cursor: pointer; padding: 0; }
+.doc-colour.on { border-color: var(--bg); box-shadow: 0 0 0 2px var(--text); }
+.doc-grid .doc-wide { grid-column: 1 / -1; }
+.doc-row { position: relative; }
+.lab-frame { position: relative; max-width: 100%; max-height: 100%; height: 100%; padding: 0; border: none; background: repeating-conic-gradient(var(--checker) 0 25%, var(--bg) 0 50%) 0 0 / 24px 24px; border-radius: var(--radius-img); overflow: hidden; box-shadow: var(--print); display: grid; place-items: center; }
+.lab-frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.lab-frame img.lab-marks { position: absolute; inset: 0; opacity: 0.9; pointer-events: none; }
+.mask-wrap img.doc-marks { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0.9; }
+.lab-open { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 7px 12px; border: none; border-radius: 999px; background: var(--invert-bg); color: var(--invert-text); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; box-shadow: var(--lift); opacity: 0.92; transition: opacity 0.15s; }
+.lab-open:hover, .lab-open:focus-visible { opacity: 1; }
+.lab-jobs { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.lab-jobs.on-stage { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 2; justify-content: center; }
+.lab-progress { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: var(--invert-bg); color: var(--invert-text); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; box-shadow: var(--lift); }
+.lab-progress.failed { background: #b42318; color: #fff; white-space: normal; }
+.lab-dismiss { display: grid; place-items: center; border: none; background: transparent; color: inherit; padding: 0; margin-left: 2px; cursor: pointer; opacity: 0.8; }
+.lab-dismiss:hover { opacity: 1; }
+.doc-running { display: inline-flex; align-items: center; gap: 4px; }
+.doc-row.dragging { opacity: 0.5; }
+.doc-row.drop-above { box-shadow: 0 -2px 0 0 var(--text), var(--lift); }
+.doc-row.drop-below { box-shadow: 0 2px 0 0 var(--text), var(--lift); }
+.doc-running { color: var(--text); font-weight: 600; }
+.doc-row .grip { display: flex; color: var(--text-3); cursor: grab; touch-action: none; padding: 2px 0; }
+.doc-thumb { width: 40px; height: 30px; flex: none; border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: repeating-conic-gradient(var(--checker) 0 25%, var(--bg) 0 50%) 0 0 / 8px 8px; }
+.doc-thumb img { max-width: 100%; max-height: 100%; display: block; }
+/* Stickers being made (LayerDoc): objects on transparency, the background fading back at the end. */
+.mask-wrap img.doc-layer { transition: opacity 0.6s; }
+.doc-frame.stickering { background: repeating-conic-gradient(var(--checker) 0 25%, var(--bg) 0 50%) 0 0 / 24px 24px; }
+.mask-wrap img.doc-layer.st-hide { opacity: 0; }
+.mask-wrap img.doc-layer.st-waiting { opacity: 0.4; }
+.mask-wrap img.doc-layer.st-making { filter: drop-shadow(0 0 2px #ff3b6b) drop-shadow(0 0 8px rgba(255, 59, 107, 0.6)); }
+.mask-wrap img.doc-layer.st-done { animation: sticker-in 0.6s ease-out; }
+@keyframes sticker-in { from { opacity: 0; filter: blur(6px); } to { opacity: 1; filter: none; } }
+.sticker-ring { position: absolute; pointer-events: none; display: grid; place-items: center; color: #fff; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5)); }
+.sticker-ring.waiting { opacity: 0.8; }
+.sticker-progress .track { fill: rgba(0, 0, 0, 0.45); stroke: rgba(255, 255, 255, 0.25); stroke-width: 4; }
+.sticker-progress .bar { fill: none; stroke: #ff3b6b; stroke-width: 4; stroke-linecap: round; transition: stroke-dashoffset 0.4s; }
+.sticker-progress text { fill: #fff; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.sticker-strip { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 3; display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; border-radius: 999px; background: var(--invert-bg); color: var(--invert-text); font-size: 12px; font-weight: 500; white-space: nowrap; box-shadow: var(--lift); font-variant-numeric: tabular-nums; }
+/* The strip is inverted (dark on light themes, light on dark): its buttons follow it, not the page. */
+.sticker-strip .btn { height: 26px; padding: 0 10px; font-size: 12px; border-radius: 999px; background: color-mix(in srgb, var(--invert-text) 12%, transparent); color: var(--invert-text); }
+.sticker-strip .btn:hover { background: color-mix(in srgb, var(--invert-text) 22%, transparent); }
+.doc-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--border); }
+.doc-actions-title { font-weight: 600; font-size: 12px; }
+.doc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.doc-grid .btn, .doc-footer .btn { justify-content: center; height: 34px; min-width: 0; white-space: nowrap; }
+.doc-grid > :only-child { grid-column: 1 / -1; }
+.doc-footer { margin-top: auto; display: flex; flex-direction: column; gap: 6px; padding-top: 12px; }
+.doc-none { margin-top: 10px; }
+.layers-panel > * { flex-shrink: 0; }
+.doc-versions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 8px; border-radius: 12px; background: var(--bg); box-shadow: var(--lift); }
+.doc-version { min-width: 0; border: 1.5px solid transparent; border-radius: 8px; padding: 2px; background: repeating-conic-gradient(var(--checker) 0 25%, var(--bg) 0 50%) 0 0 / 8px 8px; cursor: pointer; display: flex; flex-direction: column; align-items: center; font-size: 11px; color: var(--text-2); }
+.doc-version.on { border-color: var(--text); }
+.doc-version img { width: 100%; aspect-ratio: 3 / 2; object-fit: contain; }
+
 .expand-area { position: relative; }
 .expand-canvas { position: absolute; border: 1.5px dashed var(--text-2); border-radius: 4px; background-image: conic-gradient(var(--checker) 25%, transparent 0 50%, var(--checker) 0 75%, transparent 0); background-size: 16px 16px; }
 .expand-src { position: absolute; }
@@ -616,7 +724,8 @@ pre.diag { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font
 .compare-img { background-image: conic-gradient(var(--checker) 25%, transparent 0 50%, var(--checker) 0 75%, transparent 0); background-size: 16px 16px; }
 .compare-box.slider { cursor: ew-resize; }
 /* the area painted for the next edit, drawn like in the inpaint editor */
-.stage-mask { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: var(--radius-img); mix-blend-mode: difference; opacity: 0.75; pointer-events: none; }
+/* The painted area (pink, see useMaskTint) or the coloured marks of the next edit. */
+.stage-mask { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: var(--radius-img); opacity: 0.9; pointer-events: none; }
 .compare-box.slider.zoomed { cursor: inherit; }
 .compare-img, .compare-diff { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 /* Areas the original did not cover (expanded edges) show the checkerboard. */

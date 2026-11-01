@@ -107,6 +107,7 @@ pub fn router(state: Arc<AppState>, lan: bool) -> Router {
         .route("/inputs/{id}/thumb", get(input_thumb))
         .route("/inputs/{id}/preview", get(input_preview))
         .route("/gallery", get(gallery_list))
+        .route("/gallery/layers", post(gallery_save_layers))
         .route("/gallery/{id}", get(gallery_get).patch(gallery_patch).delete(gallery_delete))
         .route("/gallery/{id}/image", get(gallery_image))
         .route("/gallery/{id}/thumb", get(gallery_thumb))
@@ -1121,6 +1122,9 @@ async fn gallery_get(State(s): St, AxPath(id): AxPath<String>) -> ApiResult<Json
 #[derive(Deserialize)]
 struct PatchBody {
     favorite: Option<bool>,
+    /// Left out of the gallery list (layers lab steps).
+    #[serde(default)]
+    hidden: Option<bool>,
 }
 
 async fn gallery_patch(State(s): St, AxPath(id): AxPath<String>, Json(b): Json<PatchBody>) -> ApiResult<Json<GenerationRecord>> {
@@ -1129,7 +1133,29 @@ async fn gallery_patch(State(s): St, AxPath(id): AxPath<String>, Json(b): Json<P
         store.set_favorite(&id, f)?;
         let _ = s.engine.events.send(qls_core::engine::Event::Gallery { id: id.clone(), change: "updated" });
     }
+    if let Some(h) = b.hidden {
+        store.set_hidden(&id, h)?;
+        let _ = s.engine.events.send(qls_core::engine::Event::Gallery { id: id.clone(), change: "updated" });
+    }
     Ok(Json(store.get_generation(&id)?))
+}
+
+#[derive(Deserialize)]
+struct LayersBody {
+    /// The flattened image ("input:<id>").
+    image: String,
+    /// The image the layers were split from.
+    #[serde(default)]
+    from: Option<String>,
+    #[serde(default)]
+    private: bool,
+}
+
+/// The layers lab's image, saved to the gallery (its steps are hidden there).
+async fn gallery_save_layers(State(s): St, Json(b): Json<LayersBody>) -> ApiResult<Json<GenerationRecord>> {
+    let engine = s.engine.clone();
+    let rec = tokio::task::spawn_blocking(move || engine.save_layers(&b.image, b.from.as_deref(), b.private)).await.map_err(AppError::internal)??;
+    Ok(Json(rec))
 }
 
 async fn gallery_delete(State(s): St, AxPath(id): AxPath<String>) -> ApiResult<Json<Value>> {

@@ -3,7 +3,8 @@
 export type Mode = "auto" | "generate" | "edit" | "inpaint" | "outpaint" | "multi_reference" | "compose" | "upscale";
 export type ResolvedMode = Exclude<Mode, "auto">;
 /** What made a saved result: a generation mode, or a colour LUT applied to an image. */
-export type RecordMode = ResolvedMode | "lut";
+/** "layers": the layers lab's image saved to the gallery. */
+export type RecordMode = ResolvedMode | "lut" | "layers";
 /** What an inpaint does in the painted area. */
 export type InpaintAction = "edit" | "remove" | "replace" | "add";
 /** Presets of the Turbo model (8 steps, no CFG): ~1 MP, ~1.5K, native 2K. */
@@ -67,6 +68,10 @@ export interface GenerationRequest {
   enhanced_from?: string | null;
   /** LoRA ids to use (the app always sends its list; omitted = none, as for MCP). */
   loras?: string[] | null;
+  /** Inpaint: coloured marks (a transparent image the mask's size) that the prompt names by colour. */
+  marks?: string | null;
+  /** The result is left out of the gallery list (a layers lab step). */
+  hidden?: boolean;
 }
 
 export interface WorkingCanvas { source: Size; content: Size; canvas: Size; content_offset: [number, number]; scale: number }
@@ -157,6 +162,8 @@ export interface GenerationRecord {
   notes: string[];
   request: GenerationRequest | null;
   pipeline?: PipelineRecord | null;
+  /** Left out of the gallery list (a layers lab step). */
+  hidden?: boolean;
 }
 
 /** A LoRA as an image used it. */

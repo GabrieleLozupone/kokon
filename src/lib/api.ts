@@ -154,6 +154,11 @@ export const api = {
   },
   generation: (id: string) => call<GenerationRecord>(`/gallery/${id}`),
   setFavorite: (id: string, favorite: boolean) => call<GenerationRecord>(`/gallery/${id}`, { method: "PATCH", body: json({ favorite }) }),
+  /** Leaves a result out of the gallery list (layers lab steps), or shows it again. */
+  setHidden: (id: string, hidden: boolean) => call<GenerationRecord>(`/gallery/${id}`, { method: "PATCH", body: json({ hidden }) }),
+  /** The layers lab's flattened image (an upload), saved to the gallery as made from `from`. */
+  saveLayers: (image: string, from: string | null, isPrivate: boolean) =>
+    call<GenerationRecord>("/gallery/layers", { method: "POST", body: json({ image, from, private: isPrivate }) }),
   deleteGeneration: (id: string) => call<{ deleted: string }>(`/gallery/${id}`, { method: "DELETE" }),
   /** Adds the bundled example projects to the gallery (idempotent) and lists them. */
   installExamples: () => call<{ projects: { title: string; generations: string[] }[] }>("/examples", { method: "POST" }),

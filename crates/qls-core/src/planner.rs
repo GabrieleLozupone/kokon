@@ -293,6 +293,14 @@ pub struct GenerationRequest {
     /// no LoRA (MCP and the HTTP API don't use LoRAs for now). Not used by upscales.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub loras: Option<Vec<String>>,
+    /// Inpaint only: coloured marks drawn by the user, an image source the mask's size (transparent
+    /// where nothing is drawn). The model's only reference is the region with the marks drawn on,
+    /// and the prompt names what goes at each colour; no guide image (see pipeline).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub marks: Option<String>,
+    /// The result is left out of the gallery list (a layers lab step, see `GenerationRecord::hidden`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hidden: bool,
 }
 
 // ---------------------------------------------------------------------------------------
@@ -337,6 +345,9 @@ pub struct Plan {
     pub outpaint: Option<OutpaintPlan>,
     /// Region of the source sent to the model for inpainting.
     pub inpaint_region: Option<Rect>,
+    /// Inpaint with coloured marks (`GenerationRequest::marks`): one reference, no guide.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub marks: bool,
     /// Resolved inpaint action (see [`InpaintAction::resolve`]).
     #[serde(default)]
     pub inpaint_action: Option<InpaintAction>,
@@ -904,10 +915,12 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
         return Err(AppError::invalid(format!("Use at most {} reference images.", rec.max_references)));
     }
     let (mode, auto_mode, mode_reason) = detect_mode(req, inputs)?;
-    if req.enhance_only && !(req.enhance && crate::enhancer::applies(mode)) {
+    let marks = mode == ResolvedMode::Inpaint && req.marks.is_some();
+    if req.enhance_only && !(req.enhance && crate::enhancer::applies_to(mode, marks)) {
         return Err(AppError::invalid("Prompt+ writes prompts for new images, edits and combines only."));
     }
-    let inpaint_action = (mode == ResolvedMode::Inpaint).then(|| req.inpaint_action.resolve(&req.prompt));
+    // Marks: the prompt names things by colour, never an action of its own (a Remove would blur the marks away).
+    let inpaint_action = (mode == ResolvedMode::Inpaint).then(|| if marks { InpaintAction::Edit } else { req.inpaint_action.resolve(&req.prompt) });
     // Upscales and removals need no description.
     let prompt_optional = mode == ResolvedMode::Upscale || inpaint_action == Some(InpaintAction::Remove);
     if req.prompt.trim().is_empty() && !prompt_optional {
@@ -1091,10 +1104,11 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
             );
             // References: the region itself (at most the reference cap, as in edits), plus a
             // smaller copy with the area marked. Full: both at the output's area (the server's
-            // own resize), as before 0.9.4.
+            // own resize), as before 0.9.4. Coloured marks show the area themselves: no guide.
+            let guide_share = if marks { 0.0 } else { INPAINT_GUIDE_AREA };
             let wanted = tier_area.unwrap_or(src.area());
             let image1_share = if wanted > ref_cap.saturating_add(ref_cap / 10) { ref_cap as f64 / wanted as f64 } else { 1.0 };
-            let area = cap_for_refs(wanted, image1_share + INPAINT_GUIDE_AREA, &mut notes);
+            let area = cap_for_refs(wanted, image1_share + guide_share, &mut notes);
             // At least the working size of context around the mask, so the model sees the scene.
             let min_ctx = (area as f64).sqrt() as u32;
             let region = geometry::inpaint_region(src, bbox, min_ctx, 0.55);
@@ -1109,8 +1123,10 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
             // The image being painted stays at the working size; only the model's view of it shrinks.
             let image1 = if working.canvas.area() <= ref_cap.saturating_add(ref_cap / 10) { working } else { ref_canvas(region.size(), ref_cap, rec) };
             references.push(RefPlan { index: 0, source: region.size(), canvas: image1 });
-            let guide_area = (working.canvas.area() as f64 * INPAINT_GUIDE_AREA) as u64;
-            references.push(RefPlan { index: 0, source: region.size(), canvas: ref_canvas(region.size(), guide_area, rec) });
+            if !marks {
+                let guide_area = (working.canvas.area() as f64 * INPAINT_GUIDE_AREA) as u64;
+                references.push(RefPlan { index: 0, source: region.size(), canvas: ref_canvas(region.size(), guide_area, rec) });
+            }
             strength = Some(adv.strength.unwrap_or(1.0).clamp(0.05, 1.0));
         }
         ResolvedMode::Outpaint => {
@@ -1227,6 +1243,7 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
         references,
         outpaint,
         inpaint_region,
+        marks,
         inpaint_action,
         quality,
         resolution: req.resolution,

@@ -176,6 +176,7 @@ impl Engine {
                     client: Some("example".into()),
                     request: serde_json::to_value(&request).unwrap_or_default(),
                     pipeline: None,
+                    hidden: false,
                 };
                 if let Ok(j) = imaging::encode_jpeg(&imaging::thumbnail(&img, 512), 85) {
                     let _ = std::fs::write(store.thumb_path(&id), j);

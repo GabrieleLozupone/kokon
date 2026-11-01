@@ -17,11 +17,13 @@ use crate::sdcpp::{Guidance, ImgGenRequest, SampleParams, VaeTilingParams, b64};
 pub struct BackendOptions {
     /// `--vae-tile-size` the server was launched with (0 = no server-side tiling).
     pub server_vae_tile_size: u32,
+    /// An inpaint's coloured marks (`GenerationRequest::marks`, any size: stretched over the image).
+    pub marks: Option<RgbaImage>,
 }
 
 impl Default for BackendOptions {
     fn default() -> Self {
-        Self { server_vae_tile_size: 0 }
+        Self { server_vae_tile_size: 0, marks: None }
     }
 }
 
@@ -154,6 +156,18 @@ pub fn inpaint_prompt(action: InpaintAction, prompt: &str, color: &str) -> Strin
             "In <image1>, add {what} inside {area}, fitting it naturally into the scene with matching lighting, perspective, scale and shadows. {keep}"
         ),
     }
+}
+
+/// `top` drawn over `base` by its alpha (the same size).
+fn draw_over(base: &RgbaImage, top: &RgbaImage) -> RgbaImage {
+    let mut out = base.clone();
+    for (o, t) in out.pixels_mut().zip(top.pixels()) {
+        let a = t[3] as u32;
+        for c in 0..3 {
+            o[c] = ((o[c] as u32 * (255 - a) + t[c] as u32 * a + 127) / 255) as u8;
+        }
+    }
+    out
 }
 
 /// Prompt sent to the model. Transparency requests use the prompt format recommended for
@@ -301,26 +315,46 @@ pub fn prepare(plan: &Plan, prompt: &str, seed: i64, images: &[LoadedImage], mas
             // blurred away, so the model rebuilds the area instead of keeping the old object
             // (a replaced bowl otherwise gets the new thing put *in* it).
             let pad = |img: &RgbaImage| imaging::pad_edge(img, wc.canvas, wc.content_offset);
-            let image1 = if matches!(action, InpaintAction::Remove | InpaintAction::Replace) { imaging::fill_masked(&content, &m_work) } else { content.clone() };
+            // Coloured marks: drawn on image 1, which is then the model's only reference (the
+            // marks show the area, the prompt names them); the result is pasted on the unmarked source.
+            let image1 = if plan.marks {
+                let marks = opts.marks.as_ref().ok_or_else(|| AppError::invalid("The coloured marks are missing."))?;
+                let marks = imaging::resize(marks, src_size.width, src_size.height);
+                draw_over(&content, &imaging::resize(&imaging::crop(&marks, region), wc.content.width, wc.content.height))
+            } else if matches!(action, InpaintAction::Remove | InpaintAction::Replace) {
+                imaging::fill_masked(&content, &m_work)
+            } else {
+                content.clone()
+            };
             // Image 2 (guide): the area marked in a color named in the prompt. The model gets
             // no mask otherwise; the latent mask only discards changes outside it.
-            let gc = plan.references.get(1).map(|r| r.canvas).ok_or_else(|| AppError::internal("missing inpaint guide plan"))?;
-            let (color_name, color) = imaging::pick_highlight(&content, &m_content);
-            let guide_mask = imaging::resize_mask(&m_work, gc.content.width, gc.content.height);
-            let guide = imaging::highlight(&imaging::resize(&image1, gc.content.width, gc.content.height), &guide_mask, color);
+            let guide = if plan.marks {
+                None
+            } else {
+                let gc = plan.references.get(1).map(|r| r.canvas).ok_or_else(|| AppError::internal("missing inpaint guide plan"))?;
+                let (color_name, color) = imaging::pick_highlight(&content, &m_content);
+                let guide_mask = imaging::resize_mask(&m_work, gc.content.width, gc.content.height);
+                let guide = imaging::highlight(&imaging::resize(&image1, gc.content.width, gc.content.height), &guide_mask, color);
+                Some((imaging::pad_edge(&guide, gc.canvas, gc.content_offset), color_name))
+            };
             drop(content);
 
             let image1_b64 = png_b64(&pad(&image1))?;
             req.init_image = Some(image1_b64.clone());
             let same = rc.canvas == wc.canvas && rc.content == wc.content && rc.content_offset == wc.content_offset;
             req.ref_images.push(if same { image1_b64 } else { png_b64(&imaging::pad_edge(&imaging::resize(&image1, rc.content.width, rc.content.height), rc.canvas, rc.content_offset))? });
-            req.ref_images.push(png_b64(&imaging::pad_edge(&guide, gc.canvas, gc.content_offset))?);
+            if let Some((g, _)) = &guide {
+                req.ref_images.push(png_b64(g)?);
+            }
             // Standard detail: the references are encoded at their planned sizes (image 1 ≤ 1 MP,
             // the guide a quarter of the canvas); Full lets the server resize both to the output's area.
             if plan.reference_detail == Some(ReferenceDetail::Standard) {
                 req.ref_image_args = Some("resize_before_vae=false".into());
             }
-            req.prompt = inpaint_prompt(action, prompt, color_name);
+            req.prompt = match &guide {
+                Some((_, color_name)) => inpaint_prompt(action, prompt, color_name),
+                None => effective_prompt(plan, prompt),
+            };
             req.mask_image = Some(gray_png_b64(&m_canvas)?);
             req.strength = plan.strength;
             req.image_preprocess = vec!["target=init,mode=none".into(), "target=mask,mode=none,filter=nearest-exact".into(), "target=ref,mode=none".into()];
@@ -657,7 +691,7 @@ mod tests {
         PlanInputs { image_sizes: sizes, vram_total_mib: Some(16303), upscaler: Some("4xNomos2_hq_mosr".into()), ..Default::default() }
     }
     fn esrgan_opts() -> BackendOptions {
-        BackendOptions { server_vae_tile_size: 768 }
+        BackendOptions { server_vae_tile_size: 768, ..Default::default() }
     }
 
     #[test]
@@ -917,6 +951,50 @@ mod tests {
             }
         }
         assert!(changed_inside);
+    }
+
+    #[test]
+    fn marks_inpaint_sends_one_marked_reference() {
+        let img = photo(900, 700);
+        let mut m = GrayImage::new(900, 700);
+        // Red marks (drawn at half size: stretched over the image) where the mask is.
+        let mut marks = RgbaImage::new(450, 350);
+        for y in 300..360 {
+            for x in 400..480 {
+                m.put_pixel(x, y, Luma([255]));
+                marks.put_pixel(x / 2, y / 2, Rgba([255, 32, 32, 255]));
+            }
+        }
+        let mut r = req("Remove a lamp where the red marks are");
+        r.mask = Some("input:m".into());
+        r.marks = Some("input:k".into());
+        let inputs = PlanInputs {
+            image_sizes: vec![img.size()],
+            mask: Some((Size::new(900, 700), imaging::mask_bbox(&m, 127), imaging::mask_coverage(&m, 127))),
+            vram_total_mib: Some(16303),
+            ..Default::default()
+        };
+        let p = plan(&r, &inputs, &RecommendedSettings::default()).unwrap();
+        assert!(p.marks);
+        assert_eq!(p.references.len(), 1, "no guide image");
+        assert_eq!(p.inpaint_action, Some(InpaintAction::Edit), "never a removal that blurs the marks away");
+        let opts = BackendOptions { marks: Some(marks), ..Default::default() };
+        let j = prepare(&p, &r.prompt, 1, std::slice::from_ref(&img), Some(&m), &opts).unwrap();
+        assert_eq!(j.request.ref_images.len(), 1);
+        assert_eq!(j.request.prompt, r.prompt, "the prompt names the colours itself");
+        let ref1 = imaging::decode_image(&b64_decode(&j.request.ref_images[0]).unwrap()).unwrap().pixels;
+        let red = ref1.pixels().filter(|p| p[0] > 200 && p[1] < 80 && p[2] < 80).count();
+        assert!(red > 100, "the marks are drawn on image 1 ({red} red px)");
+        // Pasted on the unmarked source: nothing red outside the region the model painted.
+        let out = postprocess(fake_backend(p.working.width, p.working.height), &j.post).unwrap();
+        let PostKind::Inpaint { blend, region, .. } = &j.post.kind else { panic!() };
+        for (x, y, px) in out.enumerate_pixels() {
+            let inside = x >= region.x && x < region.right() && y >= region.y && y < region.bottom();
+            if !inside || blend.get_pixel(x - region.x, y - region.y)[0] == 0 {
+                assert_eq!(px, img.pixels.get_pixel(x, y));
+            }
+        }
+        assert!(prepare(&p, &r.prompt, 1, std::slice::from_ref(&img), Some(&m), &BackendOptions::default()).is_err(), "marks missing");
     }
 
     fn inpaint_job(prompt: &str, action: InpaintAction) -> (LoadedImage, GrayImage, PreparedJob) {

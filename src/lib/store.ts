@@ -10,9 +10,10 @@ import { useSyncExternalStore } from "react";
 import { markFresh } from "../components/Cocoon";
 import { api, ApiError, setPrivateInputs, subscribe, urls } from "./api";
 import { activeLoras, buildRequest, composing, emptyComposer, goneVersions, macEngineOfferDue, needsPrompt, newKey, pageOutdated, persistentAdvanced, refFromGen, refFromInput, reviewRequest, stageFitsPreview, starPromptDue, timelineLinks, undoTarget, versionLabels, wantsPromptReview, type CompareMode, type Composer, type Ref } from "./logic";
+import { keepLabsIn, labsChanged, labSources, loadLab, type LabStore } from "./layerDoc";
 import type { AppErrorBody, GenerationRecord, GenerationRequest, InputRecord, JobView, LoraItem, MacBenchState, ServerState, StatusResponse } from "./types";
 
-export type Overlay = null | "gallery" | "settings" | "inpaint" | "expand" | "welcome" | "whats-new" | "mac-engine" | "prompt-tips" | "shortcuts";
+export type Overlay = null | "gallery" | "settings" | "inpaint" | "expand" | "layers" | "welcome" | "whats-new" | "mac-engine" | "prompt-tips" | "shortcuts";
 
 export interface SessionItem {
   key: string;
@@ -70,6 +71,8 @@ export interface State {
   /** Last submitted prompt (Up arrow in an empty prompt brings it back). */
   lastPrompt: string;
   overlay: Overlay;
+  /** Where Paint area / Expand go back to when they close (the layers lab), else nothing. */
+  overlayBack: Overlay;
   /** The upscaler comparison, shown over any overlay (Settings, the Advanced menu). */
   compareUpscalers: boolean;
   toasts: Toast[];
@@ -144,6 +147,8 @@ export interface ProjectData {
   loras?: string[];
   /** The service's revision of it (see crates/qls-core/src/projects.rs). */
   rev?: number;
+  /** Its layers lab (lib/layerDoc.ts `LabStore`); null once removed. */
+  lab?: unknown;
 }
 
 // The project list lives in kokon-service, shared by every device (0.11). Before, each app
@@ -165,7 +170,50 @@ const edits = new Map<string, number>();
 let saveTimer: number | undefined;
 
 /** What other devices need to hear about (the selection alone is this device's own). */
-const content = (p: ProjectData | undefined) => (p ? JSON.stringify([p.items.map((i) => i.key), p.meta.title, p.meta.named, p.loras]) : "");
+const content = (p: ProjectData | undefined) => (p ? JSON.stringify([p.items.map((i) => i.key), p.meta.title, p.meta.named, p.loras, p.lab ?? null]) : "");
+
+// The layers lab lives in its project (saved and merged with it). A lab made before its project
+// reached the service waits here; private projects keep theirs here only.
+const labsHere = new Map<string, LabStore>();
+/** Gallery results already hidden as lab steps (this session). */
+const hiddenSteps = new Set<string>();
+
+/** Leaves the lab's steps out of the gallery (they stay in the project): the ones made before
+ * requests were marked hidden, and any that slipped through. Only the image saved from the lab shows. */
+function hideLabSteps(lab: LabStore) {
+  for (const s of labSources(lab)) {
+    if (!s.startsWith("gen:") || hiddenSteps.has(s)) continue;
+    hiddenSteps.add(s);
+    const g = genCache.get(s.slice(4));
+    if (g?.hidden) continue;
+    api.setHidden(s.slice(4), true).catch(() => hiddenSteps.delete(s));
+  }
+}
+
+keepLabsIn({
+  get(id) {
+    const lab = projects[id]?.lab ?? labsHere.get(id);
+    if (lab && !state.privateMode) hideLabSteps(lab as LabStore);
+    return lab;
+  },
+  set(id, lab) {
+    if (state.privateMode || !projects[id]) {
+      labsHere.set(id, lab);
+      return;
+    }
+    labsHere.delete(id);
+    projects[id] = { ...projects[id], lab };
+    hideLabSteps(lab);
+    persistProjects([id]);
+  },
+});
+
+/** The lab's own images: a request editing one is a lab step (kept out of the gallery). */
+function isLabStep(source: string | undefined): boolean {
+  if (!source) return false;
+  const lab = loadLab(state.projectId);
+  return labSources(lab).has(source);
+}
 
 function persistProjects(ids: string[]) {
   for (const id of ids) {
@@ -201,6 +249,7 @@ async function applyProject(p: ProjectData) {
   if (dirty.has(id)) return;
   const old = projects[id];
   projects[id] = { ...p, selected: old?.selected && p.items.some((i) => i.key === old.selected) ? old.selected : p.selected };
+  if (JSON.stringify(p.lab ?? null) !== JSON.stringify(old?.lab ?? null)) labsChanged();
   if (id !== state.projectId || state.privateMode) {
     setState({ projects: projectList() });
     return;
@@ -332,6 +381,7 @@ function syncProject(prev: State) {
     selected: state.selected,
     loras: state.composer.loras ?? undefined,
     rev: old?.rev,
+    lab: old?.lab ?? labsHere.get(id),
   };
   // Saved (and heard by the other devices) only when something they show changed.
   if (content(projects[id]) !== content(old)) persistProjects([id]);
@@ -405,6 +455,7 @@ let state: State = {
   composer: emptyComposer(loadPrefs()),
   lastPrompt: "",
   overlay: null,
+  overlayBack: null,
   compareUpscalers: false,
   toasts: [],
   galleryVersion: 0,
@@ -995,7 +1046,7 @@ export function startNewImage() {
 /** "Edit image": the prompt edits the version shown (or the latest image). When it is one of a
  * new image's references it becomes image 1 and the others stay; a version that is not (such as
  * the new image just made) is edited on its own. */
-export function editShownImage() {
+export function editShownImage(focus = true) {
   setState((s) => {
     const shown = s.session.find((i) => i.key === s.selected);
     const ref = refOf(shown) ?? refOf([...s.session].reverse().find((i) => i.gen || i.input));
@@ -1008,7 +1059,16 @@ export function editShownImage() {
     }
     return { composer: { ...retarget(c, ref), create: false } };
   });
-  focusPrompt();
+  if (focus) focusPrompt();
+}
+
+/** Opens Paint area / Expand; from the layers lab they return there when they close. */
+export function openEditor(o: "inpaint" | "expand") {
+  setState((s) => ({ overlay: o, overlayBack: s.overlay === "layers" ? "layers" : null }));
+}
+
+export function closeEditor() {
+  setState((s) => ({ overlay: s.overlayBack, overlayBack: null }));
 }
 
 /** The sources ("gen:<id>"/"input:<id>") a version was made from; `variant` when it is the
@@ -1123,18 +1183,38 @@ export function addInputs(records: InputRecord[]) {
   if (getState().composer.refs.length >= 10) toastInfo("Up to 10 reference images are supported.");
 }
 
-export async function submitRequest(req: GenerationRequest) {
+/** Images made in the app (the layers lab's split): new versions at the end of the project, not
+ * references; `select` (an index in `records`) is shown and becomes the image to edit. */
+export function addVersions(records: InputRecord[], select = 0) {
+  if (!records.length) return;
+  const items: SessionItem[] = records.map((r) => ({ key: newKey(), kind: "input", input: r }));
+  setState((s) => ({ session: [...s.session, ...items], redo: [] }));
+  selectItem(items[Math.min(select, items.length - 1)].key);
+}
+
+/** Makes a version the image to edit (the layers lab's selected layer); false when the version
+ * is no longer in the project. `focus`: the prompt box takes the keyboard. */
+export function editSource(source: string, focus = true): boolean {
+  const it = getState().session.find((i) => itemSource(i) === source);
+  if (!it) return false;
+  selectItem(it.key);
+  editShownImage(focus);
+  return true;
+}
+
+/** Sends a request; its job joins the project as a version. The job's id, or null when it failed. */
+export async function submitRequest(req: GenerationRequest): Promise<string | null> {
   try {
     if (getState().privateMode) req = { ...req, private: true };
     const job = await api.submit(req);
     const item: SessionItem = { key: newKey(), kind: "job", jobId: job.id, request: req };
     setState((s) => ({ jobs: { ...s.jobs, [job.id]: job }, session: [...s.session, item], selected: item.key, redo: [] }));
-    return true;
+    return job.id;
   } catch (e) {
     // The prompt and images stay in the composer: once the files are back, Generate again.
     if (isMissingModel(e)) openModelSetup();
     toastError(e);
-    return false;
+    return null;
   }
 }
 
@@ -1156,6 +1236,8 @@ export async function submitComposer() {
   const target = composing(s.composer) ? undefined : s.composer.refs[0]?.source;
   const parent = target?.startsWith("gen:") ? target.slice(4) : null;
   const req: GenerationRequest = { ...buildRequest(s.composer, parent), loras: activeLoras(s.composer, s.loras) };
+  // Made from the layers lab: a step, out of the gallery (only the image saved from the lab shows).
+  if (s.overlay === "layers" || isLabStep(target)) req.hidden = true;
   if (!req.prompt && needsPrompt(s.composer)) {
     toastInfo("Describe what to create or change.");
     return;

@@ -72,6 +72,18 @@ describe("buildRequest", () => {
     expect(r.images).toEqual(["input:3", "input:1", "input:2"]);
     expect(r.aspect_ratio).toBe("16:9");
   });
+  it("coloured marks go with the mask, as an edit Prompt+ can write", () => {
+    const plain = { ...emptyComposer(), prompt: "x", refs: [ref(1)], mask: { inputId: "m", refKey: "k1" }, inpaintAction: "remove" as const, enhance: true };
+    expect(buildRequest(plain).marks).toBeUndefined();
+    expect(enhancerApplies(plain)).toBe(false);
+    expect(needsPrompt(plain)).toBe(false);
+    const marked = { ...plain, mask: { inputId: "m", refKey: "k1", marks: "k" } };
+    const r = buildRequest(marked);
+    expect([r.mask, r.marks, r.enhance]).toEqual(["input:m", "input:k", true]);
+    expect(needsPrompt(marked)).toBe(true);
+    // A mask of another image is not used, nor its marks.
+    expect(buildRequest({ ...marked, mask: { ...marked.mask, refKey: "other" } }).marks).toBeUndefined();
+  });
   it("inpaint and expand ignore the aspect", () => {
     const masked = { ...emptyComposer(), prompt: "x", refs: [ref(1)], mask: { inputId: "m", refKey: "k1" }, aspect: "16:9" };
     expect(buildRequest(masked).aspect_ratio).toBeNull();

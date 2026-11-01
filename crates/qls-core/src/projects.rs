@@ -167,13 +167,16 @@ pub fn merge(stored: Option<&Project>, incoming: Project, known: &HashSet<String
     } else {
         items.last().map(|i| i.key.clone())
     };
+    // Fields a saving device did not send (one that knows nothing of the layers lab) are kept.
+    let mut extra = stored.extra.clone();
+    extra.extend(incoming.extra);
     let mut p = Project {
         meta,
         items,
         selected,
         loras: incoming.loras.clone(),
         rev: stored.rev + 1,
-        extra: incoming.extra,
+        extra,
     };
     refresh_meta(&mut p);
     p
@@ -565,6 +568,19 @@ mod tests {
             again.get("p").unwrap().items[0].extra.get("future"),
             Some(&Value::from(1))
         );
+    }
+
+    #[test]
+    fn a_save_without_a_field_keeps_the_stored_one() {
+        // The layers lab travels with the project; a device that does not send it keeps it.
+        let mut stored = project("p", vec![img("a")]);
+        stored.extra.insert("lab".into(), Value::from("doc"));
+        let stored = merge(None, stored, &known(&[]));
+        let m = merge(Some(&stored), project("p", vec![img("a"), img("b")]), &known(&["a"]));
+        assert_eq!(m.extra.get("lab"), Some(&Value::from("doc")));
+        let mut cleared = project("p", vec![img("a")]);
+        cleared.extra.insert("lab".into(), Value::Null);
+        assert_eq!(merge(Some(&m), cleared, &known(&["a", "b"])).extra.get("lab"), Some(&Value::Null));
     }
 
     #[test]

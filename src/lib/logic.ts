@@ -16,8 +16,9 @@ export interface Ref {
 export interface Composer {
   prompt: string;
   refs: Ref[];
-  /** Mask painted on refs[0] (input id of the mask PNG). */
-  mask: { inputId: string; refKey: string } | null;
+  /** Mask painted on refs[0] (input id of the mask PNG); `marks`: the coloured marks drawn there
+   * (input id of a transparent PNG), which the prompt names by colour. */
+  mask: { inputId: string; refKey: string; marks?: string } | null;
   /** What to do in the painted area. */
   inpaintAction: InpaintAction;
   outpaint: OutpaintSpec | null;
@@ -148,6 +149,7 @@ export function buildRequest(c: Composer, parentId?: string | null): GenerationR
     images: c.mode === "generate" && !composing(c) ? [] : c.refs.map((r) => r.source),
     mask: maskValid ? `input:${c.mask!.inputId}` : null,
     ...(maskValid ? { inpaint_action: c.inpaintAction } : {}),
+    ...(maskValid && c.mask!.marks ? { marks: `input:${c.mask!.marks}` } : {}),
     outpaint: outpaintInUse(c) ? c.outpaint : null,
     quality: c.quality,
     resolution: c.resolution,
@@ -174,15 +176,18 @@ export function reviewRequest(c: Composer): GenerationRequest {
   return { ...buildRequest(c), enhance: true, enhance_only: true };
 }
 
-/** The prompt enhancer works on new images, edits and combines; a painted area or an expansion
- * wraps the prompt in its own instruction. */
+/** The prompt enhancer works on new images, edits, combines and coloured marks; a painted area
+ * or an expansion wraps the prompt in its own instruction. */
 export function enhancerApplies(c: Composer): boolean {
-  return !maskInUse(c) && !outpaintInUse(c);
+  return (!maskInUse(c) || marksInUse(c)) && !outpaintInUse(c);
 }
+
+/** The painted area in use is coloured marks (the prompt names them by colour). */
+export const marksInUse = (c: Composer) => maskInUse(c) && !!c.mask!.marks;
 
 /** False only for a removal in a painted area, which needs no description. */
 export function needsPrompt(c: Composer): boolean {
-  return !(maskInUse(c) && c.inpaintAction === "remove");
+  return !(maskInUse(c) && !c.mask!.marks && c.inpaintAction === "remove");
 }
 
 /** Advanced fields that change how the model samples. They last for the session only: a value
@@ -231,7 +236,7 @@ export function composerFromRecord(g: GenerationRecord, base: Composer): Compose
     inpaintAction: req?.inpaint_action ?? "edit",
     outpaint: g.outpaint ? { ...g.outpaint, units: "pixels" } : null,
     // Upscales are started from the image toolbar, not the composer.
-    mode: req?.mode && req.mode !== "upscale" && req.mode !== "compose" && g.mode !== "lut" ? req.mode : "auto",
+    mode: req?.mode && req.mode !== "upscale" && req.mode !== "compose" && g.mode !== "lut" && g.mode !== "layers" ? req.mode : "auto",
     quality: normalizeQuality(g.quality, base.quality),
     resolution: req?.resolution ?? base.resolution,
     aspect: req?.aspect_ratio ?? "auto",
@@ -254,7 +259,7 @@ export function variationRequest(g: GenerationRecord): GenerationRequest | null 
   return { ...g.request, seed: null, client: "ui", parent_id: g.id };
 }
 
-export const MODE_LABEL: Record<Mode | "lut", string> = {
+export const MODE_LABEL: Record<Mode | "lut" | "layers", string> = {
   auto: "Auto",
   generate: "Create",
   edit: "Edit",
@@ -264,6 +269,7 @@ export const MODE_LABEL: Record<Mode | "lut", string> = {
   compose: "From references",
   upscale: "Upscale",
   lut: "LUT",
+  layers: "Layers",
 };
 
 /** How a LUT is shown: a preset ("kokon:<key>") by its title, a user's LUT by its file name. */
@@ -868,7 +874,7 @@ export interface CompareBase {
 export function compareBase(g: GenerationRecord): CompareBase | null {
   const r = g.references[0];
   // A new image or a combination of several has no single "before".
-  if (!r || !["edit", "inpaint", "outpaint", "upscale", "lut"].includes(g.mode)) return null;
+  if (!r || !["edit", "inpaint", "outpaint", "upscale", "lut", "layers"].includes(g.mode)) return null;
   const o = g.outpaint;
   if (g.mode === "outpaint" && o) {
     // Expansion is in source pixels; the result is the source plus the expansion.

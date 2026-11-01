@@ -981,9 +981,77 @@ impl Engine {
                 "private": private,
             }),
             pipeline: None,
+            hidden: false,
         };
         rec.duration_ms = started.elapsed().as_millis() as u64;
         write_atomic(&file, &encode_output(&out, format, &rec, img.icc_profile.as_deref())?)?;
+        if let Ok(j) = imaging::encode_jpeg(&imaging::thumbnail(&out, 512), 85) {
+            let _ = std::fs::write(store.thumb_path(&id), j);
+        }
+        store.insert_generation(&rec)?;
+        if !private {
+            let _ = self.events.send(Event::Gallery { id: id.clone(), change: "added" });
+        }
+        Ok(rec)
+    }
+
+    /// Saves the layers lab's flattened image (`image`, an "input:" upload) as a gallery result
+    /// made from `from` (the image that was split): mode "layers", PNG. Private when asked or
+    /// when `from` is private.
+    pub fn save_layers(&self, image: &str, from: Option<&str>, private: bool) -> AppResult<GenerationRecord> {
+        let parent = match from.and_then(|f| f.strip_prefix("gen:")) {
+            Some(id) => self.gen_store(id).get_generation(id).ok(),
+            None => None,
+        };
+        let private = private || parent.as_ref().is_some_and(|p| Arc::ptr_eq(self.gen_store(&p.id), &self.private_store));
+        let (img, input) = self.resolve_source(image, None, private)?;
+        let cfg = self.config();
+        let id = new_id();
+        let now = chrono::Local::now();
+        let store = if private { &self.private_store } else { &self.store };
+        let dir = if private { self.private_dir.join("out") } else { cfg.output_dir.join(now.format("%Y-%m-%d").to_string()) };
+        std::fs::create_dir_all(&dir).map_err(|e| AppError::io("create the output folder", &dir, e))?;
+        let file = paths::unique_path(dir.join(format!("{}-layers.png", now.format("%H%M%S"))), &[]);
+        let out = img.pixels;
+        let rec = GenerationRecord {
+            id: id.clone(),
+            created_at: now_rfc3339(),
+            mode: "layers".into(),
+            prompt: String::new(),
+            original_prompt: None,
+            loras: vec![],
+            negative_prompt: String::new(),
+            seed: parent.as_ref().map(|p| p.seed).unwrap_or(0),
+            width: out.width(),
+            height: out.height(),
+            working_width: out.width(),
+            working_height: out.height(),
+            model: String::new(),
+            sampler: String::new(),
+            scheduler: None,
+            steps: 0,
+            cfg: 0.0,
+            strength: None,
+            quality: String::new(),
+            resolution: String::new(),
+            references: vec![ReferenceRecord { index: 0, input_id: input.id.clone(), original_path: None, width: input.width, height: input.height }],
+            mask_input_id: None,
+            outpaint: None,
+            file_path: file.to_string_lossy().into_owned(),
+            extra_paths: vec![],
+            favorite: false,
+            parent_id: parent.as_ref().map(|p| p.id.clone()),
+            duration_ms: 0,
+            notes: vec!["Saved from the Layers lab.".into()],
+            app_version: APP_VERSION.into(),
+            backend_version: None,
+            client: None,
+            // `images`: what it was made from, as for other versions (the project's lineage).
+            request: serde_json::json!({ "mode": "layers", "images": [from.unwrap_or(image)], "layers_image": image, "parent_id": parent.as_ref().map(|p| p.id.clone()), "private": private }),
+            pipeline: None,
+            hidden: false,
+        };
+        write_atomic(&file, &encode_output(&out, OutputFormat::Png, &rec, img.icc_profile.as_deref())?)?;
         if let Ok(j) = imaging::encode_jpeg(&imaging::thumbnail(&out, 512), 85) {
             let _ = std::fs::write(store.thumb_path(&id), j);
         }
@@ -1038,7 +1106,7 @@ impl Engine {
         let this = self.clone();
         let req2 = request.clone();
         let ws = workspace.clone();
-        let (images, inputs_meta, mask, ref_seeds) = tokio::task::spawn_blocking(move || -> AppResult<_> {
+        let (images, inputs_meta, mask, marks, ref_seeds) = tokio::task::spawn_blocking(move || -> AppResult<_> {
             let mut images = Vec::new();
             let mut metas = Vec::new();
             let mut seeds = Vec::new();
@@ -1055,7 +1123,11 @@ impl Engine {
                 }
                 None => None,
             };
-            Ok((images, metas, mask, seeds))
+            let marks = match &req2.marks {
+                Some(m) => Some(this.resolve_source(m, ws.as_deref(), req2.private)?.0.pixels),
+                None => None,
+            };
+            Ok((images, metas, mask, marks, seeds))
         })
         .await
         .map_err(AppError::internal)??;
@@ -1142,7 +1214,7 @@ impl Engine {
             let plan2 = plan.clone();
             let prompt = request.prompt.clone();
             let mask_img: Option<GrayImage> = mask.as_ref().map(|(m, _)| m.clone());
-            let opts = pipeline::BackendOptions { server_vae_tile_size: cfg.server_vae_tile_size() };
+            let opts = pipeline::BackendOptions { server_vae_tile_size: cfg.server_vae_tile_size(), marks };
             let prepared = tokio::task::spawn_blocking(move || pipeline::prepare(&plan2, &prompt, seed, &images, mask_img.as_ref(), &opts))
                 .await
                 .map_err(AppError::internal)??;
@@ -1154,8 +1226,10 @@ impl Engine {
 
             // 4b. Prompt enhancer: rewrites the user's prompt, looking at the references
             // exactly as the image model gets them.
-            if request.enhance && enhancer::applies(plan.mode) {
-                enhanced = self.enhance_prompt(id, &client, &caps, &cfg, plan.mode, &request.prompt, &sd_req.ref_images, seed).await?;
+            if request.enhance && enhancer::applies_to(plan.mode, plan.marks) {
+                // Marks: an edit of the marked region (its one reference).
+                let as_mode = if plan.marks { ResolvedMode::Edit } else { plan.mode };
+                enhanced = self.enhance_prompt(id, &client, &caps, &cfg, as_mode, &request.prompt, &sd_req.ref_images, seed).await?;
                 if let Some(text) = &enhanced {
                     sd_req.prompt = pipeline::enhanced_prompt(&request.prompt, text);
                     // The rewrite understood a transparency request the keywords missed: keep the alpha.
@@ -1700,6 +1774,7 @@ impl Engine {
             client: req.client.clone(),
             request: serde_json::to_value(req).unwrap_or_default(),
             pipeline,
+            hidden: req.hidden,
         };
         rec.notes.extend(hdr_note);
         let bytes = match &hdr {

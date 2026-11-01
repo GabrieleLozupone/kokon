@@ -1,5 +1,5 @@
 import {
-  Brush, ClipboardPaste, Combine, Copy, Download, Ellipsis, Expand, FolderOpen, Heart, ImageUpscale, Info, Loader2, MousePointerClick, Palette, Pencil, RefreshCw, RotateCcw, SlidersHorizontal, Square, TextCursorInput, Trash2, Wand2, WandSparkles, X,
+  Brush, ClipboardPaste, Combine, Copy, Download, Ellipsis, Expand, FolderOpen, Heart, ImageUpscale, Info, Layers, Loader2, MousePointerClick, Palette, Pencil, RefreshCw, RotateCcw, SlidersHorizontal, Square, TextCursorInput, Trash2, Wand2, WandSparkles, X,
 } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, urls } from "../lib/api";
@@ -16,13 +16,16 @@ import { Cocoon, Hatch } from "./Cocoon";
 import { CompareFrame, CompareFullscreen } from "./Compare";
 import { PROMPT_FADE_MS, cardMemory, usePromptLeave, useTypewriter, useJobPercent, wordStyle, type CardMemory } from "./jobMotion";
 import { DevelopImg } from "./Develop";
+import { docById, LabFrame, LabThumb, useLab, useLabJobs, type Lab } from "./LabStage";
+import { useMaskTint } from "./LayerDoc";
+import { docId, type LayerDoc } from "../lib/layerDoc";
 import { LutBar, LutButton, LutOverlay } from "./Lut";
 import { IconButton, Popover, useFit } from "./ui";
 import { Fullscreen, FullscreenButton, isTyping, ZoomImage, type ViewerNav } from "./Viewer";
 import { fileManager, inBrowser, shortcut, useNarrow } from "../lib/platform";
 import { PhoneActions, PhoneEmpty, Swipe } from "./PhoneStage";
 
-export const MODE_ICON: Record<Mode | "lut", React.ReactNode> = {
+export const MODE_ICON: Record<Mode | "lut" | "layers", React.ReactNode> = {
   auto: <Wand2 size={11} />,
   generate: <Wand2 size={11} />,
   edit: <Pencil size={11} />,
@@ -32,6 +35,7 @@ export const MODE_ICON: Record<Mode | "lut", React.ReactNode> = {
   outpaint: <Expand size={11} />,
   upscale: <ImageUpscale size={11} />,
   lut: <Palette size={11} />,
+  layers: <Layers size={11} />,
 };
 
 const MODE_DOING: Record<Mode, string> = {
@@ -382,7 +386,7 @@ function MoreMenu({ item, path }: { item: SessionItem; path: string | null }) {
     >
       {(close) => (
         <>
-          {g && g.mode !== "lut" && (
+          {g && g.mode !== "lut" && g.mode !== "layers" && (
             <button
               className="opt"
               onClick={() => {
@@ -420,7 +424,7 @@ function MoreMenu({ item, path }: { item: SessionItem; path: string | null }) {
 
 /** The size of the image an edit was made from (the upscale menu offers it back), or null. */
 export function sourceSize(g: GenerationRecord): Size | null {
-  return g.references[0] && g.mode !== "generate" && g.mode !== "compose" && g.mode !== "upscale" && g.mode !== "lut" ? { width: g.references[0].width, height: g.references[0].height } : null;
+  return g.references[0] && g.mode !== "generate" && g.mode !== "compose" && g.mode !== "upscale" && g.mode !== "lut" && g.mode !== "layers" ? { width: g.references[0].width, height: g.references[0].height } : null;
 }
 
 function GenActions({ item, g, showOriginal, onLut }: { item: SessionItem; g: GenerationRecord; showOriginal: boolean; onLut: (lut: LutEntry) => void }) {
@@ -438,7 +442,7 @@ function GenActions({ item, g, showOriginal, onLut }: { item: SessionItem; g: Ge
           onClick={() => reusePrompt(g)}
         />
       )}
-      {g.request && g.mode !== "upscale" && g.mode !== "lut" && (
+      {g.request && g.mode !== "upscale" && g.mode !== "lut" && g.mode !== "layers" && (
         <ActionButton
           title="Regenerate: same prompt and settings, new seed"
           icon={<RefreshCw size={16} />}
@@ -638,8 +642,28 @@ function linkText(link: TimelineLink | undefined, labels: Record<string, string>
 /** The project's versions in order. A version continues the line of the one it was made from;
  * a new image starts a new line; versions made from earlier ones (or from several) are joined
  * to them by arcs. The image the prompt edits carries a pencil. */
-function Timeline({ labels }: { labels: Record<string, string> }) {
-  const session = useStore((s) => s.session);
+function Timeline({ labels, lab }: { labels: Record<string, string>; lab: Lab }) {
+  const all = useStore((s) => s.session);
+  // The layers lab's versions are not shown: each split image is one frame, where the first of its
+  // versions was (LabStage.tsx); an earlier lab's leftovers are not shown at all.
+  const session = useMemo(() => (lab.hidden.size ? all.filter((i) => !lab.hidden.has(i.key)) : all), [all, lab]);
+  const labJobs = useLabJobs(lab);
+  const labSlots = useMemo(() => {
+    const out: { at: number; doc: LayerDoc; key: string }[] = [];
+    const seen = new Set<string>();
+    let shown = 0;
+    for (const i of all) {
+      if (!lab.hidden.has(i.key)) {
+        shown++;
+        continue;
+      }
+      const d = docById(lab, lab.hidden.get(i.key));
+      if (!d || seen.has(docId(d))) continue;
+      seen.add(docId(d));
+      out.push({ at: shown, doc: d, key: i.key });
+    }
+    return out;
+  }, [all, lab]);
   const selected = useStore((s) => s.selected);
   const jobs = useStore((s) => s.jobs);
   const target = useStore((s) => s.composer.refs[0]?.source);
@@ -696,8 +720,36 @@ function Timeline({ labels }: { labels: Record<string, string> }) {
     setCenters(out);
   }, [session, labels]);
 
-  if (!session.length) return null;
+  if (!session.length && !labSlots.length) return null;
   const focus = hovered ?? selected;
+  const labFrame = (doc: LayerDoc, key: string, first: boolean) => {
+    const id = docId(doc);
+    const isSel = !!selected && lab.hidden.get(selected) === id;
+    const making = labJobs.find((j) => docId(j.doc) === id && j.job.status !== "failed");
+    return (
+      <Fragment key={`lab-${id}`}>
+        {!first && <Joint kind="next" hot={false} />}
+        <button data-key={`lab-${id}`} className={`frame ${isSel ? "sel" : ""}`} title="Layers: this image's layered version (open its layers from the Stage)" onClick={() => selectItem(key)}>
+          <span className="frame-box">
+            <span className="frame-img">
+              <LabThumb doc={doc} job={making} />
+            </span>
+            {(isSel || making) && (
+              <svg className={`frame-silk ${making ? "making" : ""}`} viewBox="0 0 60 60" aria-hidden>
+                <rect className="ring" x="1" y="1" width="58" height="58" rx="17" />
+                {making && <rect className="run" x="1" y="1" width="58" height="58" rx="17" pathLength={200} />}
+              </svg>
+            )}
+          </span>
+          <span className="frame-label">
+            <Layers size={10} />
+            Layers
+          </span>
+        </button>
+      </Fragment>
+    );
+  };
+  const labFirst = labSlots.filter((x) => x.at === 0);
   const selParents = new Set(focus ? links[focus]?.parents : []);
   const index = new Map(session.map((it, i) => [it.key, i]));
   const arcs = session
@@ -730,6 +782,7 @@ function Timeline({ labels }: { labels: Record<string, string> }) {
               ))}
           </svg>
         )}
+        {labFirst.map((x, k) => labFrame(x.doc, x.key, k === 0))}
         {session.map((it, i) => {
           const job = it.jobId ? jobs[it.jobId] : undefined;
           const src = itemSource(it);
@@ -737,7 +790,7 @@ function Timeline({ labels }: { labels: Record<string, string> }) {
           const failed = pending && job && ["failed", "cancelled"].includes(job.status);
           // Being made: a thread runs round its thumbnail (the shown version has a still ring).
           const making = pending && !failed;
-          const mode: Mode | "lut" | undefined = it.gen?.mode ?? job?.plan?.mode;
+          const mode: Mode | "lut" | "layers" | undefined = it.gen?.mode ?? job?.plan?.mode;
           const link = links[it.key];
           const pendingSrc = pending && it.request?.mode !== "generate" && it.request?.mode !== "compose" ? it.request?.images?.[0] : undefined;
           const prompt = it.gen?.prompt || it.request?.prompt || "";
@@ -746,7 +799,7 @@ function Timeline({ labels }: { labels: Record<string, string> }) {
           const hot = it.key === focus || link?.parents[0] === focus;
           return (
             <Fragment key={it.key}>
-              {i > 0 && <Joint kind={link?.kind ?? "next"} hot={hot} />}
+              {(i > 0 || labFirst.length > 0) && <Joint kind={link?.kind ?? "next"} hot={hot} />}
               <button
                 data-key={it.key}
                 className={`frame ${selected === it.key ? "sel" : ""} ${selParents.has(it.key) ? "src" : ""}`}
@@ -813,6 +866,7 @@ function Timeline({ labels }: { labels: Record<string, string> }) {
                   {labels[it.key]}
                 </span>
               </button>
+              {labSlots.filter((x) => x.at === i + 1).map((x) => labFrame(x.doc, x.key, false))}
             </Fragment>
           );
         })}
@@ -883,10 +937,14 @@ export function Stage() {
   const phone = useNarrow();
   const job = useStore((s) => (item?.jobId ? s.jobs[item.jobId] : undefined));
   const labels = useMemo(() => sessionLabels(session), [session]);
+  const lab = useLab();
+  // A version of a layer document is selected: the Stage shows that layered image instead.
+  const labDoc = item ? docById(lab, lab.hidden.get(item.key)) : null;
+  const inLab = !!labDoc;
   // The result whose pre-upscale original is on screen instead of it.
   const [originalOf, setOriginalOf] = useState<string | null>(null);
   const [full, setFull] = useState(false);
-  const canFull = !!item && viewable(item);
+  const canFull = !!item && viewable(item) && !inLab;
   // A LUT being previewed on the selected version (intensity 0-1), before saving it as a new one.
   const [lut, setLut] = useState<{ itemKey: string; source: string; lut: LutEntry; intensity: number } | null>(null);
   const [before, setBefore] = useState(false);
@@ -896,7 +954,10 @@ export function Stage() {
   const mask = useStore((s) => s.composer.mask);
   const ref0 = useStore((s) => s.composer.refs[0]);
   const itemSource = item?.gen ? `gen:${item.gen.id}` : item?.input ? `input:${item.input.id}` : null;
-  const maskSrc = mask && ref0 && mask.refKey === ref0.key && ref0.source === itemSource ? urls.input(mask.inputId) : undefined;
+  const masked = !!mask && !!ref0 && mask.refKey === ref0.key && ref0.source === itemSource;
+  // Pink with a light edge, as in the layers lab; coloured marks are shown as drawn.
+  const tint = useMaskTint(masked && !mask!.marks ? urls.input(mask!.inputId) : null);
+  const maskSrc = masked ? (mask!.marks ? urls.input(mask!.marks) : tint ?? undefined) : undefined;
 
   // F opens full screen on the selected version (Esc or F again closes it).
   useEffect(() => {
@@ -945,7 +1006,7 @@ export function Stage() {
     return (
       <div className={`stage ${phone ? "phone-stage" : ""}`}>
         {phone ? <PhoneEmpty /> : <Empty />}
-        <Timeline labels={labels} />
+        <Timeline labels={labels} lab={lab} />
       </div>
     );
   }
@@ -953,7 +1014,9 @@ export function Stage() {
   // The picture (or the job's card), and under it the bar with what to do with it.
   let view: React.ReactNode;
   let bar: React.ReactNode = null;
-  if (item.kind === "job") {
+  if (inLab) {
+    view = <LabFrame doc={labDoc!} lab={lab} />;
+  } else if (item.kind === "job") {
     view = !job ? (
       <div className="stage-frame">
         <Loader2 className="spin" size={22} />
@@ -1030,7 +1093,7 @@ export function Stage() {
       {phone ? <Swipe onTap={canFull && !lutActive ? openFull : undefined}>{view}</Swipe> : view}
       {/* A phone keeps the bar's room even without one (a job), so the timeline never moves. */}
       {phone ? <div className="phone-bar">{bar}</div> : bar}
-      <Timeline labels={labels} />
+      <Timeline labels={labels} lab={lab} />
       {fullscreen}
     </div>
   );
