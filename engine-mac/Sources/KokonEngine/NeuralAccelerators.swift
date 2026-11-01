@@ -22,18 +22,26 @@ public final class NeuralAccelerators: @unchecked Sendable {
 
     struct Params { var m, n, k: UInt32 }
 
-    /// **2 SIMD groups per tile on the M5 Pro.** With 4, a tile's K loop ran 20–26 % slower than MPS where it is
+    /// **2 SIMD groups per tile on the M5's neural accelerators.** With 4, a tile's K loop ran 20–26 % slower than MPS where it is
     /// long or the rows are many: the MLP's out (2048 × 12288 × 4096) 10.2 ms against MPS's 7.9, 4096 × 4096 × 4096
     /// 6.0 against 4.5. With 2 every DiT shape is at the matrix units' ceiling (~32 TFLOP/s fp16, MPS's and MLX's
     /// too): 7.1 and 4.5 ms, the same result to the bit (a sweep of tiles 32–128 and 1–8 SIMD groups; M5 Pro 20-core,
-    /// macOS 27.2, median of 12). Not measured on the M5, M5 Max or the shader cores of older chips, which keep 4.
-    /// `KOKON_NA_SG2=0` / `=1`.
-    static func simdgroups(chip: String, setting: String?) -> Int {
+    /// macOS 27.2, median of 12). Chosen by capability, as `NeuralAttention`: Apple10 GPUs (the M5, M5 Pro and M5
+    /// Max, the same accelerators per core; the M5 and M5 Max not measured). On the shader cores of older chips 2 are
+    /// slower: M2 Pro 19-core, every DiT shape 7–10 % (2048 × 12288 × 4096 32.8 → 35.9 ms, 4096³ 21.5 → 23.4), so they
+    /// keep 4. `KOKON_NA_SG2=0` / `=1`.
+    static func simdgroups(gpuFamily: Int, setting: String?) -> Int {
         switch setting {
         case "0": return 4
         case "1": return 2
-        default: return chip.contains("M5 Pro") ? 2 : 4
+        default: return gpuFamily >= 10 ? 2 : 4
         }
+    }
+
+    /// This GPU's choice (`simdgroups(gpuFamily:setting:)`).
+    static func simdgroups(device: MTLDevice) -> Int {
+        simdgroups(gpuFamily: device.supportsFamily(.apple10) ? 10 : 0,
+                   setting: ProcessInfo.processInfo.environment["KOKON_NA_SG2"])
     }
 
     /// Compiles the kernel; nil without Metal 4 or when the compiler refuses the source. `simdgroups`: nil for this
@@ -45,8 +53,7 @@ public final class NeuralAccelerators: @unchecked Sendable {
         }
         do {
             let library = try metal4Library(device: device, file: "na_matmul.metal")
-            let groups = simdgroups ?? NeuralAccelerators.simdgroups(chip: Chip.current.name,
-                                                                     setting: ProcessInfo.processInfo.environment["KOKON_NA_SG2"])
+            let groups = simdgroups ?? NeuralAccelerators.simdgroups(device: device)
             let name = groups == 2 ? "na_matmul_sg2" : "na_matmul"
             guard let function = library.makeFunction(name: name) else { throw MetalContext.Failure.kernel("\(name) not found") }
             return NeuralAccelerators(pipeline: try device.makeComputePipelineState(function: function), simdgroups: groups)

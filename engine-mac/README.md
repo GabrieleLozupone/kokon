@@ -442,13 +442,15 @@ correctness test that runs on any Mac (`PerChipTests`). Only the M2 Pro has meas
   `time-dit` third evaluation 3.64 → 2.99 s; test set 1024² 33.3 → 28.9 s, 1344×768 33.7 → 27.7 s, edit 36.2 →
   31.3 s, faster in every round; bench velocity error 4.4 · 10⁻⁴ (3.0 · 10⁻⁴ with it off in the same run, 4.1 ·
   10⁻⁴ the run before). 2 SIMD groups of 32 rows, 8 of 8 rows or tiles of 32 keys were 1.7–3× slower.
-- **2 SIMD groups per `na_matmul` tile on the M5 Pro** (`KOKON_NA_SG2=0` off, `=1` on elsewhere). With 4, the MLP's
+- **2 SIMD groups per `na_matmul` tile on the M5's neural accelerators** (Apple10 GPUs, `KOKON_NA_SG2=0` off, `=1`
+  on elsewhere). With 4, the MLP's
   out (2048 × 12288 × 4096) took 9.6 ms against MPS's 6.7 and 4096 × 4096 × 4096 6.0 against 4.4 (`check-na`, best
   of 5); with 2, 7.0 and 4.4, the same result to the bit. A sweep of tiles 32–128 and 1–8 SIMD groups found no
   shape faster than ~32 TFLOP/s fp16, the units' ceiling. M5 Pro 20-core, 24 GB, macOS 27.2, 3 alternated rounds,
   median (min–max): `time-dit` third evaluation 4.21 (4.19–4.27) → 3.86 (3.84–4.16) s (MPS 3.89); test set 1024²
-  37.2 → 34.4 s, 1344×768 37.5 → 34.9 s, edit 40.2 → 39.0 s; velocity error 4.1 · 10⁻⁴ both. Not measured on the M5
-  or M5 Max, which keep 4. int8 × int8 runs at ~62 TOP/s there, twice fp16, but needs int8 activations (the Neural
+  37.2 → 34.4 s, 1344×768 37.5 → 34.9 s, edit 40.2 → 39.0 s; velocity error 4.1 · 10⁻⁴ both. Chosen by capability,
+  as the attention below: the M5 and M5 Max have the same accelerators per core (not measured there). On the M2 Pro's
+  shader cores 2 are 7–10 % slower on every DiT shape (2048 × 12288 × 4096 32.8 → 35.9 ms), so M1–M4 keep 4. int8 × int8 runs at ~62 TOP/s there, twice fp16, but needs int8 activations (the Neural
   Engine's int8 error, chapter 29); half × int8 weights is slower than fp16.
 - **int8 products on the Neural Engine** (libnnc's M3/M4 path; `KOKON_ANE_INT8=1`, int8 weights and rows). Opt-in on
   every chip, as their error does not depend on the chip. M2 Pro: one 1792 × 4096 × 4096 tile 10.1 ms in fp16, 7.0 ms

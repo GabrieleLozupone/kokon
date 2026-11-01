@@ -48,17 +48,17 @@ final class PerChipTests: XCTestCase {
             XCTAssertLessThan(worst / scale, 1e-5, "\(groups) SIMD groups: fp16 products accumulated in fp32")
             results.append(c)
         }
-        // On the M5 Pro the two were the same to the bit; elsewhere only the error above is required.
-        if Chip.current.name.contains("M5 Pro") { XCTAssertEqual(results[0], results[1]) }
+        // On the M5 Pro and the M2 Pro the two were the same to the bit; elsewhere only the error above is required.
+        if device.supportsFamily(.apple10) { XCTAssertEqual(results[0], results[1]) }
     }
 
-    /// Which chips get 2 SIMD groups per tile: the M5 Pro only, unless the setting says otherwise.
+    /// Which GPUs get 2 SIMD groups per tile: Apple10 (the M5's), unless the setting says otherwise.
     func testNeuralAcceleratorTileSelection() {
-        XCTAssertEqual(NeuralAccelerators.simdgroups(chip: "Apple M5 Pro", setting: nil), 2)
-        XCTAssertEqual(NeuralAccelerators.simdgroups(chip: "Apple M5 Pro", setting: "0"), 4)
-        for chip in ["Apple M5", "Apple M5 Max", "Apple M4 Pro", "Apple M2 Pro", "Apple M1"] {
-            XCTAssertEqual(NeuralAccelerators.simdgroups(chip: chip, setting: nil), 4, chip)
-            XCTAssertEqual(NeuralAccelerators.simdgroups(chip: chip, setting: "1"), 2, chip)
+        XCTAssertEqual(NeuralAccelerators.simdgroups(gpuFamily: 10, setting: nil), 2)
+        XCTAssertEqual(NeuralAccelerators.simdgroups(gpuFamily: 10, setting: "0"), 4)
+        for family in [7, 8, 9] {   // M1–M4
+            XCTAssertEqual(NeuralAccelerators.simdgroups(gpuFamily: family, setting: nil), 4, "Apple\(family)")
+            XCTAssertEqual(NeuralAccelerators.simdgroups(gpuFamily: family, setting: "1"), 2, "Apple\(family)")
         }
     }
 
