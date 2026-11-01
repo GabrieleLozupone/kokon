@@ -312,6 +312,10 @@ let lastInset = 8;
 
 /** How far a whole-image shadow edit's result is read around each object (% of the long side). */
 const SCENE_REACH = 12;
+/** Automatic shadows: the whole scene edited, nothing painted. Generic on purpose (11-01 bench, Halloween and
+ * kitchen): the model put shadows where the light makes them and none on floating things (lettering, ghosts). */
+const AUTO_SHADOWS_PROMPT =
+  "Add natural shadows for the objects that stand or rest on a surface: a soft contact shadow where each one touches it and the shadow each one casts, following the direction of the light in the scene. Floating things cast no shadow. Keep everything else in the image exactly unchanged.";
 
 /** The selected layers per document (the last one is the one the panel shows), kept while the
  * view closes (Paint area, Expand, the Stage). */
@@ -1213,8 +1217,12 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
    * grey (holes left would keep the image transparent), with the pencil's marks drawn on when there
    * are any; `shadows`: objects whose shadows are read back (their shadow layers are left out of
    * what is sent, so Qwen makes them again); `look`: objects that take the edit's look. */
-  const sendScene = async (o: { shadows: string[]; look: string[]; prompt: string; marks: boolean; hint: string }) => {
+  /** `send`: made right away (a lab step, no Prompt+) instead of set up in the prompt; `one`: one
+   * shadow layer for all the objects. */
+  const sendScene = async (o: { shadows: string[]; look: string[]; prompt: string; marks: boolean; hint: string; send?: boolean; one?: boolean }) => {
     setBusy(true);
+    // Sent right away: the flattened layers become a version on the way; the prompt's image is put back.
+    const keep = { selected: getState().selected, refs: getState().composer.refs };
     try {
       const skip = new Set(live.layers.filter((l) => l.effect && (o.shadows.includes(l.follows ?? "") || (!l.follows && o.shadows.length > 0))).map((l) => l.id));
       const flat = document.createElement("canvas");
@@ -1239,8 +1247,10 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       }
       addVersions([source], 0);
       const target = `input:${source.id}`;
-      if (!editSource(target, false)) throw new Error("The flattened layers could not be opened.");
-      updateComposer({ mask: null, outpaint: null, mode: "auto", prompt: o.prompt });
+      if (!o.send) {
+        if (!editSource(target, false)) throw new Error("The flattened layers could not be opened.");
+        updateComposer({ mask: null, outpaint: null, mode: "auto", prompt: o.prompt });
+      }
       const scene: SceneEdit = {
         source: target,
         before: `input:${before.id}`,
@@ -1249,10 +1259,21 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
         look: o.look,
         places: placesOf(live),
         reach: SCENE_REACH,
+        ...(o.one ? { one: true } : {}),
       };
-      commit({ ...live, scenes: [...(live.scenes ?? []), scene] });
+      // The same layers again upload as the same image (the service keeps one copy): an older edit of it
+      // would read this one's result first (11-01: per-object shadows instead of the one layer asked for).
+      commit({ ...live, scenes: [...(live.scenes ?? []).filter((x) => x.source !== target), scene] });
       if (marksId) setSketch({ marks: [], wants: sketch.wants });
       setSels([]);
+      if (o.send) {
+        const c = getState().composer;
+        const req = buildRequest({ ...c, prompt: o.prompt, refs: [refFromInput(source)], mask: null, outpaint: null, create: false, mode: "auto", enhance: false, enhancedFrom: null, seed: null });
+        await submitRequest({ ...req, hidden: true });
+        setState((st) => ({ selected: st.session.some((i) => i.key === keep.selected) ? keep.selected : st.selected, composer: { ...st.composer, refs: keep.refs } }));
+        toastInfo((await hasHoles()) ? "Making the shadows, but the background still has holes (grey in the image): fill them first for real shadows." : o.hint);
+        return;
+      }
       focusPrompt(true);
       toastInfo((await hasHoles()) ? "Ready in the prompt, but the background still has holes (grey in the image): Fill the holes first." : o.hint);
     } catch (e) {
@@ -1802,6 +1823,18 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
               <span>{inset} px</span>
             </label>
             <div className="doc-grid">
+              <button
+                className="btn doc-wide"
+                onClick={() => {
+                  const objects = live.layers.filter((l) => !l.base && !l.effect && !l.hidden).map((l) => l.id);
+                  if (!objects.length) return toastInfo("No visible objects to make shadows for.");
+                  void sendScene({ shadows: objects, look: [], prompt: AUTO_SHADOWS_PROMPT, marks: false, send: true, one: true, hint: "Making the shadows: the model adds them to the whole scene where the light makes them, as one Shadows layer. Moved something? Make them again: the layer is replaced." });
+                }}
+                disabled={busy}
+                title="Nothing to paint: the whole scene goes to the model, which adds the shadows where the light makes them, as one Shadows layer (made again after moving things: it is replaced)"
+              >
+                <Sun size={14} /> Automatic shadows
+              </button>
               <button className="btn doc-wide" onClick={() => addShadows(null)} disabled={busy} title="One brushed edit of the flattened layers around every visible object; the result becomes a Shadows layer above the background">
                 <Sun size={14} /> Shadows for all objects
               </button>

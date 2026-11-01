@@ -225,6 +225,28 @@ export async function readScene(doc: LayerDoc, e: SceneEdit, result: string): Pr
   // Shadows: only of the objects asked for. A new object comes alone (its shadow is made
   // afterwards with Add shadow, the ring), whatever shadow Qwen drew for it is left out.
   const targets = e.shadows.filter((id) => feet.has(id)).map((id) => ({ of: id, m: feet.get(id)! }));
+  // One layer for all of them (Automatic shadows): the darkening within reach of the objects, taken
+  // out only where an object is (it covers its own pixels). No band around the outlines to fill
+  // back: a fill that fell short left a light ring round the spider's legs (11-01).
+  if (targets.length && e.one) {
+    const dark = addedDarkness(p, [...feet.values()], reach, marked);
+    const near = new Uint8Array(w * h);
+    for (const t of targets) for (let i = 0; i < t.m.length; i++) if (t.m[i]) near[i] = 255;
+    const q = 4;
+    const qw = Math.ceil(w / q);
+    const qh = Math.ceil(h / q);
+    const small = new Uint8Array(qw * qh);
+    for (let i = 0; i < near.length; i++) if (near[i]) small[(((i / w) | 0) / q | 0) * qw + (((i % w) / q) | 0)] = 255;
+    const within = dilate(small, qw, qh, reach / q);
+    const alpha = new Uint8Array(w * h);
+    for (let i = 0; i < alpha.length; i++) {
+      if (near[i] || !within[(((i / w) | 0) / q | 0) * qw + (((i % w) / q) | 0)]) continue;
+      alpha[i] = Math.round(Math.min(1, dark[i]) * 255);
+    }
+    if (total(alpha) < 255 * w * h * 0.0003) out.notes.push("No shadow was found.");
+    else out.shadows.push({ of: "all", src: `input:${(await upload(alpha, w, h, W, H, "Shadows")).id}` });
+    return out;
+  }
   if (targets.length) {
     const others = new Uint8Array(w * h);
     for (const [id, m] of feet) if (!e.shadows.includes(id)) for (let i = 0; i < m.length; i++) if (m[i]) others[i] = 255;

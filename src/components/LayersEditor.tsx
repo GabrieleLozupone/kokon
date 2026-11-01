@@ -94,6 +94,18 @@ function LayersLab({ projectId }: { projectId: string }) {
             }
           }
           for (const s of r.shadows) {
+            // Automatic shadows: the one layer, just above the background, replaced by the next result.
+            if (s.of === "all") {
+              const have = layers.find((l) => l.auto);
+              if (have) nextVersion(have.id, s.src);
+              else {
+                const layer: DocLayer = { id: `fx-${result}-all`, name: "Shadows", source: s.src, history: [s.src], hidden: false, base: false, effect: true, auto: true, dx: 0, dy: 0, s: 1 };
+                const at = layers.findIndex((l) => l.base);
+                layers = [...layers];
+                layers.splice(at < 0 ? layers.length : at, 0, layer);
+              }
+              continue;
+            }
             // A new object's shadow follows the new layer; an object's, the object (from where it was).
             const isNew = r.objects.some((o) => o.colour === s.of);
             const obj = isNew ? madeBy[s.of] : s.of;

@@ -83,6 +83,8 @@ export interface DocLayer {
   feeds?: Feed[];
   /** Shadows and light made by an edit (only the pixels it changed): not clicked on the canvas. */
   effect?: boolean;
+  /** The one layer of Automatic shadows: the next one replaces it (its next version). */
+  auto?: boolean;
   /** An object's shadow moves and scales with the object (`follows`), from where the object was
    * when the shadow was made (`at`). */
   follows?: string;
@@ -130,6 +132,8 @@ export interface SceneEdit {
   places: Record<string, Place & { source: string }>;
   /** How far shadows are looked for around an object, in % of the image's long side. */
   reach: number;
+  /** One shadow layer for all the objects (Automatic shadows), not one per object. */
+  one?: boolean;
   /** Layers its results made, so the next result becomes their next version: object id -> its
    * shadow layer, colour -> the new layer, "<colour>:shadow" -> the new layer's shadow. */
   made?: Record<string, string>;
