@@ -31,6 +31,9 @@ public enum Bench {
                 paths.append(("those products on 2 SIMD groups per tile (M5 Pro)", "KOKON_NA_SG2", "0"))
             }
         }
+        if NeuralAttention.selected(device: device), NeuralAttention.make(device: device) != nil {
+            paths.append(("the target's attention on Metal 4 tensor operations (the M5's neural accelerators)", "KOKON_NA_ATTENTION", "0"))
+        }
         if Coexecutor.flushReleaseSelected(context) {
             paths.append(("each product released to the AMX and the Neural Engine at once (this Mac's signals arrive late)", "KOKON_FLUSH_READY", "0"))
         }

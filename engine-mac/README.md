@@ -63,7 +63,7 @@ the kernels were found.
 | `EngineServer.swift`, `HTTPServer.swift` | `serve`: sd-server's `/sdcpp/v1` API (capabilities, img_gen, jobs, cancel, text_gen) and its log lines |
 | `QwenTextGeneration.swift`, `Kernels/decode.metal` | Prompt+: the text encoder's LLM writes, K/V cache, products on the Q4_K / Q6_K blocks, sd.cpp's sampler |
 | `Chip.swift` | this Mac's chip, GPU family, cores and memory; each unit's estimated speed against the M2 Pro's |
-| `NeuralAccelerators.swift`, `Kernels/metal4/na_matmul.metal` | the GPU's rows of a product on Metal 4 tensor operations (the M5's neural accelerators) |
+| `NeuralAccelerators.swift`, `Kernels/metal4/na_matmul.metal`, `Kernels/metal4/na_attention.metal` | the GPU's rows of a product and the target's attention on Metal 4 tensor operations (the M5's neural accelerators) |
 | `Bench.swift` | `bench`: the report testers paste in GitHub |
 
 Tests check the CPU and GPU unpacking against gguf-py's values (`tools/make_quant_fixtures.py` writes the
@@ -432,6 +432,16 @@ correctness test that runs on any Mac (`PerChipTests`). Only the M2 Pro has meas
   **On the M5 Pro they are the neural accelerators**, and MPS reaches them too: 31.4 against 32.2 TFLOP/s at
   1536 × 4096 × 4096, the same result to the bit, against at most ~10 for its 20 GPU cores without them; MLX 0.32
   reaches 28–31 on the DiT's shapes. So `KOKON_NA=0` does not turn them off; it was ahead because of the tile below.
+- **The target's attention on the neural accelerators** (`na_flash_attention`, `KOKON_NA_ATTENTION=0` off, `=1` on
+  any Metal 4 GPU). With the products on the accelerators, the attention was half of a step on the M5 Pro
+  (`KOKON_PROFILE` at 1024²: products 1.92 s of an evaluation, attention 1.91 s), on the shader cores' 8×8 SIMD-group
+  matrices at ~4.6 TFLOP/s. The new kernel does Q·Kᵀ and P·V with MPP's `matmul2d` (each SIMD group 16 query rows,
+  tiles of 64 keys, the softmax on MPP's row reductions), on the same packed fp16 K and V: `probe-attention` 60.0 →
+  28.1 ms, head 0 6.3 · 10⁻⁴ from exact for both. Chosen by capability (Apple10 GPU and Metal 4), so the M5, M5 Pro
+  and M5 Max; M1–M4 keep the engine's kernel. M5 Pro 20-core, 24 GB, macOS 27.2, 3 alternated rounds, median:
+  `time-dit` third evaluation 3.64 → 2.99 s; test set 1024² 33.3 → 28.9 s, 1344×768 33.7 → 27.7 s, edit 36.2 →
+  31.3 s, faster in every round; bench velocity error 4.4 · 10⁻⁴ (3.0 · 10⁻⁴ with it off in the same run, 4.1 ·
+  10⁻⁴ the run before). 2 SIMD groups of 32 rows, 8 of 8 rows or tiles of 32 keys were 1.7–3× slower.
 - **2 SIMD groups per `na_matmul` tile on the M5 Pro** (`KOKON_NA_SG2=0` off, `=1` on elsewhere). With 4, the MLP's
   out (2048 × 12288 × 4096) took 9.6 ms against MPS's 6.7 and 4096 × 4096 × 4096 6.0 against 4.4 (`check-na`, best
   of 5); with 2, 7.0 and 4.4, the same result to the bit. A sweep of tiles 32–128 and 1–8 SIMD groups found no

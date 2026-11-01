@@ -62,6 +62,18 @@ final class PerChipTests: XCTestCase {
         }
     }
 
+    /// Which GPUs take the attention on the neural accelerators: Apple10 with Metal 4 (the M5's), unless the setting
+    /// says otherwise; never without Metal 4.
+    func testNeuralAttentionSelection() {
+        XCTAssertTrue(NeuralAttention.selected(gpuFamily: 10, metal4: true, setting: nil))
+        XCTAssertFalse(NeuralAttention.selected(gpuFamily: 10, metal4: true, setting: "0"))
+        for family in [7, 8, 9] {   // M1–M4
+            XCTAssertFalse(NeuralAttention.selected(gpuFamily: family, metal4: true, setting: nil), "Apple\(family)")
+            XCTAssertTrue(NeuralAttention.selected(gpuFamily: family, metal4: true, setting: "1"), "Apple\(family)")
+        }
+        XCTAssertFalse(NeuralAttention.selected(gpuFamily: 10, metal4: false, setting: "1"))
+    }
+
     func testChipNames() {
         XCTAssertEqual(Chip.generation(of: "Apple M2 Pro"), 2)
         XCTAssertEqual(Chip.generation(of: "Apple M4 Max"), 4)

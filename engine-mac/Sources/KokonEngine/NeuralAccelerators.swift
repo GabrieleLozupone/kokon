@@ -44,12 +44,7 @@ public final class NeuralAccelerators: @unchecked Sendable {
             return nil
         }
         do {
-            guard let url = EngineBundle.kernels?
-                .appendingPathComponent("metal4/na_matmul.metal") else { throw MetalContext.Failure.noKernelSource }
-            let options = MTLCompileOptions()
-            options.languageVersion = .version4_0
-            options.mathMode = .safe
-            let library = try device.makeLibrary(source: try String(contentsOf: url, encoding: .utf8), options: options)
+            let library = try metal4Library(device: device, file: "na_matmul.metal")
             let groups = simdgroups ?? NeuralAccelerators.simdgroups(chip: Chip.current.name,
                                                                      setting: ProcessInfo.processInfo.environment["KOKON_NA_SG2"])
             let name = groups == 2 ? "na_matmul_sg2" : "na_matmul"
@@ -59,6 +54,16 @@ public final class NeuralAccelerators: @unchecked Sendable {
             unavailable = "the kernel did not compile: \(error.localizedDescription)"
             return nil
         }
+    }
+
+    /// Compiles one of `Kernels/metal4/` (Metal 4, `mathMode = .safe` as the other kernels).
+    @available(macOS 26, *)
+    static func metal4Library(device: MTLDevice, file: String) throws -> MTLLibrary {
+        guard let url = EngineBundle.kernels?.appendingPathComponent("metal4/\(file)") else { throw MetalContext.Failure.noKernelSource }
+        let options = MTLCompileOptions()
+        options.languageVersion = .version4_0
+        options.mathMode = .safe
+        return try device.makeLibrary(source: try String(contentsOf: url, encoding: .utf8), options: options)
     }
 
     init(pipeline: MTLComputePipelineState, simdgroups: Int) {
@@ -93,6 +98,85 @@ public final class NeuralAccelerators: @unchecked Sendable {
         e.setBytes(&p, length: MemoryLayout<Params>.stride, index: 3)
         e.dispatchThreadgroups(MTLSize(width: n / 64, height: m / 64, depth: 1),
                                threadsPerThreadgroup: MTLSize(width: pipeline.threadExecutionWidth * simdgroups, height: 1, depth: 1))
+        e.endEncoding()
+    }
+}
+
+/// **The target's attention on the neural accelerators** (`Kernels/metal4/na_attention.metal`): Q·Kᵀ and P·V on Metal
+/// 4's tensor operations, where `flash_attention_packed` uses 8×8 SIMD-group matrices on the shader cores. With the
+/// products on the accelerators, the attention became half of a step on the M5 Pro (`KOKON_PROFILE`, 1024²: products
+/// 1.92 s of an evaluation, the attention 1.91 s). The kernel alone at 1024²: 27.4 ms against 59.7 (20-core, macOS
+/// 27.2). Same inputs as `flash_attention_packed` (K and V packed by `attention_pack_kv`), not causal: the text
+/// segments' causal attentions stay on the engine's kernels.
+///
+/// Chosen by capability, not by name: GPUs of the Apple10 family (the M5's, with neural accelerators) with Metal 4.
+/// Older Metal 4 GPUs (M1–M4) would run the same source on their shader cores, where it is not measured: they keep
+/// `flash_attention_packed`. `KOKON_NA_ATTENTION=0` off, `=1` on any Metal 4 GPU (its results are checked there too).
+public final class NeuralAttention: @unchecked Sendable {
+    let pipeline: MTLComputePipelineState
+    nonisolated(unsafe) public private(set) static var unavailable: String?
+    /// Query rows per threadgroup: 4 SIMD groups of 16 (the kernel's), as `flash_attention_packed`'s 64.
+    static let rowsPerGroup = 64, threads = 128
+
+    /// Mirrors `FlashParams` in `na_attention.metal` (and `attention.metal`).
+    struct Params { var queries, keys, causal, stride: UInt32; var scale: Float; var headBase: UInt32 }
+
+    static func selected(gpuFamily: Int, metal4: Bool, setting: String?) -> Bool {
+        switch setting {
+        case "0": return false
+        case "1": return metal4
+        default: return metal4 && gpuFamily >= 10
+        }
+    }
+
+    public static func selected(device: MTLDevice) -> Bool {
+        var metal4 = false
+        if #available(macOS 26, *) { metal4 = device.supportsFamily(.metal4) }
+        return selected(gpuFamily: device.supportsFamily(.apple10) ? 10 : 0, metal4: metal4,
+                        setting: ProcessInfo.processInfo.environment["KOKON_NA_ATTENTION"])
+    }
+
+    /// Compiles the kernel; nil without Metal 4 or when the compiler refuses the source (the engine's kernels then).
+    public static func make(device: MTLDevice) -> NeuralAttention? {
+        guard #available(macOS 26, *), device.supportsFamily(.metal4) else {
+            unavailable = "no Metal 4 on this GPU or macOS"
+            return nil
+        }
+        do {
+            let library = try NeuralAccelerators.metal4Library(device: device, file: "na_attention.metal")
+            guard let function = library.makeFunction(name: "na_flash_attention") else {
+                throw MetalContext.Failure.kernel("na_flash_attention not found")
+            }
+            return NeuralAttention(pipeline: try device.makeComputePipelineState(function: function))
+        } catch {
+            unavailable = "the kernel did not compile: \(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    init(pipeline: MTLComputePipelineState) { self.pipeline = pipeline }
+
+    /// Encodes heads `[0, heads)` of `queries` query rows against `keys` keys; q and out rows of `stride` floats, K and
+    /// V packed with `paddedKeys` keys per head. `scale`: 1/√d · log2(e).
+    func encode(q: (MTLBuffer, Int), kp: (MTLBuffer, Int), vp: (MTLBuffer, Int), out: (MTLBuffer, Int),
+                queries: Int, keys: Int, paddedKeys: Int, heads: Int, stride: Int, scale: Float,
+                commands: MTLCommandBuffer) throws {
+        guard paddedKeys % 64 == 0, paddedKeys >= keys, let e = commands.makeComputeCommandEncoder() else {
+            throw MetalContext.Failure.kernel("na_flash_attention \(queries)×\(keys)")
+        }
+        e.label = "na_flash_attention"
+        e.setComputePipelineState(pipeline)
+        e.setBuffer(q.0, offset: q.1, index: 0)
+        e.setBuffer(kp.0, offset: kp.1, index: 1)
+        e.setBuffer(vp.0, offset: vp.1, index: 2)
+        e.setBuffer(out.0, offset: out.1, index: 3)
+        var p = Params(queries: UInt32(queries), keys: UInt32(keys), causal: 0, stride: UInt32(stride), scale: scale, headBase: 0)
+        e.setBytes(&p, length: MemoryLayout<Params>.stride, index: 4)
+        var padded = UInt32(paddedKeys)
+        e.setBytes(&padded, length: 4, index: 5)
+        e.dispatchThreadgroups(MTLSize(width: (queries + NeuralAttention.rowsPerGroup - 1) / NeuralAttention.rowsPerGroup,
+                                       height: heads, depth: 1),
+                               threadsPerThreadgroup: MTLSize(width: NeuralAttention.threads, height: 1, depth: 1))
         e.endEncoding()
     }
 }

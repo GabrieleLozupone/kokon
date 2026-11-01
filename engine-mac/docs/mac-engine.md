@@ -1275,6 +1275,7 @@ any Mac.**
 | Path | Chosen | M2 Pro result | Switch |
 |---|---|---|---|
 | **GPU rows on Metal 4 tensor operations** (`na_matmul`, MetalPerformancePrimitives' `matmul2d`): on the M5 the GPU cores' matrix units, before it the shader cores | wherever Metal 4 runs | 6.3 vs MPS 5.6 TFLOP/s, bit for bit the same; an evaluation 7.57 → 7.48 s | `KOKON_NA=0` |
+| **The target's attention on Metal 4 tensor operations** (`na_flash_attention`: Q·Kᵀ and P·V with MPP's `matmul2d`, the softmax on its row reductions; same packed K and V and the same fp16 arithmetic as `flash_attention_packed`) | GPUs of the Apple10 family with Metal 4 (the M5's neural accelerators), by capability | not selected (M5 Pro: the attention at 1024² 60.0 → 28.1 ms, the same error; a step 3.64 → 2.99 s, 1024² image 33.3 → 28.9 s) | `KOKON_NA_ATTENTION=0/1` |
 | **2 SIMD groups per `na_matmul` tile** (4 elsewhere): with 4 the MLP's out (K 12 288) and 4 096-row products ran 20–26 % below MPS on the M5 Pro's neural accelerators; with 2 every DiT shape is at their ~32 TFLOP/s fp16 ceiling (MPS's and MLX's too) | M5 Pro only | not selected (M5 Pro: a step at 1024² 4.21 → 3.86 s, 1024² image 37.2 → 34.4 s, the same result to the bit) | `KOKON_NA_SG2=0/1` |
 | **Attention reading K/V from memory** (`flash_attention_direct`) | off on every chip (since 0.1.1) | slower on every Mac measured (M2 Pro 142 ms vs 91; M3 Max, M4 Pro, M4 Max, M5 Pro: 8–18 % per step) | `KOKON_ATTENTION_DIRECT=1` |
 | **int8 products on the Neural Engine** (libnnc's M3/M4 path) | opt-in on every chip | a tile 10.1 → 7.0 ms, but 15–50× the error | `KOKON_ANE_INT8=1` |
@@ -1454,6 +1455,7 @@ All are environment variables read once at start. Defaults are what users run.
 | `KOKON_ANE_ATTENTION` | off | `1`: Neural Engine heads too |
 | `KOKON_ANE_INT8` | off | `1`: int8 weights and rows on the Neural Engine |
 | `KOKON_NA` | on with Metal 4 | `0`: MPS for the GPU's rows; `1`: force Metal 4 tensor ops |
+| `KOKON_NA_ATTENTION` | on Apple10 GPUs with Metal 4 | `0`: the engine's packed attention; `1`: force it on any Metal 4 GPU |
 | `KOKON_NA_SG2` | on the M5 Pro | `0`/`1`: 2 SIMD groups per `na_matmul` tile instead of 4 |
 | `KOKON_WEIGHTS` | fp16 | `fp32`: unpack weights to fp32 (checks) |
 | `KOKON_ACTIVATIONS` | fp16 | `fp32`: fp32 inputs to the GPU's and AMX's products (checks) |
@@ -1490,7 +1492,7 @@ All are environment variables read once at start. Defaults are what users run.
 | `QwenTextGeneration.swift`, `Kernels/decode.metal` | [23](#23-prompt-writing-text) |
 | `Noise.swift` | [24](#24-seeds-and-noise) |
 | `EngineServer.swift`, `HTTPServer.swift` | [25](#25-the-server-and-the-app) |
-| `NeuralAccelerators.swift`, `Kernels/metal4/na_matmul.metal` | [26](#26-per-chip-paths) |
+| `NeuralAccelerators.swift`, `Kernels/metal4/na_matmul.metal`, `Kernels/metal4/na_attention.metal` | [26](#26-per-chip-paths) |
 | `Probe.swift`, `AttentionProbe.swift`, `Bench.swift` | [27](#27-measuring-a-mac-bench-and-the-tools) |
 | `Checks.swift`, `TextChecks.swift`, `tools/reference_*.py`, `Tests/` | [28](#28-how-we-know-it-is-right) |
 | `Sources/kokon-engine-mac/main.swift` | every command in one place |

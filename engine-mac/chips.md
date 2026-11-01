@@ -8,7 +8,7 @@ Before working on a chip, look here and in [docs/mac-engine.md](docs/mac-engine.
 | Chip | Mac (model, cooling) | Memory | macOS | Paths on by default | 1024² text to image | Velocity error (default) | Source |
 |---|---|---|---|---|---|---|---|
 | M2 Pro, 19-core GPU | MacBook Pro (Mac14,10), fans | 16 GB | 27 | Metal 4 products (7.57 → 7.48 s per evaluation); direct attention off (142 ms vs 91) | ~64–67 s; 1 MP edit ~106 s, peak 5 GB | ~6–7 · 10⁻⁴ | [README.md](README.md), [docs/mac-engine.md](docs/mac-engine.md) chapters 26, 28, 30 |
-| M5 Pro, 20-core GPU | MacBook Pro 16" (Mac17,8), fans | 24 GB | 27.2 | Metal 4 products on 2 SIMD groups per tile; each product released at once (signals arrive late: still on macOS 27.2) | 34.4 s (test set, median of 3, macOS 27.2; 37.2 s with 4 SIMD groups); edit 39.0 s, peak 5.2–5.3 GB | 4.1 · 10⁻⁴ (bench, vs the engine's fp32 path) | [README.md](README.md) "Per-chip paths", [docs/mac-engine.md](docs/mac-engine.md) chapters 13, 26 |
+| M5 Pro, 20-core GPU | MacBook Pro 16" (Mac17,8), fans | 24 GB | 27.2 | Metal 4 products on 2 SIMD groups per tile; the target's attention on Metal 4 tensor operations; each product released at once (signals arrive late: still on macOS 27.2) | 28.9 s (test set, median of 3, macOS 27.2; 33.3 s with the engine's attention); edit 31.3 s, peak 5.3 GB | 4.4 · 10⁻⁴ (bench, vs the engine's fp32 path) | [README.md](README.md) "Per-chip paths", [docs/mac-engine.md](docs/mac-engine.md) chapters 13, 26 |
 
 ## Per-chip notes
 
@@ -31,6 +31,8 @@ Before working on a chip, look here and in [docs/mac-engine.md](docs/mac-engine.
   28–31). `na_matmul` was behind on long K and many rows with 4 SIMD groups per tile; with 2 (`KOKON_NA_SG2`) a step
   at 1024² 4.21 → 3.86 s, level with MPS (3.89), test set 1024² 37.2 → 34.4 s (3 alternated rounds, macOS 27.2).
 - On macOS 27.2 the late signal is still measured here (`KOKON_FLUSH_READY` selected), unlike the other Macs on 27.
+- The attention on the neural accelerators (`na_flash_attention`): 60.0 → 28.1 ms at 1024², a step 3.64 → 2.99 s; the
+  balancer then gives the CPU 3 of 32 heads again.
 - The balancer keeps about 2 600 of 4 096 rows on the GPU, 1 280 on the Neural Engine and 192–256 on the AMX, with
   either tile: its remembered shares do not tell the GPU paths apart, so whether a faster GPU should take more rows
   is not measured yet.
