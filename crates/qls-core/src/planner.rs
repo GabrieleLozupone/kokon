@@ -285,6 +285,10 @@ pub struct GenerationRequest {
     /// `JobView::enhanced_prompt` and no image, so the user can read and change it first.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub enhance_only: bool,
+    /// Layers lab "Blend into scene": only read the place the object with this name stands in
+    /// (`scene`, the Prompt+ model). The job ends with the reading in `JobView::scene` and no image.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_scene: Option<String>,
     /// The user's own words when `prompt` was written by Prompt+ in a review (and maybe changed
     /// by the user since): kept as the record's original prompt.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -921,8 +925,11 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
     }
     // Marks: the prompt names things by colour, never an action of its own (a Remove would blur the marks away).
     let inpaint_action = (mode == ResolvedMode::Inpaint).then(|| if marks { InpaintAction::Edit } else { req.inpaint_action.resolve(&req.prompt) });
-    // Upscales and removals need no description.
-    let prompt_optional = mode == ResolvedMode::Upscale || inpaint_action == Some(InpaintAction::Remove);
+    if req.read_scene.is_some() && (mode != ResolvedMode::Edit || inputs.image_sizes.len() != 1) {
+        return Err(AppError::invalid("The scene is read from one image, as an edit."));
+    }
+    // Upscales and removals need no description, nor a scene reading (the object's name is its own field).
+    let prompt_optional = mode == ResolvedMode::Upscale || inpaint_action == Some(InpaintAction::Remove) || req.read_scene.is_some();
     if req.prompt.trim().is_empty() && !prompt_optional {
         return Err(AppError::invalid("Describe what to generate or change."));
     }
@@ -1823,7 +1830,16 @@ mod tests {
         assert!(plan(&r, &inputs(&[(800, 800)]), &rec()).is_err(), "expansions wrap the prompt themselves");
         // The fields stay out of saved requests unless used.
         let v = serde_json::to_value(req("x")).unwrap();
-        assert!(v.get("enhance_only").is_none() && v.get("enhanced_from").is_none());
+        assert!(v.get("enhance_only").is_none() && v.get("enhanced_from").is_none() && v.get("read_scene").is_none());
+    }
+
+    #[test]
+    fn scene_reading_is_an_edit_of_one_image() {
+        let mut r = req("");
+        r.read_scene = Some("woman".into());
+        assert_eq!(plan(&r, &inputs(&[(1324, 1176)]), &rec()).unwrap().mode, ResolvedMode::Edit, "no prompt needed");
+        assert!(plan(&r, &inputs(&[]), &rec()).is_err(), "no image");
+        assert!(plan(&r, &inputs(&[(800, 800), (800, 800)]), &rec()).is_err(), "two images");
     }
 
     #[test]

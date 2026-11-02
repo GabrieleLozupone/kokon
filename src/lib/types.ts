@@ -64,6 +64,9 @@ export interface GenerationRequest {
   enhance?: boolean;
   /** Prompt+ review: only write the prompt (the job ends with `enhanced_prompt` and no image). */
   enhance_only?: boolean;
+  /** Layers lab "Blend into scene": only read the place the object with this name stands in
+   * (the job ends with `scene` and no image). */
+  read_scene?: string;
   /** The user's own words when `prompt` was written by Prompt+ in a review. */
   enhanced_from?: string | null;
   /** LoRA ids to use (the app always sends its list; omitted = none, as for MCP). */
@@ -194,6 +197,19 @@ export interface LutInfo { name: string; title?: string | null; intensity: numbe
 export type JobStatus = "queued" | "starting_backend" | "preparing" | "enhancing_prompt" | "running" | "saving" | "done" | "failed" | "cancelled";
 export type BackendStage = "preparing" | "encoding_images" | "encoding_prompt" | "generating" | "upscaling" | "refining" | "decoding" | "finishing";
 
+/** What the scene does to a pasted object, read by the Prompt+ model (qls-core scene.rs). */
+export interface SceneReading {
+  surface: "dry" | "wet" | "water" | "glossy" | "grass" | "soil" | "snow" | "fabric" | "other";
+  light: "sun" | "overcast" | "window" | "lamps" | "night";
+  hard_shadows: boolean;
+  light_from: "left" | "right" | "front" | "behind" | "above";
+  shadows_fall: "left" | "right" | "front" | "back" | "under";
+  colour: "warm" | "neutral" | "cool";
+  object_in: "sun" | "shade" | "both";
+  /** Every answer understood; false = some are the defaults. */
+  complete: boolean;
+}
+
 export interface JobView {
   id: string;
   status: JobStatus;
@@ -208,6 +224,8 @@ export interface JobView {
   prompt: string;
   /** The prompt enhancer's text: growing while "enhancing_prompt", then the prompt in use. */
   enhanced_prompt?: string | null;
+  /** A scene reading's answer (`read_scene`); missing when it failed (see `notes`). */
+  scene?: SceneReading;
   plan: Plan | null;
   seed: number | null;
   results: GenerationRecord[];

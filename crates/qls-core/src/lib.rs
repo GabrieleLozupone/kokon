@@ -22,6 +22,7 @@ pub mod planner;
 pub mod process;
 pub mod projects;
 pub mod remote;
+pub mod scene;
 pub mod sdcpp;
 pub mod speed;
 pub mod store;

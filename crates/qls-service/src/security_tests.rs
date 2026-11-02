@@ -49,7 +49,9 @@ fn fixture(with_password: bool) -> Fixture {
 
 /// The service starting on `dir` (again, for a restart).
 fn start(dir: &std::path::Path) -> Arc<AppState> {
-    let engine = Engine::new(AppConfig::default(), dir).unwrap();
+    // The engine folder inside the test's own: the default is the user's (a matting model installed
+    // there made "installed" true).
+    let engine = Engine::new(AppConfig { sdcpp_dir: dir.join("sdcpp"), ..AppConfig::default() }, dir).unwrap();
     Arc::new(AppState {
         engine,
         token: "t".repeat(64),

@@ -4,15 +4,17 @@
 // is the image the prompt below edits: the result shows on the layer, here (the background: "Fill
 // the holes" sets up a brushed Remove on the photo). On the canvas: click a layer to select it, drag
 // to move it, drag the corner to scale it; Shift/Ctrl+click selects more (moved and scaled
-// together), Group keeps them together. Whole-image edits (LabScene.ts) give Qwen the flattened
-// layers: "Shadows" reads back each object's shadow as its own layer (it moves with the object),
-// "New objects" adds what the user drew with the coloured pencil as new layers, "Edit together"
-// gives the selected objects the edit's look. "Save as image" flattens the layers into a new version; "Export PSD" saves them for Photoshop (lib/psd.ts).
+// together), Group keeps them together. "Blend into scene" (lib/blend.ts, BlendChoice) has the AI
+// read where each object stands, then a brushed edit round its base adds its shadow, reflection,
+// grass at its feet, read back as layers that follow it. Whole-image edits (LabScene.ts) give Qwen
+// the flattened layers: "New objects" adds what the user drew with the coloured pencil as new
+// layers, "Edit together" gives the selected objects the edit's look. "Save as image" flattens the layers into a new version; "Export PSD" saves them for Photoshop (lib/psd.ts).
 
 import { Brush, Eraser, Eye, EyeOff, FileDown, GripVertical, Group, Hand, History, ImageDown, Link2, Loader2, Lock, MousePointer2, Paintbrush, Pencil, Redo2, RotateCcw, Scissors, Sparkles, Sun, Trash2, Undo2, Ungroup, WandSparkles, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, urls } from "../lib/api";
 import { focusPixels, foreground, modelMatte, stickerAlpha } from "../lib/matte";
+import { blendPrompt, DEFAULT_READING } from "../lib/blend";
 import { dilate, erode, fileSafe } from "../lib/layers";
 import { centre, copiedShare, CROP_MAX_RATIO, cropFor, docId, extOf, unionRect, type Rect, waitingMarks, shadowAlpha, mapBox, reorder, unmapPoint, withGroup, xfOf, type Box, type DocLayer, type Effect, type Feed, type LayerDoc, type SceneEdit, type Sticker, type Xf } from "../lib/layerDoc";
 import { buildRequest, refFromInput } from "../lib/logic";
@@ -22,7 +24,8 @@ import { MARK_COLOURS, marksPrompt, type MarkColour } from "../lib/sceneEdit";
 import { placesOf } from "./LabScene";
 import { shortcut } from "../lib/platform";
 import { addResult, addVersions, cancelJob, editSource, focusPrompt, getState, itemOrigin, itemSource, setState, submitRequest, toastError, toastInfo, updateComposer, useStore, type SessionItem } from "../lib/store";
-import type { InputRecord, JobView } from "../lib/types";
+import type { InputRecord, JobView, SceneReading } from "../lib/types";
+import { BlendChoice, type BlendRow } from "./BlendChoice";
 import { useJobPercent } from "./jobMotion";
 import { JobPct, LabJobs, useLab, useLabJobs } from "./LabStage";
 import { IconButton } from "./ui";
@@ -56,13 +59,13 @@ function StickerRing({ job, item }: { job: JobView; item: SessionItem }) {
   );
 }
 
-/** Where Automatic shadows' edit is: "Making the shadows · 38%". */
+/** Where the blend's edit is: "Blending into the scene · 38%". */
 function ShadowPhase({ job, item }: { job: JobView; item: SessionItem }) {
   const { pct } = useJobPercent(job, item.request);
   if (job.status === "queued") return <>Waiting for the edits before it</>;
   if (job.status === "starting_backend") return <>Starting the engine</>;
-  if (job.status === "done") return <>Reading the shadows</>;
-  return <>Making the shadows · {Math.floor(pct)}%</>;
+  if (job.status === "done") return <>Reading what the AI added</>;
+  return <>Blending into the scene · {Math.floor(pct)}%</>;
 }
 
 /** What the canvas needs of a layer's version: its alpha (for clicks), where its content is, a thumbnail. */
@@ -345,11 +348,6 @@ function dab(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, mod
 
 /** How far a whole-image shadow edit's result is read around each object (% of the long side). */
 const SCENE_REACH = 12;
-/** Automatic shadows: the whole scene edited, nothing painted. Generic on purpose (11-01 bench, Halloween and
- * kitchen): the model put shadows where the light makes them and none on floating things (lettering, ghosts). */
-const AUTO_SHADOWS_PROMPT =
-  "Add natural shadows for the objects that stand or rest on a surface: a soft contact shadow where each one touches it and the shadow each one casts, following the direction of the light in the scene. Floating things cast no shadow. Keep everything else in the image exactly unchanged.";
-
 /** The selected layers per document (the last one is the one the panel shows), kept while the
  * view closes (Paint area, Expand, the Stage). */
 const lastSelected = new Map<string, string[]>();
@@ -932,13 +930,26 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobs, session, live.stickers]);
 
-  // Automatic shadows being made (sent, generated, or read back): the layers stay where they are
-  // meanwhile (the shadows are made for this layout), and the stage says how far it is.
-  const [shadowSending, setShadowSending] = useState(false);
+  // Blend into scene (or an older Automatic shadows edit) being made (sent, generated, or read back):
+  // the layers stay where they are meanwhile (the result is made for this layout), and the stage says
+  // how far it is. A failed edit does not hold them.
+  const [blendSending, setBlendSending] = useState(false);
   const autoScenes = (live.scenes ?? []).filter((e) => e.one);
   const shadowJob = labJobs.find((j) => j.job.status !== "failed" && autoScenes.some((e) => e.source === j.item.request?.images?.[0]));
   const shadowReading = autoScenes.some((e) => session.some((i) => i.gen && itemOrigin(i).from[0] === e.source && !live.known.includes(`gen:${i.gen.id}`)));
-  const shadowing = shadowSending || !!shadowJob || shadowReading;
+  const shadowing = blendSending || !!shadowJob || shadowReading;
+  // Something moved (or was scaled, shown, hidden) since the last blend: its layer no longer fits.
+  const lastBlend = [...(live.scenes ?? [])].reverse().find((e) => e.blend);
+  const blendStale =
+    !!lastBlend &&
+    live.layers.some((l) => l.blend === "paste" && !l.hidden) &&
+    live.layers.some((o) => {
+      if (o.base || o.effect) return false;
+      const at = lastBlend.places[o.id];
+      if (!at) return !o.hidden;
+      if (o.hidden) return true;
+      return o.source !== at.source || Math.hypot(o.dx - at.dx, o.dy - at.dy) > 0.02 * Math.max(W, H) || Math.abs(o.s / at.s - 1) > 0.05;
+    });
 
   const skipSticker = (s: Sticker) => {
     if (s.job) void cancelJob(s.job);
@@ -968,7 +979,8 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
 
   // Shadow strength: the Automatic shadows layer redrawn from the model's version, its alpha as k of
   // them stacked (1 - (1 - a)^k: darker stays a soft shadow, lighter fades evenly), as its next version.
-  const autoShadows = live.layers.find((l) => l.auto && l.effect);
+  // The Blend (or older Shadows) layer shown, not the in-front piece.
+  const autoShadows = live.layers.find((l) => l.auto && l.effect && l.blend !== "front" && !l.hidden) ?? live.layers.find((l) => l.auto && l.effect && l.blend !== "front");
   const [strengthShown, setStrengthShown] = useState(100);
   useEffect(() => setStrengthShown(Math.round((autoShadows?.strength ?? 1) * 100)), [autoShadows?.id, autoShadows?.strength]);
   useEffect(() => {
@@ -1121,7 +1133,8 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       commitRef.current({
         ...d,
         ...(e ? { ext: { ...d.ext, [src]: e } } : {}),
-        layers: d.layers.map((x) => (x.id === l.id ? { ...x, source: src, history: [...x.history, src] } : x)),
+        // Strength starts from what was brushed (else its next change would bring back what was erased).
+        layers: d.layers.map((x) => (x.id === l.id ? { ...x, source: src, history: [...x.history, src], ...(x.made ? { made: src, strength: 1 } : {}) } : x)),
         known: [...d.known, src],
       });
     } catch (e) {
@@ -1422,7 +1435,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
    * what is sent, so Qwen makes them again); `look`: objects that take the edit's look. */
   /** `send`: made right away (a lab step, no Prompt+) instead of set up in the prompt; `one`: one
    * shadow layer for all the objects. */
-  const sendScene = async (o: { shadows: string[]; look: string[]; prompt: string; marks: boolean; hint: string; send?: boolean; one?: boolean }) => {
+  const sendScene = async (o: { shadows: string[]; look: string[]; prompt: string; marks: boolean; hint: string; send?: boolean; one?: boolean; blend?: boolean }) => {
     setBusy(true);
     // Sent right away: the flattened layers become a version on the way; the prompt's image is put back.
     const keep = { selected: getState().selected, refs: getState().composer.refs };
@@ -1463,10 +1476,13 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
         places: placesOf(live),
         reach: SCENE_REACH,
         ...(o.one ? { one: true } : {}),
+        ...(o.blend ? { blend: true } : {}),
       };
       // The same layers again upload as the same image (the service keeps one copy): an older edit of it
       // would read this one's result first (11-01: per-object shadows instead of the one layer asked for).
-      commit({ ...live, scenes: [...(live.scenes ?? []).filter((x) => x.source !== target), scene] });
+      // Blend: the old Automatic shadows layer would double the shadows: hidden (its eye brings it back).
+      const layers = o.blend ? live.layers.map((l) => (l.auto && l.effect && !l.blend ? { ...l, hidden: true } : l)) : live.layers;
+      commit({ ...live, layers, scenes: [...(live.scenes ?? []).filter((x) => x.source !== target), scene] });
       if (marksId) setSketch({ marks: [], wants: sketch.wants });
       setSels([]);
       if (o.send) {
@@ -1487,14 +1503,94 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
   };
 
 
-  const autoShadowsNow = async () => {
-    const objects = live.layers.filter((l) => !l.base && !l.effect && !l.hidden).map((l) => l.id);
-    if (!objects.length) return toastInfo("No visible objects to make shadows for.");
-    setShadowSending(true);
+  // Blend into scene (11-02, replaces Automatic shadows): the AI reads where each object stands
+  // (BlendChoice shows it, the user corrects it), then Qwen redraws the whole scene with what each
+  // place does (lib/blend.ts blendPrompt) and only what changed round the objects is kept (LabScene
+  // readScene, blendKeep): one Blend layer over the background and one in-front piece on top.
+  const [blendRows, setBlendRows] = useState<BlendRow[] | null>(null);
+  /** Bumped by Cancel and Blend: readings still running for an older dialog stop. */
+  const blendRun = useRef(0);
+
+  /** The scene read for one object by the Prompt+ model (a job that makes no image). */
+  const readPlace = async (o: DocLayer, rec: InputRecord, run: number) => {
+    let reading: SceneReading | undefined;
+    let failed: string | undefined;
     try {
-      await sendScene({ shadows: objects, look: [], prompt: AUTO_SHADOWS_PROMPT, marks: false, send: true, one: true, hint: "Making the shadows: the model adds them to the whole scene where the light makes them, as one Shadows layer. Moved something? Make them again: the layer is replaced." });
+      const ref = refFromInput(rec);
+      const req = buildRequest({ ...getState().composer, prompt: "", refs: [ref], mask: null, outpaint: null, create: false, mode: "auto", enhance: false, enhancedFrom: null, seed: null });
+      let job = await api.submit({ ...req, read_scene: o.name, hidden: true, ...(getState().privateMode ? { private: true } : {}) });
+      while (job.status !== "done" && job.status !== "failed" && job.status !== "cancelled") {
+        await new Promise((r) => window.setTimeout(r, 400));
+        if (blendRun.current !== run) {
+          void api.cancel(job.id).catch(() => {});
+          return;
+        }
+        job = await api.job(job.id);
+      }
+      if (job.scene) reading = job.scene;
+      else failed = job.error?.message ?? job.notes[job.notes.length - 1] ?? "no answer";
+    } catch (e) {
+      failed = e instanceof Error ? e.message : String(e);
+    }
+    if (blendRun.current !== run) return;
+    setBlendRows((rows) => rows && rows.map((r) => (r.id === o.id ? { ...r, reading: reading ?? { ...DEFAULT_READING }, failed } : r)));
+  };
+
+  /** Opens the dialog: the selected objects, else every visible one; their scene is read meanwhile. */
+  const startBlend = async () => {
+    const all = live.layers.filter((l) => !l.base && !l.effect && !l.hidden);
+    const chosen = sels.some((id) => all.some((l) => l.id === id)) ? all.filter((l) => sels.includes(l.id)) : all;
+    if (!chosen.length) return toastInfo("No visible objects to blend in.");
+    setBusy(true);
+    try {
+      // What the AI reads: the layers as they are, without the earlier Blend or Shadows layers, on grey
+      // (holes would make the image transparent).
+      const skip = new Set(live.layers.filter((l) => l.effect && l.auto).map((l) => l.id));
+      const flat = document.createElement("canvas");
+      flat.width = W;
+      flat.height = H;
+      const fctx = flat.getContext("2d")!;
+      fctx.fillStyle = "#808080";
+      fctx.fillRect(0, 0, W, H);
+      fctx.drawImage(await render(W, H, skip), 0, 0);
+      const rec = await api.upload(await toPng(flat), "Layers to blend in.png");
+      const run = ++blendRun.current;
+      setBlendRows(chosen.map((o) => ({ id: o.id, name: o.name })));
+      for (const o of chosen) void readPlace(o, rec, run);
+    } catch (e) {
+      toastError(e);
     } finally {
-      setShadowSending(false);
+      setBusy(false);
+    }
+  };
+
+  const cancelBlend = () => {
+    blendRun.current++;
+    setBlendRows(null);
+  };
+
+  /** One edit of the whole scene for every object in the dialog, sent right away as a lab step. */
+  const sendBlend = async () => {
+    const rows = blendRows;
+    blendRun.current++;
+    setBlendRows(null);
+    const items = (rows ?? []).flatMap((r) => (r.reading && live.layers.some((l) => l.id === r.id) ? [{ id: r.id, name: r.name, reading: r.reading }] : []));
+    if (!items.length) return;
+    setBlendSending(true);
+    try {
+      const hideAuto = live.layers.some((l) => l.auto && l.effect && !l.blend && !l.hidden);
+      await sendScene({
+        shadows: items.map((i) => i.id),
+        look: [],
+        prompt: blendPrompt(items),
+        marks: false,
+        send: true,
+        one: true,
+        blend: true,
+        hint: `Blending ${items.length === 1 ? "it" : `the ${items.length} objects`} into the scene${hideAuto ? "; the old Shadows layer is hidden" : ""}. Moved something later? Blend again.`,
+      });
+    } finally {
+      setBlendSending(false);
     }
   };
 
@@ -1675,8 +1771,8 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
               <div className="doc-lock-card">
                 <Loader2 size={18} className="spin" />
                 <span>
-                  {shadowJob ? <ShadowPhase job={shadowJob.job} item={shadowJob.item} /> : shadowSending ? "Sending the scene" : "Reading the shadows"}
-                  <small>The layers stay where they are until the shadows are in</small>
+                  {shadowJob ? <ShadowPhase job={shadowJob.job} item={shadowJob.item} /> : blendSending ? "Sending the scene" : "Reading what the AI added"}
+                  <small>The layers stay where they are until it is in</small>
                 </span>
               </div>
             </div>
@@ -1933,7 +2029,9 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
                   : sel.effect
                     ? sel.follows
                       ? "Moves and scales with its object. Make it again after a big move."
-                      : "Made where the objects are: make them again after moving objects."
+                      : sel.blend
+                        ? "The AI's redrawn scene round the objects (their shadows, reflections, where they touch the ground), on top of them. Something wrong? The Eraser (E) takes it out of this layer. Moved an object? Blend again."
+                        : "Made where the objects are: make them again after moving objects."
                     : `The prompt edits this layer at its own size, e.g. “Complete the ${sel.name.toLowerCase()}, keep the transparent background”.`}
               </p>
               <div className="doc-grid">
@@ -1987,6 +2085,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
         </aside>
       </div>
 
+      {blendRows && <BlendChoice rows={blendRows} onChange={(id, r) => setBlendRows((rows) => rows && rows.map((x) => (x.id === id ? { ...x, reading: r } : x)))} onBlend={() => void sendBlend()} onCancel={cancelBlend} />}
       <div className={`editor-tools ${shadowing ? "locked" : ""}`}>
         <div className="group">
           <IconButton title="Select and move (V)" active={tool === "move" && !spacePressed} onClick={() => setTool("move")}>
@@ -2036,12 +2135,16 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
         {/* The whole document's commands (the panel on the right is for the selected layer). */}
         <div className="group">
           <button
-            className="pill doc-cmd"
-            onClick={autoShadowsNow}
+            className={`pill doc-cmd ${blendStale ? "stale" : ""}`}
+            onClick={startBlend}
             disabled={busy || shadowing}
-            title="Nothing to paint: the whole scene goes to the model, which adds the shadows where the light makes them, as one Shadows layer (made again after moving things: it is replaced)"
+            title={
+              blendStale
+                ? "Something moved since the blend: its shadows and reflections no longer fit. Blend again (the selected objects, else all)"
+                : "The AI reads where each object stands (you can correct it), then redraws the scene with their shadows, reflections on wet or shiny ground, grass round their feet; only that is kept, as the Blend layer (the selected objects, else all)"
+            }
           >
-            <Sun size={15} /> Automatic shadows
+            <Sun size={15} /> {blendStale ? "Blend again" : "Blend into scene"}
           </button>
           {autoShadows && (
             <label className="slider" title="How dark the Shadows layer is, without making it again (100 %: as the model made it)">

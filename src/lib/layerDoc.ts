@@ -113,6 +113,11 @@ export interface DocLayer {
   at?: Place;
   /** Layers with the same group are selected, moved and scaled together. */
   group?: string;
+  /** Blend into scene (with `auto`): "paste" = the area of the redrawn scene round the objects (their
+   * shadows, reflections, their own contact with the ground), on top of them. Earlier versions'
+   * layers (11-02; hidden by the next blend): "under" (only round them, over the background), "front"
+   * (a piece over their edges). */
+  blend?: "paste" | "under" | "front";
   /** Offset in frame px, and scale around the centre of what the layer shows. */
   dx: number;
   dy: number;
@@ -156,6 +161,9 @@ export interface SceneEdit {
   reach: number;
   /** One shadow layer for all the objects (Automatic shadows), not one per object. */
   one?: boolean;
+  /** Blend into scene (with `one`): the area of the edit that changed round the `shadows` objects,
+   * pasted as it is as the Blend layer (lib/blend.ts blendKeep), not only the darkening. */
+  blend?: boolean;
   /** Layers its results made, so the next result becomes their next version: object id -> its
    * shadow layer, colour -> the new layer, "<colour>:shadow" -> the new layer's shadow. */
   made?: Record<string, string>;

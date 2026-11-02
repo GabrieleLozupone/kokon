@@ -84,6 +84,10 @@ pub struct JobView {
     /// The prompt enhancer's text: partial while `EnhancingPrompt`, then the prompt the image
     /// is made from (`prompt` stays the user's). None when the enhancer did not run or failed.
     pub enhanced_prompt: Option<String>,
+    /// A scene reading's answer (`GenerationRequest::read_scene`): None while it runs, when it
+    /// failed (noted) or for any other job.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scene: Option<crate::scene::SceneReading>,
     pub client: Option<String>,
     pub plan: Option<Plan>,
     pub seed: Option<i64>,
@@ -692,7 +696,7 @@ impl Engine {
         let upscale = request.mode == Mode::Upscale;
         // Removing a painted area needs no description (the planner writes the prompt).
         let removal = request.mask.is_some() && request.inpaint_action == planner::InpaintAction::Remove;
-        if request.prompt.trim().is_empty() && !upscale && !removal {
+        if request.prompt.trim().is_empty() && !upscale && !removal && request.read_scene.is_none() {
             return Err(AppError::invalid("Describe what to generate or change."));
         }
         if upscale && request.images.is_empty() {
@@ -724,8 +728,13 @@ impl Engine {
             created_at: now_rfc3339(),
             started_at: None,
             finished_at: None,
-            prompt: if upscale && request.prompt.trim().is_empty() { "Upscale".into() } else { request.prompt.clone() },
+            prompt: match &request.read_scene {
+                Some(name) => format!("Reading the scene around the {}", name.trim().to_lowercase()),
+                None if upscale && request.prompt.trim().is_empty() => "Upscale".into(),
+                None => request.prompt.clone(),
+            },
             enhanced_prompt: None,
+            scene: None,
             client: request.client.clone(),
             plan: None,
             seed: request.seed,
@@ -1237,6 +1246,18 @@ impl Engine {
                     .suggest("Turn it off in Settings → Performance to use the standard engine for this."));
             }
 
+            // 4a. Blend into scene: only the reading of the place the object stands in.
+            if let Some(name) = &request.read_scene {
+                let reading = self.read_scene(id, &client, &caps, name, &sd_req.ref_images, seed).await?;
+                self.update(id, |j| {
+                    j.view.scene = reading;
+                    j.view.status = JobStatus::Done;
+                    j.view.finished_at = Some(now_rfc3339());
+                    j.view.stage = None;
+                });
+                return Ok(());
+            }
+
             // 4b. Prompt enhancer: rewrites the user's prompt, looking at the references
             // exactly as the image model gets them.
             if request.enhance && enhancer::applies_to(plan.mode, plan.marks) {
@@ -1447,6 +1468,42 @@ impl Engine {
             self.update(id, |j| j.view.notes.extend(notes));
         }
         loras
+    }
+
+    /// Reads the place the object `name` stands in (`scene`), looking at the image as the edit
+    /// model gets it. None when the engine cannot write text or the answer is not usable (noted
+    /// on the job: the lab then offers the safe defaults to check). Errors only for a cancel.
+    async fn read_scene(&self, id: &str, client: &SdcppClient, caps: &Capabilities, name: &str, images: &[String], seed: i64) -> AppResult<Option<crate::scene::SceneReading>> {
+        if !caps.text_generation {
+            self.update(id, |j| j.view.notes.push("This inference engine cannot read the scene (update it in Setup).".into()));
+            return Ok(None);
+        }
+        let Some(image) = images.first() else { return Ok(None) };
+        self.update(id, |j| {
+            j.view.status = JobStatus::EnhancingPrompt;
+            j.view.stage = None;
+        });
+        let started = Instant::now();
+        let r = client.text_gen(&crate::scene::request(image.clone(), name, seed), Duration::from_secs(120), |_| {}, || self.is_cancelled(id)).await;
+        let note = match r {
+            Ok(done) => match crate::scene::parse(&done.text) {
+                Some(reading) => {
+                    tracing::info!("scene reading for {name:?} in {:.1} s: {reading:?}", started.elapsed().as_secs_f32());
+                    return Ok(Some(reading));
+                }
+                None => {
+                    tracing::warn!("scene reading: no JSON in {:?}", done.text);
+                    "The scene could not be read (the answer was not usable).".to_string()
+                }
+            },
+            Err(e) if e.code == ErrorCode::Cancelled => return Err(e),
+            Err(e) => {
+                tracing::warn!("scene reading failed: {} {:?}", e.message, e.detail);
+                format!("The scene could not be read: {}", e.message)
+            }
+        };
+        self.update(id, |j| j.view.notes.push(note));
+        Ok(None)
     }
 
     /// Runs the prompt enhancer for job `id` and streams its text into the job. Returns the
@@ -2265,6 +2322,46 @@ mod tests {
         assert!(seen[2].get("images").is_none(), "the scene is written without the images");
         assert_eq!(seen[2]["system_prompt"], enhancer::COMPOSE_SYSTEM_PROMPT);
         assert_eq!(seen[2]["prompt"], "References:\n<image1>: person, female, long brown hair\n<image2>: cat, orange tabby\n\nRequest: lei sul divano con il gatto");
+    }
+
+    #[tokio::test]
+    async fn scene_reading_parses_the_answer_or_notes_why_not() {
+        let dir = tempfile::tempdir().unwrap();
+        // SAFETY: test-only env override, single-threaded setup.
+        unsafe { std::env::set_var("QLS_CONFIG_DIR", dir.path().join("cfg")) };
+        let mut cfg = AppConfig { sdcpp_dir: dir.path().join("sdcpp"), ..AppConfig::default() };
+        cfg.normalize();
+        std::fs::create_dir_all(cfg.engine_dir()).unwrap();
+        std::fs::write(cfg.server_exe(), b"").unwrap();
+        for (_, p, _) in cfg.profile().files() {
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, b"").unwrap();
+        }
+        let e = Engine::new(cfg, dir.path()).unwrap();
+        let caps = Capabilities { text_generation: true, ..Default::default() };
+        let submit = || e.submit(GenerationRequest { read_scene: Some("Woman".into()), ..Default::default() }, None).unwrap().id;
+        let images = vec!["PNG1".to_string()];
+        let id = submit();
+        assert_eq!(e.job(&id).unwrap().prompt, "Reading the scene around the woman");
+        let (port, seen) = fake_text_server(vec![
+            r#"{"surface": "wet ground", "light": "overcast daylight", "hard_shadows": false, "light_from": "above", "shadows_fall": "under the objects", "colour": "cool", "object_in": "shade"}"#,
+            "It is a street.",
+        ])
+        .await;
+        let r = e.read_scene(&id, &SdcppClient::new(port), &caps, "Woman", &images, 5).await.unwrap().unwrap();
+        assert_eq!((r.surface.as_str(), r.light.as_str(), r.complete), ("wet", "overcast", true));
+        {
+            let seen = seen.lock().unwrap();
+            assert_eq!((seen[0]["images"][0].as_str(), seen[0]["system_prompt"].as_str()), (Some("PNG1"), Some(crate::scene::SYSTEM_PROMPT)));
+        }
+        // An answer without JSON: none, with a note.
+        let id = submit();
+        assert_eq!(e.read_scene(&id, &SdcppClient::new(port), &caps, "Woman", &images, 5).await.unwrap(), None);
+        assert!(e.job(&id).unwrap().notes.last().unwrap().contains("could not be read"));
+        // An engine without text generation: none, with a note, no request.
+        let id = submit();
+        assert_eq!(e.read_scene(&id, &SdcppClient::new(1), &Capabilities::default(), "Woman", &images, 5).await.unwrap(), None);
+        assert!(e.job(&id).unwrap().notes.last().unwrap().contains("cannot read the scene"));
     }
 
     #[test]

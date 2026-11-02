@@ -93,12 +93,24 @@ function LayersLab({ projectId }: { projectId: string }) {
               layers = [{ id, name: o.name, source: o.src, history: [o.src], hidden: false, base: false, dx: 0, dy: 0, s: 1 }, ...layers];
             }
           }
+          // Blend: layers of earlier blend versions are hidden (in-front pieces put a light rim on the
+          // boots; "under" layers stopped at the objects' outline, which Qwen had moved, 11-02).
+          if (e.blend) layers = layers.map((l) => (l.blend === "front" || l.blend === "under" ? { ...l, hidden: true } : l));
           for (const s of r.shadows) {
+            // Blend: the one layer on top of everything (it holds the objects' contact too); replaced by the next result.
+            if (s.of === "all" && e.blend) {
+              const have = layers.find((l) => l.auto && l.blend === "paste");
+              const next: DocLayer = have
+                ? { ...have, source: s.src, history: [...have.history, s.src], made: undefined, strength: undefined, hidden: false }
+                : { id: `fx-${result}-all`, name: "Blend", source: s.src, history: [s.src], hidden: false, base: false, effect: true, auto: true, blend: "paste", dx: 0, dy: 0, s: 1 };
+              layers = [next, ...layers.filter((l) => l.id !== next.id)];
+              continue;
+            }
             // Automatic shadows: the one layer, just above the background, replaced by the next result.
             if (s.of === "all") {
-              const have = layers.find((l) => l.auto);
+              const have = layers.find((l) => l.auto && !l.blend);
               // A new result starts at its own strength again.
-              if (have) layers = layers.map((l) => (l.id === have.id ? { ...l, source: s.src, history: [...l.history, s.src], made: undefined, strength: undefined } : l));
+              if (have) layers = layers.map((l) => (l.id === have.id ? { ...l, source: s.src, history: [...l.history, s.src], made: undefined, strength: undefined, hidden: false } : l));
               else {
                 const layer: DocLayer = { id: `fx-${result}-all`, name: "Shadows", source: s.src, history: [s.src], hidden: false, base: false, effect: true, auto: true, dx: 0, dy: 0, s: 1 };
                 const at = layers.findIndex((l) => l.base);

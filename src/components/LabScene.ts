@@ -8,6 +8,7 @@ import { api, urls } from "../lib/api";
 import { centre, type LayerDoc, type Place, type SceneEdit } from "../lib/layerDoc";
 import { dilate, fileSafe, fromLogits, refineEdges } from "../lib/layers";
 import { Segmenter } from "../lib/sam";
+import { blendKeep } from "../lib/blend";
 import { alignEdit, attached, blur, changed, darkness, IDENTITY, invertAffine, luminance, MARK_COLOURS, objectAt, scaleAffine, splitShadows, toneCurve, type Affine, type MarkColour } from "../lib/sceneEdit";
 import type { InputRecord } from "../lib/types";
 import { loadImage, pixels, drawSource, sourceInfo, toPng } from "./LayerDoc";
@@ -273,6 +274,31 @@ export async function readScene(doc: LayerDoc, e: SceneEdit, result: string): Pr
   // Shadows: only of the objects asked for. A new object comes alone (its shadow is made
   // afterwards with Automatic shadows), whatever shadow Qwen drew for it is left out.
   const targets = e.shadows.filter((id) => feet.has(id)).map((id) => ({ of: id, m: feet.get(id)! }));
+  // Blend into scene: what Qwen's redrawn scene changed round the objects, in colour (lib/blend.ts).
+  if (targets.length && e.blend) {
+    const all = new Uint8Array(w * h);
+    for (const t of targets) for (let i = 0; i < t.m.length; i++) if (t.m[i]) all[i] = 255;
+    const r = blendKeep(p.before, p.after, p.valid, all, w, h);
+    if (r.n < w * h * 0.0003) {
+      out.notes.push("Nothing was added round the objects. Blend again, or check what the AI read.");
+      return out;
+    }
+    // Qwen's image at full size, its overall tone brought back to the original's (colours kept).
+    const full = warp(p.img, p.t, W, H, W, H);
+    const fctx = full.getContext("2d")!;
+    const px = fctx.getImageData(0, 0, W, H);
+    const q = px.data;
+    for (let i = 0; i < q.length; i += 4) {
+      const l = 0.2126 * q[i] + 0.7152 * q[i + 1] + 0.0722 * q[i + 2];
+      const k = (r.lut[Math.min(255, Math.round(l))] + 1) / (l + 1);
+      q[i] = q[i] * k;
+      q[i + 1] = q[i + 1] * k;
+      q[i + 2] = q[i + 2] * k;
+    }
+    fctx.putImageData(px, 0, 0);
+    out.shadows.push({ of: "all", src: `input:${(await upload(r.alpha, w, h, W, H, "Blend", full)).id}` });
+    return out;
+  }
   // One layer for all of them (Automatic shadows): the darkening within reach of the objects, taken
   // out only where an object is (it covers its own pixels). No band around the outlines to fill
   // back: a fill that fell short left a light ring round the spider's legs (11-01).
