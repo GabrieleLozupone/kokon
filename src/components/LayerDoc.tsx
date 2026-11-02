@@ -12,8 +12,9 @@
 import { Brush, Eraser, Eye, EyeOff, FileDown, GripVertical, Group, Hand, History, ImageDown, Link2, Loader2, Lock, MousePointer2, Paintbrush, Pencil, Redo2, RotateCcw, Scissors, Sparkles, Sun, Trash2, Undo2, Ungroup, WandSparkles, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, urls } from "../lib/api";
+import { focusPixels, foreground, modelMatte, stickerAlpha } from "../lib/matte";
 import { dilate, erode, fileSafe } from "../lib/layers";
-import { centre, copiedShare, CROP_MAX_RATIO, cropFor, docId, waitingMarks, shadowAlpha, mapBox, reorder, unmapPoint, withGroup, xfOf, type Box, type DocLayer, type Effect, type Feed, type LayerDoc, type SceneEdit, type Sticker, type Xf } from "../lib/layerDoc";
+import { centre, copiedShare, CROP_MAX_RATIO, cropFor, docId, extOf, unionRect, type Rect, waitingMarks, shadowAlpha, mapBox, reorder, unmapPoint, withGroup, xfOf, type Box, type DocLayer, type Effect, type Feed, type LayerDoc, type SceneEdit, type Sticker, type Xf } from "../lib/layerDoc";
 import { buildRequest, refFromInput } from "../lib/logic";
 import { native } from "../lib/native";
 import { writePsd } from "../lib/psd";
@@ -73,6 +74,20 @@ export interface SourceInfo {
   /** In frame px. */
   box: Box;
   thumb: string;
+  /** Where the image lies in the frame (frame px; past the edge for an expanded object). */
+  ext: Rect;
+}
+
+/** Versions whose image is not the whole frame (`LayerDoc.ext`), noted from every document shown:
+ * ids are unique, so `sourceInfo` finds them without the document. */
+const extents = new Map<string, Rect>();
+export function noteExtents(doc: { ext?: Record<string, Rect> }) {
+  for (const [k, r] of Object.entries(doc.ext ?? {})) extents.set(k, r);
+}
+
+/** A layer's version drawn where it lies in the frame (on a context set up in frame px). */
+export function drawSource(ctx: CanvasRenderingContext2D, info: SourceInfo) {
+  ctx.drawImage(info.img, info.ext.x, info.ext.y, info.ext.w, info.ext.h);
 }
 
 const ALPHA_SIDE = 512;
@@ -80,7 +95,8 @@ export const toPng = (c: HTMLCanvasElement) => new Promise<Blob>((res, rej) => c
 const cache = new Map<string, Promise<SourceInfo>>();
 
 export function sourceInfo(src: string, W: number, H: number): Promise<SourceInfo> {
-  const key = `${src}@${W}x${H}`;
+  const ext = extents.get(src) ?? { x: 0, y: 0, w: W, h: H };
+  const key = `${src}@${W}x${H}@${ext.x},${ext.y},${ext.w},${ext.h}`;
   let p = cache.get(key);
   if (!p) {
     p = new Promise<HTMLImageElement>((res, rej) => {
@@ -90,9 +106,10 @@ export function sourceInfo(src: string, W: number, H: number): Promise<SourceInf
       img.onerror = () => rej(new Error("A layer's image could not be loaded."));
       img.src = urls.source(src);
     }).then((img) => {
-      const k = Math.min(1, ALPHA_SIDE / Math.max(W, H));
-      const aw = Math.max(1, Math.round(W * k));
-      const ah = Math.max(1, Math.round(H * k));
+      // The alpha map covers the image's own rect (the frame, or more for an expanded object).
+      const k = Math.min(1, ALPHA_SIDE / Math.max(ext.w, ext.h));
+      const aw = Math.max(1, Math.round(ext.w * k));
+      const ah = Math.max(1, Math.round(ext.h * k));
       const c = document.createElement("canvas");
       c.width = aw;
       c.height = ah;
@@ -115,13 +132,16 @@ export function sourceInfo(src: string, W: number, H: number): Promise<SourceInf
         if (y < y0) y0 = y;
         if (y > y1) y1 = y;
       }
-      const box = x1 < 0 ? { x0: 0, y0: 0, x1: W, y1: H } : { x0: (x0 / aw) * W, y0: (y0 / ah) * H, x1: ((x1 + 1) / aw) * W, y1: ((y1 + 1) / ah) * H };
+      const box =
+        x1 < 0
+          ? { x0: 0, y0: 0, x1: W, y1: H }
+          : { x0: ext.x + (x0 / aw) * ext.w, y0: ext.y + (y0 / ah) * ext.h, x1: ext.x + ((x1 + 1) / aw) * ext.w, y1: ext.y + ((y1 + 1) / ah) * ext.h };
       const t = document.createElement("canvas");
       const tk = 64 / Math.max(W, H);
       t.width = Math.max(1, Math.round(W * tk));
       t.height = Math.max(1, Math.round(H * tk));
-      t.getContext("2d")!.drawImage(img, 0, 0, t.width, t.height);
-      return { img, alpha, aw, ah, box, thumb: t.toDataURL("image/png") };
+      t.getContext("2d")!.drawImage(img, ext.x * tk, ext.y * tk, ext.w * tk, ext.h * tk);
+      return { img, alpha, aw, ah, box, thumb: t.toDataURL("image/png"), ext };
     });
     cache.set(key, p);
     p.catch(() => cache.delete(key));
@@ -154,6 +174,7 @@ export function pixels(img: CanvasImageSource, W: number, H: number): Uint8Clamp
 export async function renderDoc(doc: LayerDoc, maxSide: number): Promise<HTMLCanvasElement> {
   const W = doc.width;
   const H = doc.height;
+  noteExtents(doc);
   const infos = new Map<string, SourceInfo>();
   await Promise.all(doc.layers.map((l) => sourceInfo(l.source, W, H).then((i) => infos.set(l.source, i), () => {})));
   const k = Math.min(1, maxSide / Math.max(W, H));
@@ -171,7 +192,7 @@ export async function renderDoc(doc: LayerDoc, maxSide: number): Promise<HTMLCan
     ctx.translate(t.c.x + t.dx, t.c.y + t.dy);
     ctx.scale(t.s, t.s);
     ctx.translate(-t.c.x, -t.c.y);
-    ctx.drawImage(info.img, 0, 0, W, H);
+    drawSource(ctx, info);
     ctx.restore();
   }
   return c;
@@ -248,16 +269,24 @@ export function useMaskTint(src: string | null): string | null {
 
 /** A crop edit's result -> the layer's next image: shrunk back into the crop's place in the frame
  * (the rest transparent: the crop holds the whole object), clipped to the grown selection for
- * Clean edges (so the edit cannot bring a neighbour back). */
-export async function pasteCrop(f: Feed, result: string, W: number, H: number, name: string): Promise<InputRecord> {
-  const r = f.rect!;
+ * Clean edges (so the edit cannot bring a neighbour back). An Expand of the crop (`grown`: where its
+ * result lies, expandedRect) is put there at the same scale, not squeezed into the crop. The image
+ * covers the frame, or more when the object reaches past its edge (`ext`, for LayerDoc.ext). */
+export async function pasteCrop(f: Feed, result: string, W: number, H: number, name: string, grown?: Rect): Promise<{ rec: InputRecord; ext?: Rect }> {
+  const r = grown ?? f.rect!;
   let img: CanvasImageSource = await loadImage(urls.source(result));
+  const frame = { x: 0, y: 0, w: W, h: H };
+  const u = unionRect(frame, r);
+  const out = { x: Math.floor(u.x), y: Math.floor(u.y), w: Math.ceil(u.x + u.w) - Math.floor(u.x), h: Math.ceil(u.y + u.h) - Math.floor(u.y) };
+  const past = out.x < 0 || out.y < 0 || out.w > W || out.h > H;
   const c = document.createElement("canvas");
-  c.width = W;
-  c.height = H;
+  c.width = out.w;
+  c.height = out.h;
   const ctx = c.getContext("2d")!;
   ctx.imageSmoothingQuality = "high";
-  if (f.clip) {
+  ctx.translate(-out.x, -out.y);
+  // The clip is the crop's own selection: an expanded result reaches past it on purpose.
+  if (f.clip && !grown) {
     const m = await loadImage(urls.input(f.clip));
     const mw = m.naturalWidth;
     const mh = m.naturalHeight;
@@ -290,7 +319,8 @@ export async function pasteCrop(f: Feed, result: string, W: number, H: number, n
     ctx.globalCompositeOperation = "destination-in";
     ctx.drawImage(mc, r.x, r.y, r.w, r.h);
   } else ctx.drawImage(img, r.x, r.y, r.w, r.h);
-  return api.upload(await toPng(c), `${name} (edited).png`);
+  const rec = await api.upload(await toPng(c), `${name} (${grown ? "expanded" : "edited"}).png`);
+  return past ? { rec, ext: out } : { rec };
 }
 
 /** One dab of the layer brushes, in the layer's own pixels: the eraser clears (solid core, soft
@@ -421,6 +451,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
 
   useEffect(() => {
     let gone = false;
+    noteExtents(doc);
     for (const l of doc.layers) {
       if (infos[l.source]) continue;
       sourceInfo(l.source, W, H).then(
@@ -567,11 +598,11 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     const ch = Math.max(1, Math.round(rect.h * scale));
     // The image over the whole frame, moved and enlarged so the crop fills the canvas (the crop may
     // reach past the frame: transparent there).
-    const draw = (img: HTMLImageElement, ctx: CanvasRenderingContext2D) => {
+    const draw = (img: HTMLImageElement, ctx: CanvasRenderingContext2D, at: Rect = { x: 0, y: 0, w: W, h: H }) => {
       ctx.save();
       ctx.imageSmoothingQuality = "high";
       ctx.setTransform(cw / rect.w, 0, 0, ch / rect.h, (-rect.x * cw) / rect.w, (-rect.y * ch) / rect.h);
-      ctx.drawImage(img, 0, 0, W, H);
+      ctx.drawImage(img, at.x, at.y, at.w, at.h);
       ctx.restore();
     };
     const c = document.createElement("canvas");
@@ -586,7 +617,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       lc.width = cw;
       lc.height = ch;
       const lctx = lc.getContext("2d")!;
-      draw(info.img, lctx);
+      draw(info.img, lctx, info.ext);
       const px = lctx.getImageData(0, 0, cw, ch).data;
       const sel0 = new Uint8Array(cw * ch);
       for (let i = 0; i < sel0.length; i++) sel0[i] = px[i * 4 + 3] > 16 ? 255 : 0;
@@ -616,7 +647,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       mkx.fillRect(0, 0, cw, ch);
       mkx.drawImage(gc, 0, 0);
       clip = (await api.upload(await toPng(mk), "clip.png")).id;
-    } else draw(info.img, ctx);
+    } else draw(info.img, ctx, info.ext);
     const rec = await api.upload(await toPng(c), `${fileSafe(l.name)} (${kind === "edit" ? "object size" : "to clean"}).png`);
     addVersions([rec], 0);
     const f: Feed = { source: `input:${rec.id}`, mask: "", rect, scale, from: l.source, ...(clip ? { clip, grow: g } : {}) };
@@ -667,9 +698,105 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     }
   };
 
-  // Stickers: after a split with "Clean the stickers automatically", every object goes to Clean edges
-  // on its own (a crop at object size and the sticker prompt, sent as lab steps); the service runs
-  // them one after the other and each result comes back to its layer like any Clean edges.
+  /** A fast sticker, as the layer's next version: the object over the photo around it, matted by the
+   * service (lib/matte.ts: the selection decides what, the matte only the edge; edge colours freed of
+   * the background). Deterministic, a few seconds; Clean edges is the AI redraw. */
+  const fastSticker = async (l: DocLayer) => {
+    const e = extOf(liveRef.current, l.source);
+    if (e.x < 0 || e.y < 0 || e.w > W || e.h > H) throw new Error(`${l.name} reaches past the photo: use Clean edges.`);
+    const info = await sourceInfo(l.source, W, H);
+    const b = info.box;
+    const m = Math.round(Math.max(b.x1 - b.x0, b.y1 - b.y0) * 0.1) + 8;
+    const x0 = Math.max(0, Math.floor(b.x0 - m));
+    const y0 = Math.max(0, Math.floor(b.y0 - m));
+    const cw = Math.min(W, Math.ceil(b.x1 + m)) - x0;
+    const ch = Math.min(H, Math.ceil(b.y1 + m)) - y0;
+    if (cw < 8 || ch < 8) throw new Error(`${l.name} is too small for a sticker.`);
+    // Worked on at most 1600 px (the model sees 1024 anyway); solid parts keep full-size pixels.
+    const k = Math.min(1, 1600 / Math.max(cw, ch));
+    const w = Math.max(1, Math.round(cw * k));
+    const h = Math.max(1, Math.round(ch * k));
+    const photo = live.photo ? await loadImage(urls.source(live.photo)).catch(() => null) : null;
+    const scene = (sw: number, sh: number, withPhoto: boolean) => {
+      const c = document.createElement("canvas");
+      c.width = sw;
+      c.height = sh;
+      const ctx = c.getContext("2d")!;
+      ctx.imageSmoothingQuality = "high";
+      ctx.setTransform(sw / cw, 0, 0, sh / ch, (-x0 * sw) / cw, (-y0 * sh) / ch);
+      if (withPhoto && photo) ctx.drawImage(photo, 0, 0, W, H);
+      drawSource(ctx, info);
+      return c;
+    };
+    const own = scene(w, h, false).getContext("2d")!.getImageData(0, 0, w, h).data;
+    const sel = new Uint8Array(w * h);
+    for (let i = 0; i < sel.length; i++) sel[i] = own[i * 4 + 3] > 127 ? 255 : 0;
+    // The object in its scene (a new object drawn by the lab is over the photo too).
+    const rgba = scene(w, h, true).getContext("2d")!.getImageData(0, 0, w, h).data;
+    const matte = await modelMatte(focusPixels(rgba, sel, w, h), w, h);
+    const { alpha } = stickerAlpha(matte, sel, w, h);
+    const small = document.createElement("canvas");
+    small.width = w;
+    small.height = h;
+    small.getContext("2d")!.putImageData(new ImageData(foreground(rgba, alpha, w, h) as Uint8ClampedArray<ArrayBuffer>, w, h), 0, 0);
+    const out = document.createElement("canvas");
+    out.width = W;
+    out.height = H;
+    const octx = out.getContext("2d")!;
+    octx.imageSmoothingQuality = "high";
+    octx.drawImage(small, x0, y0, cw, ch);
+    if (k < 1) {
+      const full = scene(cw, ch, true).getContext("2d")!.getImageData(0, 0, cw, ch).data;
+      const d = octx.getImageData(x0, y0, cw, ch);
+      for (let i = 0; i < cw * ch; i++) if (d.data[i * 4 + 3] > 250) for (let c = 0; c < 3; c++) d.data[i * 4 + c] = full[i * 4 + c];
+      octx.putImageData(d, x0, y0);
+    }
+    const rec = await api.upload(await toPng(out), `${fileSafe(l.name)} (sticker).png`);
+    addVersions([rec], 0);
+    const src = `input:${rec.id}`;
+    const now = liveRef.current;
+    commitRef.current({ ...now, layers: now.layers.map((x) => (x.id === l.id ? { ...x, source: src, history: [...x.history, src] } : x)), known: [...now.known, src] });
+  };
+
+  /** The fast sticker model is downloaded once (224 MB), the first time Fast is used; the % shows. */
+  const [matteDl, setMatteDl] = useState<number | null>(null);
+  const ensureMatteModel = async () => {
+    if ((await api.matteStatus()).installed) return;
+    setMatteDl(0);
+    try {
+      await api.downloadMatte();
+      for (;;) {
+        await new Promise((r) => window.setTimeout(r, 1000));
+        const st = await api.installStatus();
+        const it = st.items.find((i) => i.id === "birefnet_lite");
+        if (it?.state === "failed" || it?.state === "cancelled") throw new Error(it.error ?? "The sticker model could not be downloaded.");
+        if (it?.state === "done" || it?.state === "present") return;
+        if (!st.running) {
+          if ((await api.matteStatus()).installed) return;
+          throw new Error("The sticker model could not be downloaded.");
+        }
+        if (it?.size) setMatteDl(Math.floor((100 * it.received) / it.size));
+      }
+    } finally {
+      setMatteDl(null);
+    }
+  };
+  const quickClean = async (l: DocLayer) => {
+    setBusy(true);
+    try {
+      await ensureMatteModel();
+      await fastSticker(l);
+    } catch (e) {
+      toastError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Stickers: after a split with stickers on, every object is cleaned once. Quality: each goes to
+  // Clean edges on its own (a crop at object size and the sticker prompt, sent as lab steps; the
+  // service runs them one after the other and each result comes back like any Clean edges). Fast:
+  // the background's fill is sent first, then each object is matted here (fastSticker).
   const stickersStarted = useRef(false);
   const setSticker = (layer: string, p: Partial<Sticker>) => {
     const d = liveRef.current;
@@ -680,6 +807,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
   };
   const makeStickers = async () => {
     const d = liveRef.current;
+    const fast = d.autoClean === "fast";
     const objects = d.layers.filter((l) => !l.base && !l.effect);
     const base = d.layers.find((l) => l.base);
     const start = { ...d, autoClean: undefined, stickers: [...objects.map((l): Sticker => ({ layer: l.id, job: null })), ...(base ? [{ layer: base.id, job: null, kind: "fill" as const }] : [])] };
@@ -689,6 +817,47 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     // The crops become versions (and the prompt's image) on the way: put back what was there.
     const before = getState();
     const keep = { selected: before.selected, refs: before.composer.refs };
+    const putBack = () => setState((s) => ({ selected: s.session.some((i) => i.key === keep.selected) ? keep.selected : s.selected, composer: { ...s.composer, refs: keep.refs } }));
+    const sendFill = async () => {
+      const bg = liveRef.current.layers.find((x) => x.base);
+      if (!bg || liveRef.current.stickers?.find((s) => s.kind)?.skipped) return;
+      try {
+        const { rec, mask } = await prepareFill(bg);
+        const job = await submitRequest(fillRequest(rec, mask));
+        setSticker(bg.id, job ? { job, from: bg.source, mask } : { failed: true });
+      } catch (e) {
+        console.error(e);
+        setSticker(bg.id, { failed: true });
+      }
+    };
+    if (fast) {
+      // The fill runs on the image engine meanwhile; the stickers on the CPU, one after the other.
+      await sendFill();
+      let ready = true;
+      try {
+        await ensureMatteModel();
+      } catch (e) {
+        toastError(e);
+        ready = false;
+      }
+      for (const l of objects) {
+        if (liveRef.current.stickers?.find((s) => s.layer === l.id && !s.kind)?.skipped) continue;
+        if (!ready) {
+          setSticker(l.id, { failed: true });
+          continue;
+        }
+        setSticker(l.id, { local: "making" });
+        try {
+          await fastSticker(liveRef.current.layers.find((x) => x.id === l.id) ?? l);
+          setSticker(l.id, { local: "done" });
+        } catch (e) {
+          console.error(e);
+          setSticker(l.id, { failed: true, local: undefined });
+        }
+      }
+      putBack();
+      return;
+    }
     for (const l of objects) {
       if (liveRef.current.stickers?.find((s) => s.layer === l.id && !s.kind)?.skipped) continue;
       try {
@@ -707,18 +876,8 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       }
     }
     // Then the background: its holes filled, shadows and leftovers of the objects taken off.
-    const bg = liveRef.current.layers.find((x) => x.base);
-    if (bg && !liveRef.current.stickers?.find((s) => s.kind)?.skipped) {
-      try {
-        const { rec, mask } = await prepareFill(bg);
-        const job = await submitRequest(fillRequest(rec, mask));
-        setSticker(bg.id, job ? { job, from: bg.source, mask } : { failed: true });
-      } catch (e) {
-        console.error(e);
-        setSticker(bg.id, { failed: true });
-      }
-    }
-    setState((s) => ({ selected: s.session.some((i) => i.key === keep.selected) ? keep.selected : s.selected, composer: { ...s.composer, refs: keep.refs } }));
+    await sendFill();
+    putBack();
   };
   useEffect(() => {
     if (!live.autoClean || stickersStarted.current) return;
@@ -732,6 +891,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
   const stickerState = (s: Sticker): "waiting" | "making" | "done" | "skipped" | "failed" => {
     if (s.skipped) return "skipped";
     if (s.failed) return "failed";
+    if (s.local) return s.local;
     const j = s.job ? jobs[s.job] : undefined;
     if (!j) return s.job ? "done" : "waiting";
     // Done once the result is pasted into the layer (a moment after the job).
@@ -911,8 +1071,8 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       const info = infos[l.source];
       if (l.hidden || l.effect || !info) continue;
       const q = unmapPoint(xf(l), x, y);
-      const ix = Math.floor((q.x / W) * info.aw);
-      const iy = Math.floor((q.y / H) * info.ah);
+      const ix = Math.floor(((q.x - info.ext.x) / info.ext.w) * info.aw);
+      const iy = Math.floor(((q.y - info.ext.y) / info.ext.h) * info.ah);
       if (ix < 0 || iy < 0 || ix >= info.aw || iy >= info.ah) continue;
       if (info.alpha[iy * info.aw + ix] > 32) return l;
     }
@@ -925,8 +1085,8 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     const c = paintRef.current;
     if (!c || !paintInfo || stroke.current) return;
     const ctx = c.getContext("2d")!;
-    ctx.clearRect(0, 0, W, H);
-    ctx.drawImage(paintInfo.img, 0, 0, W, H);
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.drawImage(paintInfo.img, 0, 0, c.width, c.height);
   }, [paintInfo, W, H]);
 
   /** Brush dabs from the last point to frame point `p`, in the layer's own pixels. */
@@ -939,7 +1099,9 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     const from = stroke.current ?? q;
     const n = Math.max(1, Math.ceil(Math.hypot(q.x - from.x, q.y - from.y) / Math.max(1, r / 4)));
     const ctx = c.getContext("2d")!;
-    for (let i = stroke.current ? 1 : 0; i <= n; i++) dab(ctx, from.x + ((q.x - from.x) * i) / n, from.y + ((q.y - from.y) * i) / n, r, tool === "erase" ? "erase" : "shade");
+    // The canvas covers the layer's own rect (past the frame for an expanded object).
+    const e = extOf(live, sel.source);
+    for (let i = stroke.current ? 1 : 0; i <= n; i++) dab(ctx, from.x + ((q.x - from.x) * i) / n - e.x, from.y + ((q.y - from.y) * i) / n - e.y, r, tool === "erase" ? "erase" : "shade");
     stroke.current = q;
   };
 
@@ -955,8 +1117,10 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       addVersions([rec], 0);
       const src = `input:${rec.id}`;
       const d = liveRef.current;
+      const e = d.ext?.[l.source];
       commitRef.current({
         ...d,
+        ...(e ? { ext: { ...d.ext, [src]: e } } : {}),
         layers: d.layers.map((x) => (x.id === l.id ? { ...x, source: src, history: [...x.history, src] } : x)),
         known: [...d.known, src],
       });
@@ -1235,7 +1399,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       ctx.translate(t.c.x + t.dx, t.c.y + t.dy);
       ctx.scale(t.s, t.s);
       ctx.translate(-t.c.x, -t.c.y);
-      ctx.drawImage(info.img, 0, 0, W, H);
+      drawSource(ctx, info);
       ctx.restore();
     }
     return c;
@@ -1487,8 +1651,14 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
             <div className="sticker-strip">
               <Loader2 size={14} className="spin" />
               <span>
-                Making stickers · {stickerRows.length - stickersLeft} of {stickerRows.length}
-                {stickerNow ? ` · ${stickerNow.kind ? "filling the background" : (live.layers.find((l) => l.id === stickerNow.layer)?.name ?? "")}` : ""}
+                {matteDl !== null ? (
+                  <>Getting the sticker model (once, 224 MB) · {matteDl}%</>
+                ) : (
+                  <>
+                    Making stickers · {stickerRows.length - stickersLeft} of {stickerRows.length}
+                    {stickerNow ? ` · ${stickerNow.kind ? "filling the background" : (live.layers.find((l) => l.id === stickerNow.layer)?.name ?? "")}` : ""}
+                  </>
+                )}
               </span>
               {stickerNow && (
                 <button className="btn" onClick={() => skipSticker(stickerNow)} title="Keep this object's rough cut-out">
@@ -1528,17 +1698,11 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
                     const t = xf(l);
                     // Stickers: background and shadows out of sight (they fade back), objects by their state.
                     const st = stickering ? (l.base || l.effect ? "hide" : (stickerOf(l.id) ?? "done")) : null;
+                    // An expanded object's image reaches past the frame: placed on its own rect.
+                    const e = extOf(live, l.source);
+                    const at = { left: e.x, top: e.y, width: e.w, height: e.h, transformOrigin: `${t.c.x - e.x}px ${t.c.y - e.y}px`, transform: `translate(${t.dx}px, ${t.dy}px) scale(${t.s})` };
                     if (brushOn && l.id === sel!.id)
-                      return (
-                        <canvas
-                          key={`${l.id}:paint`}
-                          ref={paintRef}
-                          width={W}
-                          height={H}
-                          className="doc-layer"
-                          style={{ transformOrigin: `${t.c.x}px ${t.c.y}px`, transform: `translate(${t.dx}px, ${t.dy}px) scale(${t.s})` }}
-                        />
-                      );
+                      return <canvas key={`${l.id}:paint`} ref={paintRef} width={Math.round(e.w)} height={Math.round(e.h)} className="doc-layer" style={at} />;
                     return (
                       <img
                         key={`${l.id}:${l.source}`}
@@ -1546,7 +1710,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
                         alt=""
                         draggable={false}
                         className={`doc-layer ${st ? `st-${st}` : ""}`}
-                        style={{ transformOrigin: `${t.c.x}px ${t.c.y}px`, transform: `translate(${t.dx}px, ${t.dy}px) scale(${t.s})` }}
+                        style={at}
                       />
                     );
                   })}
@@ -1779,8 +1943,13 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
                   </button>
                 )}
                 {!sel.base && !sel.effect && (
-                  <button className="btn" onClick={() => cleanEdges(sel)} disabled={busy} title="Redraw the object's border at its own size, as a die-cut sticker on transparency; the result stays inside its outline (grown ~3 px)">
+                  <button className="btn" onClick={() => cleanEdges(sel)} disabled={busy} title="Quality: the AI redraws the object's border at its own size, as a cut-out on transparency; the result stays inside its outline (grown ~3 px)">
                     <Sparkles size={14} /> Clean edges
+                  </button>
+                )}
+                {!sel.base && !sel.effect && (
+                  <button className="btn" onClick={() => quickClean(sel)} disabled={busy} title="Fast: a quick cut-out from the photo, a few seconds (the first time, the sticker model is downloaded: 224 MB)">
+                    <Scissors size={14} /> {matteDl !== null ? `Getting the model · ${matteDl}%` : "Quick cut-out"}
                   </button>
                 )}
                 {sel.history.length > 1 && (

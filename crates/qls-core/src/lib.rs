@@ -13,6 +13,7 @@ pub mod imaging;
 pub mod installer;
 pub mod lora;
 pub mod lut;
+pub mod matting;
 pub mod mac_bench;
 pub mod modelfile;
 pub mod paths;

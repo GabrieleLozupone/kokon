@@ -32,6 +32,25 @@ export interface Rect {
   h: number;
 }
 
+/** Where a version's image lies in the frame (frame px): the whole frame unless `doc.ext` says. */
+export const extOf = (doc: { width: number; height: number; ext?: Record<string, Rect> }, source: string): Rect =>
+  doc.ext?.[source] ?? { x: 0, y: 0, w: doc.width, h: doc.height };
+
+export const unionRect = (a: Rect, b: Rect): Rect => {
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
+};
+
+/** An Expand of an object's crop (`rect` in the frame, sent as a `refW`×`refH` image): where its
+ * result lies in the frame. The result is the crop plus the expansion, given in the sent image's px
+ * (GenerationRecord.outpaint), so it is wider or taller than the crop, never squeezed into it. */
+export function expandedRect(rect: Rect, refW: number, refH: number, o: { left: number; right: number; top: number; bottom: number }): Rect {
+  const kx = rect.w / refW;
+  const ky = rect.h / refH;
+  return { x: rect.x - o.left * kx, y: rect.y - o.top * ky, w: (refW + o.left + o.right) * kx, h: (refH + o.top + o.bottom) * ky };
+}
+
 /** Below about 1 MP Qwen-Image does worse (planner.rs INPAINT_MIN_AREA): a crop smaller than that is
  * enlarged for the model, at most 4 times, and its result shrunk back. */
 export const CROP_AREA = 1024 * 1024;
@@ -154,10 +173,14 @@ export interface LayerDoc {
   scenes?: SceneEdit[];
   /** Versions already looked at for "follow the edit" (adopted, or left by going back). */
   known: string[];
-  /** Split with "Clean the stickers automatically": LayerDoc sends every object to Clean edges once. */
-  autoClean?: boolean;
+  /** Split with the stickers cleaned: LayerDoc cleans every object once, with a Qwen edit each
+   * ("quality"; `true` from before 11-02) or the service's matte ("fast"). */
+  autoClean?: boolean | "quality" | "fast";
   /** Those automatic Clean edges, one per object layer (shown while any is left). */
   stickers?: Sticker[];
+  /** Versions whose image is not the whole frame (`extOf`): an Expand of an object took it past the
+   * frame's edge, so its image covers this rect (frame px) and the part outside shows once moved in. */
+  ext?: Record<string, Rect>;
 }
 
 /** An object's automatic Clean edges: its job once sent (null: not yet, or it could not be sent). */
@@ -175,6 +198,8 @@ export interface Sticker {
   checked?: boolean;
   skipped?: boolean;
   failed?: boolean;
+  /** A fast sticker, made here (no job): being made, or in. */
+  local?: "making" | "done";
 }
 
 export interface Box {

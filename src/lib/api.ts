@@ -113,6 +113,24 @@ export const api = {
   upscalers: () => call<{ selected: string; active: string | null; items: UpscalerItem[] }>("/upscalers"),
   /** Progress in `installStatus` (preset "upscaler:<name>"). */
   downloadUpscaler: (name: string) => call<InstallStatus>(`/upscalers/${encodeURIComponent(name)}/download`, { method: "POST" }),
+  /** The fast-sticker model of the layers lab: there or not, and its download size. */
+  matteStatus: () => call<{ installed: boolean; bytes: number }>("/matte"),
+  /** Progress in `installStatus` (preset "matting"). */
+  downloadMatte: () => call<InstallStatus>("/matte/download", { method: "POST" }),
+  /** The fast-sticker matte of an image in Kokon ("input:"/"gen:"): a grey PNG at its size. */
+  matte: async (image: string): Promise<Blob> => {
+    let res: Response;
+    try {
+      res = await fetch(base + "/matte", { method: "POST", headers: { ...authHeaders("POST"), "Content-Type": "application/json" }, body: json({ image }) });
+    } catch (e) {
+      throw new ApiError({ code: "server_unavailable", message: inBrowser ? "Kokon is not reachable." : "The local service is not reachable.", detail: String(e) }, 0);
+    }
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      throw new ApiError(data?.error ?? { code: "internal", message: `HTTP ${res.status}` }, res.status);
+    }
+    return res.blob();
+  },
   /** ESRGAN models of earlier versions in the app's own folder. */
   legacyUpscalers: (keep: string) => call<{ files: string[]; bytes: number }>(`/setup/legacy-upscalers?keep=${encodeURIComponent(keep)}`),
   /** `keep`: the model chosen in Settings, even if not saved yet. */

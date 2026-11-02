@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { copiedShare, cropFor, docFor, keepLabsIn, labSources, loadLab, saveLab, waitingMarks, jobLayer, labItems, leftovers, putDoc, type LabStore, shadowAlpha, mapPoint, placed, reconcile, reorder, toLayer, xfOf, type DocLayer, type LayerDoc } from "./layerDoc";
+import { copiedShare, cropFor, expandedRect, extOf, unionRect, docFor, keepLabsIn, labSources, loadLab, saveLab, waitingMarks, jobLayer, labItems, leftovers, putDoc, type LabStore, shadowAlpha, mapPoint, placed, reconcile, reorder, toLayer, xfOf, type DocLayer, type LayerDoc } from "./layerDoc";
 
 const layer = (id: string, source: string, base = false): DocLayer => ({ id, name: id, source, history: [source], hidden: false, base, dx: 0, dy: 0, s: 1 });
 const doc = (layers: DocLayer[]): LayerDoc => ({ width: 100, height: 100, layers, known: [] });
@@ -228,5 +228,21 @@ describe("copiedShare", () => {
   it("finds the grey and the guide's red copied into the holes, not a real background", () => {
     expect(copiedShare(img([[128, 130, 126], [184, 78, 78], [30, 60, 160], [128, 128, 128]]), mask, 4)).toBeCloseTo(2 / 3);
     expect(copiedShare(img([[30, 60, 160], [40, 70, 170], [90, 50, 120], [128, 128, 128]]), mask, 4)).toBe(0);
+  });
+});
+
+describe("expanded objects", () => {
+  it("puts an Expand result around the crop, not squeezed into it", () => {
+    // A 200x400 crop sent enlarged 2x (400x800), expanded 200 px right and 100 px at the bottom.
+    const r = expandedRect({ x: 1000, y: 300, w: 200, h: 400 }, 400, 800, { left: 0, right: 200, top: 0, bottom: 100 });
+    expect(r).toEqual({ x: 1000, y: 300, w: 300, h: 450 });
+    const l = expandedRect({ x: 10, y: 20, w: 100, h: 100 }, 100, 100, { left: 50, right: 0, top: 25, bottom: 0 });
+    expect(l).toEqual({ x: -40, y: -5, w: 150, h: 125 });
+  });
+  it("knows where a version lies", () => {
+    const doc = { width: 800, height: 600, ext: { "input:b": { x: -40, y: 0, w: 900, h: 600 } } };
+    expect(extOf(doc, "input:a")).toEqual({ x: 0, y: 0, w: 800, h: 600 });
+    expect(extOf(doc, "input:b")).toEqual({ x: -40, y: 0, w: 900, h: 600 });
+    expect(unionRect({ x: 0, y: 0, w: 800, h: 600 }, { x: 700, y: -50, w: 300, h: 100 })).toEqual({ x: 0, y: -50, w: 1000, h: 650 });
   });
 });

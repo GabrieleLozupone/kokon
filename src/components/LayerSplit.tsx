@@ -14,6 +14,7 @@ import { Segmenter, type SamResult } from "../lib/sam";
 import type { DocLayer, LayerDoc } from "../lib/layerDoc";
 import { addVersions, setState, toastError, toastInfo, useStore } from "../lib/store";
 import type { InputRecord } from "../lib/types";
+import { SplitChoice, type StickerMode } from "./SplitChoice";
 import { IconButton } from "./ui";
 import { isTyping } from "./Viewer";
 import { ZoomPan } from "./ZoomPan";
@@ -102,18 +103,24 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
   const [brush, setBrush] = useState(40);
   const [margin, setMargin] = useState(3);
   const [grey, setGrey] = useState(false);
-  // Clean the stickers after the split (remembered; on unless turned off).
-  const [stickers, setStickersState] = useState(() => {
+  // How the stickers are cleaned after the split, asked when Split is pressed (SplitChoice; the last
+  // answer is remembered and offered first): Quality = a Qwen edit per object (the way it was, "on"
+  // before 11-02), Fast = a matte from the service, Off = the rough cut-outs.
+  const [asking, setAsking] = useState(false);
+  const askingRef = useRef(false);
+  askingRef.current = asking;
+  const [stickers, setStickersState] = useState<StickerMode>(() => {
     try {
-      return localStorage.getItem(STICKERS_KEY) !== "off";
+      const v = localStorage.getItem(STICKERS_KEY);
+      return v === "off" || v === "fast" ? v : "quality";
     } catch {
-      return true;
+      return "quality";
     }
   });
-  const setStickers = (on: boolean) => {
-    setStickersState(on);
+  const setStickers = (m: StickerMode) => {
+    setStickersState(m);
     try {
-      localStorage.setItem(STICKERS_KEY, on ? "on" : "off");
+      localStorage.setItem(STICKERS_KEY, m);
     } catch {
       /* storage unavailable */
     }
@@ -124,6 +131,8 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
   const [busy, setBusy] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const [areas, setAreas] = useState<Record<string, number>>({});
+  /** Layers with something in them (the Split button counts them). */
+  const usedCount = layers.filter((l) => (areas[l.id] ?? 0) > 0).length;
 
   const masks = useRef(new Map<string, Mask>());
   const undoStack = useRef<Change[]>([]);
@@ -416,13 +425,22 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
 
   const patch = (id: string, p: Partial<LayerInfo>) => setLayers((ls) => ls.map((l) => (l.id === id ? { ...l, ...p } : l)));
 
-  /** Saves the background and every non-empty layer at the image's full size as new versions. */
-  const split = async () => {
-    const used = layers.filter((l) => area(maskOf(l.id)) > 0);
-    if (!used.length) {
+  /** Split pressed: how to cut the objects out is asked first (SplitChoice). */
+  const askSplit = () => {
+    if (!layers.some((l) => area(maskOf(l.id)) > 0)) {
       toastInfo("Put something in a layer first: click an object, or paint it.");
       return;
     }
+    setAsking(true);
+  };
+
+  /** Saves the background and every non-empty layer at the image's full size as new versions; the
+   * objects are then cleaned as `mode` says (LayerDoc's sticker queue). */
+  const split = async (mode: StickerMode) => {
+    setAsking(false);
+    setStickers(mode);
+    const used = layers.filter((l) => area(maskOf(l.id)) > 0);
+    if (!used.length) return;
     setBusy("Splitting…");
     try {
       const img = await full.current!;
@@ -483,7 +501,7 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
       const bg = `input:${base.id}`;
       docLayers.push({ id: "background", name: "Background", source: bg, history: [bg], hidden: false, base: true, dx: 0, dy: 0, s: 1 });
       addVersions(made, 0);
-      onSplit({ width: W, height: H, photo: ref0?.source, layers: docLayers, known: made.map((r) => `input:${r.id}`), ...(stickers && docLayers.some((l) => !l.base) ? { autoClean: true } : {}) });
+      onSplit({ width: W, height: H, photo: ref0?.source, layers: docLayers, known: made.map((r) => `input:${r.id}`), ...(mode !== "off" && docLayers.some((l) => !l.base) ? { autoClean: mode } : {}) });
     } catch (e) {
       toastError(e);
     } finally {
@@ -493,7 +511,7 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (isTyping(e.target)) return;
+      if (isTyping(e.target) || askingRef.current) return;
       const k = e.key.toLowerCase();
       if (e.code === "Space" && !e.repeat) {
         e.preventDefault();
@@ -640,13 +658,6 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
             (B) and eraser (E) fix edges and can move pixels between layers. Split saves the background and each layer as new versions and
             opens them as layers: move them, hide them, edit them one by one.
           </p>
-          <label className="layers-opt" title="After the split, each object is redrawn at its own size as a clean cut-out, then the background's holes are filled without the objects' shadows (one edit each; skip any while it runs). Clean edges and Fill the holes redo one later.">
-            <input type="checkbox" checked={stickers} onChange={(e) => setStickers(e.target.checked)} />
-            Clean the stickers and fill the background automatically (one edit each)
-          </label>
-          <button className="btn primary layers-split" onClick={split} disabled={!!busy}>
-            Split
-          </button>
         </aside>
       </div>
 
@@ -679,7 +690,11 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
             <Redo2 size={17} />
           </IconButton>
         </div>
+        <button className="btn primary layers-split-go" onClick={askSplit} disabled={!!busy || !usedCount} title={usedCount ? "Make each layer its own image, then clean the objects' edges" : "Click an object first: it goes into the active layer"}>
+          <Layers size={15} /> Split into layers{usedCount ? ` · ${usedCount}` : ""}
+        </button>
       </div>
+      {asking && <SplitChoice count={usedCount} last={stickers} onPick={(m) => void split(m)} onCancel={() => setAsking(false)} />}
     </div>
   );
 }

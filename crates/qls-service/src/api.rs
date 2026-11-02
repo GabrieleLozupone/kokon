@@ -80,6 +80,8 @@ pub fn router(state: Arc<AppState>, lan: bool) -> Router {
         .route("/models/dit", post(models_new_dit))
         .route("/upscalers", get(list_upscalers))
         .route("/upscalers/{name}/download", post(download_upscaler))
+        .route("/matte", get(matte_status).post(matte_image))
+        .route("/matte/download", post(matte_download))
         .route("/config", get(get_config).put(put_config))
         .route("/enhancer/defaults", get(enhancer_defaults))
         .route("/mac-engine/bench", get(mac_bench_status).post(mac_bench_start).delete(mac_bench_clear))
@@ -465,6 +467,31 @@ async fn download_upscaler(State(s): St, AxPath(name): AxPath<String>) -> ApiRes
     let dir = s.engine.config().sdcpp_dir;
     s.engine.installer.start(dir, &format!("upscaler:{name}"), vec![d], Box::new(|_| {}))?;
     Ok(Json(serde_json::to_value(s.engine.installer.status()).unwrap()))
+}
+
+/// The fast-sticker model (layers lab): there or not, and its download size.
+async fn matte_status(State(s): St) -> Json<Value> {
+    let path = qls_core::matting::model_path(&s.engine.config().sdcpp_dir);
+    Json(json!({ "installed": path.is_file(), "bytes": qls_core::matting::BIREFNET_LITE.size }))
+}
+
+async fn matte_download(State(s): St) -> ApiResult<Json<Value>> {
+    let dir = s.engine.config().sdcpp_dir;
+    s.engine.installer.start(dir, "matting", vec![qls_core::matting::BIREFNET_LITE], Box::new(|_| {}))?;
+    Ok(Json(serde_json::to_value(s.engine.installer.status()).unwrap()))
+}
+
+#[derive(Deserialize)]
+struct MatteBody {
+    /// "input:<id>" / "gen:<id>".
+    image: String,
+}
+
+/// The matte of an image (grey PNG at its size) for a fast sticker.
+async fn matte_image(State(s): St, Json(b): Json<MatteBody>) -> ApiResult<Response> {
+    let engine = s.engine.clone();
+    let png = tokio::task::spawn_blocking(move || engine.matte(&b.image)).await.map_err(AppError::internal)??;
+    Ok(([(header::CONTENT_TYPE, "image/png")], png).into_response())
 }
 
 /// Upscaler models of earlier versions in the app's own folder (Settings offers to delete

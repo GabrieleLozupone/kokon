@@ -904,6 +904,19 @@ impl Engine {
         }
     }
 
+    /// The fast-sticker matte of an image already in Kokon ("input:"/"gen:"), as a grey PNG at
+    /// its size (white = the main thing in it; the layers lab combines it with the selection).
+    pub fn matte(&self, src: &str) -> AppResult<Vec<u8>> {
+        if !src.starts_with("input:") && !src.starts_with("gen:") {
+            return Err(AppError::invalid("Stickers are made from images already in Kokon."));
+        }
+        let (bytes, _, _) = self.read_source(src, None)?;
+        let img = imaging::decode_image(&bytes)?;
+        let m = crate::matting::matte(&self.config().sdcpp_dir, &img.pixels)?;
+        let rgba = image::DynamicImage::ImageLuma8(m).to_rgba8();
+        imaging::encode_png(&rgba, &[], None, true)
+    }
+
     /// Applies a library LUT to a "gen:"/"input:" source at `intensity` (0-1) and saves the
     /// result as a new version made from it (mode "lut"; the source stays as it is). Private
     /// when asked or when the source itself is private. Same file format as a source result.

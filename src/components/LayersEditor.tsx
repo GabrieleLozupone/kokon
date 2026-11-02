@@ -3,7 +3,7 @@
 // the edits made to its layers.
 
 import { useEffect, useRef, useState } from "react";
-import { docFor, docId, loadLab, putDoc, reconcile, saveLab, type DocLayer, type LayerDoc as Doc } from "../lib/layerDoc";
+import { docFor, docId, expandedRect, loadLab, putDoc, reconcile, saveLab, type DocLayer, type LayerDoc as Doc } from "../lib/layerDoc";
 import { editSource, getState, itemOrigin, itemSource, toastError, toastInfo, useStore } from "../lib/store";
 import { readScene } from "./LabScene";
 import { LayerDoc, pasteCrop, shadowImage } from "./LayerDoc";
@@ -154,13 +154,18 @@ function LayersLab({ projectId }: { projectId: string }) {
         const result = `gen:${done.gen.id}`;
         if (making.current.has(result)) continue;
         making.current.add(result);
-        pasteCrop(f, result, doc.width, doc.height, l.name).then(
-          (rec) => {
+        // Expand of the crop: its result is the crop plus the expansion, put around the crop.
+        const o = done.gen.mode === "outpaint" ? done.gen.outpaint : null;
+        const ref = done.gen.references[0];
+        const grown = o && ref ? expandedRect(f.rect, ref.width, ref.height, o) : undefined;
+        pasteCrop(f, result, doc.width, doc.height, l.name, grown).then(
+          ({ rec, ext }) => {
             const d = latest.current!;
             const src = `input:${rec.id}`;
             const seen = made.map((i) => `gen:${i.gen!.id}`);
             update({
               ...d,
+              ...(ext ? { ext: { ...d.ext, [src]: ext } } : {}),
               layers: d.layers.map((x) => (x.id === l.id ? { ...x, source: src, history: [...x.history, src] } : x)),
               known: [...d.known, ...seen, src],
             });

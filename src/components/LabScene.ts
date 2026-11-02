@@ -10,7 +10,7 @@ import { dilate, fileSafe, fromLogits, refineEdges } from "../lib/layers";
 import { Segmenter } from "../lib/sam";
 import { alignEdit, attached, blur, changed, darkness, IDENTITY, invertAffine, luminance, MARK_COLOURS, objectAt, scaleAffine, splitShadows, toneCurve, type Affine, type MarkColour } from "../lib/sceneEdit";
 import type { InputRecord } from "../lib/types";
-import { loadImage, pixels, sourceInfo, toPng } from "./LayerDoc";
+import { loadImage, pixels, drawSource, sourceInfo, toPng } from "./LayerDoc";
 
 /** Long side of the analysis (shadows are soft: no need for every pixel). */
 const SIDE = 1536;
@@ -61,7 +61,7 @@ async function footprint(source: string, place: Place, w: number, h: number, W: 
   ctx.translate(cc.x + place.dx, cc.y + place.dy);
   ctx.scale(place.s, place.s);
   ctx.translate(-cc.x, -cc.y);
-  ctx.drawImage(info.img, 0, 0, W, H);
+  drawSource(ctx, info);
   const px = ctx.getImageData(0, 0, w, h).data;
   const m = new Uint8Array(w * h);
   for (let i = 0; i < m.length; i++) m[i] = px[i * 4 + 3] > 128 ? 255 : 0;
@@ -335,7 +335,7 @@ export async function readScene(doc: LayerDoc, e: SceneEdit, result: string): Pr
       ctx.drawImage(full, 0, 0);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.globalCompositeOperation = "destination-in";
-      ctx.drawImage(info.img, 0, 0, W, H);
+      drawSource(ctx, info);
       const rec = await api.upload(await toPng(c), `${fileSafe(l.name)} (edited).png`);
       out.looks.push({ id, src: `input:${rec.id}` });
     }

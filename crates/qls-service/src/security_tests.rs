@@ -353,3 +353,17 @@ async fn a_browser_opens_a_project_with_one_request_and_previews() {
     // Signed out: nothing.
     assert_eq!(send(&a, "GET", "/api/v1/projects/p/records", &[], None).await.status, StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+async fn fast_stickers_take_only_images_already_in_kokon() {
+    let f = fixture(true);
+    let a = app(&f, true, "192.168.1.50");
+    let cookie = sign_in(&a).await;
+    let c = ("cookie", cookie.as_str());
+    let s = send(&a, "GET", "/api/v1/matte", &[c], None).await;
+    assert_eq!((s.status, s.body["installed"].clone()), (StatusCode::OK, json!(false)));
+    for image in ["/etc/passwd", r"C:\Users\me\x.png", "file:///etc/passwd"] {
+        let r = send(&a, "POST", "/api/v1/matte", &[c, CSRF], Some(json!({ "image": image }))).await;
+        assert_eq!((r.status, r.code()), (StatusCode::BAD_REQUEST, "invalid_input"), "{image}");
+    }
+}
