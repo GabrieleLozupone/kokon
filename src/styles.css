@@ -626,9 +626,19 @@ pre.diag { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font
 .doc-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--border); }
 .doc-actions-title { font-weight: 600; font-size: 12px; }
 .doc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.doc-grid .btn, .doc-footer .btn { justify-content: center; height: 34px; min-width: 0; white-space: nowrap; }
+.doc-grid .btn { justify-content: center; height: 34px; min-width: 0; white-space: nowrap; }
 .doc-grid > :only-child { grid-column: 1 / -1; }
-.doc-footer { margin-top: auto; display: flex; flex-direction: column; gap: 6px; padding-top: 12px; }
+.editor-tools .pill.doc-cmd { color: var(--text); font-weight: 500; }
+.editor-tools .pill.doc-cmd.primary { background: var(--invert-bg); color: var(--invert-text); }
+.editor-tools .pill.doc-cmd.primary:hover:not(:disabled) { opacity: 0.88; background: var(--invert-bg); }
+.editor-tools .pill:disabled { opacity: 0.45; cursor: default; }
+.editor-tools .slider .doc-cmd-val { min-width: 36px; color: var(--text); font-variant-numeric: tabular-nums; }
+.editor-tools.locked .group, .layers-panel.locked { pointer-events: none; opacity: 0.5; transition: opacity 0.2s; }
+/* Automatic shadows being made: the stage is held, the progress in the middle of the image. */
+.doc-lock { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; background: color-mix(in srgb, #000 22%, transparent); cursor: progress; }
+.doc-lock-card { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-radius: 16px; background: var(--invert-bg); color: var(--invert-text); font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; box-shadow: var(--lift); }
+.doc-lock-card span { display: flex; flex-direction: column; gap: 2px; }
+.doc-lock-card small { font-size: 12px; font-weight: 400; opacity: 0.7; }
 .doc-none { margin-top: 10px; }
 .layers-panel > * { flex-shrink: 0; }
 .doc-versions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 8px; border-radius: 12px; background: var(--bg); box-shadow: var(--lift); }

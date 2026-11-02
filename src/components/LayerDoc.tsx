@@ -7,18 +7,20 @@
 // together), Group keeps them together. Whole-image edits (LabScene.ts) give Qwen the flattened
 // layers: "Shadows" reads back each object's shadow as its own layer (it moves with the object),
 // "New objects" adds what the user drew with the coloured pencil as new layers, "Edit together"
-// gives the selected objects the edit's look. "Save as image" flattens the layers into a new version.
+// gives the selected objects the edit's look. "Save as image" flattens the layers into a new version; "Export PSD" saves them for Photoshop (lib/psd.ts).
 
-import { Brush, Eraser, Eye, EyeOff, GripVertical, Group, Hand, History, ImageDown, Link2, Loader2, Lock, MousePointer2, Paintbrush, Pencil, Redo2, RotateCcw, Scissors, Sparkles, Sun, Trash2, Undo2, Ungroup, WandSparkles, X } from "lucide-react";
+import { Brush, Eraser, Eye, EyeOff, FileDown, GripVertical, Group, Hand, History, ImageDown, Link2, Loader2, Lock, MousePointer2, Paintbrush, Pencil, Redo2, RotateCcw, Scissors, Sparkles, Sun, Trash2, Undo2, Ungroup, WandSparkles, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, urls } from "../lib/api";
-import { dilate, erode, fileSafe, grow } from "../lib/layers";
-import { centre, CROP_MAX_RATIO, cropFor, docId, waitingMarks, shadowAlpha, mapBox, reorder, unmapPoint, withGroup, xfOf, type Box, type DocLayer, type Effect, type Feed, type LayerDoc, type SceneEdit, type Sticker, type Xf } from "../lib/layerDoc";
+import { dilate, erode, fileSafe } from "../lib/layers";
+import { centre, copiedShare, CROP_MAX_RATIO, cropFor, docId, waitingMarks, shadowAlpha, mapBox, reorder, unmapPoint, withGroup, xfOf, type Box, type DocLayer, type Effect, type Feed, type LayerDoc, type SceneEdit, type Sticker, type Xf } from "../lib/layerDoc";
 import { buildRequest, refFromInput } from "../lib/logic";
+import { native } from "../lib/native";
+import { writePsd } from "../lib/psd";
 import { MARK_COLOURS, marksPrompt, type MarkColour } from "../lib/sceneEdit";
 import { placesOf } from "./LabScene";
 import { shortcut } from "../lib/platform";
-import { addResult, addVersions, cancelJob, editSource, focusPrompt, getState, itemSource, setState, submitRequest, toastError, toastInfo, updateComposer, useStore, type SessionItem } from "../lib/store";
+import { addResult, addVersions, cancelJob, editSource, focusPrompt, getState, itemOrigin, itemSource, setState, submitRequest, toastError, toastInfo, updateComposer, useStore, type SessionItem } from "../lib/store";
 import type { InputRecord, JobView } from "../lib/types";
 import { useJobPercent } from "./jobMotion";
 import { JobPct, LabJobs, useLab, useLabJobs } from "./LabStage";
@@ -51,6 +53,15 @@ function StickerRing({ job, item }: { job: JobView; item: SessionItem }) {
       </text>
     </svg>
   );
+}
+
+/** Where Automatic shadows' edit is: "Making the shadows · 38%". */
+function ShadowPhase({ job, item }: { job: JobView; item: SessionItem }) {
+  const { pct } = useJobPercent(job, item.request);
+  if (job.status === "queued") return <>Waiting for the edits before it</>;
+  if (job.status === "starting_backend") return <>Starting the engine</>;
+  if (job.status === "done") return <>Reading the shadows</>;
+  return <>Making the shadows · {Math.floor(pct)}%</>;
 }
 
 /** What the canvas needs of a layer's version: its alpha (for clicks), where its content is, a thumbnail. */
@@ -302,14 +313,6 @@ function dab(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, mod
   ctx.globalCompositeOperation = "source-over";
 }
 
-/** How far a shadow edit's painted area reaches below an object, in % of the image's long side
- * (sideways half of it, upwards little: contact shadows fall under things). Kept while the app runs. */
-let lastReach = 4;
-
-/** How far the shadow area goes inside the objects, in frame px: the model redraws their bottom edge
- * with the shadow, so the contact joins (as hand-painted areas did, 10-31). Kept while the app runs. */
-let lastInset = 8;
-
 /** How far a whole-image shadow edit's result is read around each object (% of the long side). */
 const SCENE_REACH = 12;
 /** Automatic shadows: the whole scene edited, nothing painted. Generic on purpose (11-01 bench, Halloween and
@@ -393,16 +396,6 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
   // The layer being renamed (double-click), so a click on a row leaves the arrows to nudging.
   const [renaming, setRenaming] = useState<string | null>(null);
   const [versionsOpen, setVersionsOpen] = useState(false);
-  const [inset, setInsetState] = useState(lastInset);
-  const setInset = (v: number) => {
-    lastInset = v;
-    setInsetState(v);
-  };
-  const [reach, setReachState] = useState(lastReach);
-  const setReach = (v: number) => {
-    lastReach = v;
-    setReachState(v);
-  };
   useEffect(() => setVersionsOpen(false), [selected]);
   const undoStack = useRef<LayerDoc[]>([]);
   const redoStack = useRef<LayerDoc[]>([]);
@@ -469,7 +462,11 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
         const c = document.createElement("canvas");
         c.width = img.naturalWidth;
         c.height = img.naturalHeight;
-        c.getContext("2d")!.drawImage(img, 0, 0);
+        // On black: a mask with any transparency is read by its alpha (see prepareFill).
+        const cx = c.getContext("2d")!;
+        cx.fillStyle = "#000";
+        cx.fillRect(0, 0, c.width, c.height);
+        cx.drawImage(img, 0, 0);
         areaCanvas.current = c;
       })
       .catch(() => {});
@@ -747,7 +744,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     if (j.status === "failed") return "failed";
     return j.status === "queued" ? "waiting" : "making";
   };
-  // A fill that kept grey patches (Qwen copies the flat grey now and then, 11-01) is sent once more.
+  // A fill that copied the grey (or the guide's marking) instead of a background is sent once more.
   const checkedFill = useRef(new Set<string>());
   useEffect(() => {
     const s = live.stickers?.find((x) => x.kind && x.job && !x.retried && !x.skipped);
@@ -762,16 +759,10 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       const h = Math.max(1, Math.round((w * img.naturalHeight) / img.naturalWidth));
       const a = pixels(img, w, h);
       const b = pixels(m, w, h);
-      let inside = 0;
-      let grey = 0;
-      for (let i = 0; i < w * h; i++) {
-        if (b[i * 4] < 128) continue;
-        inside++;
-        if (Math.abs(a[i * 4] - 128) <= 12 && Math.abs(a[i * 4 + 1] - 128) <= 12 && Math.abs(a[i * 4 + 2] - 128) <= 12) grey++;
-      }
       const rec = gen.request?.images?.[0] && session.find((i) => itemSource(i) === gen.request!.images[0])?.input;
-      if (!inside || grey / inside < 0.02 || !rec) return setSticker(s.layer, { checked: true });
-      toastInfo("The background fill kept grey patches: trying once more.");
+      // 20 %: the two failed Halloween fills scored 72 %, a clean one 4.6 % (grey pavement).
+      if (copiedShare(a, b, w * h) < 0.2 || !rec) return setSticker(s.layer, { checked: true });
+      toastInfo("The background fill copied the grey or the marking instead of a background: trying once more.");
       const job = await submitRequest(fillRequest(rec, mask));
       setSticker(s.layer, job ? { job, retried: true } : { checked: true });
     })().catch((e) => {
@@ -780,6 +771,14 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobs, session, live.stickers]);
+
+  // Automatic shadows being made (sent, generated, or read back): the layers stay where they are
+  // meanwhile (the shadows are made for this layout), and the stage says how far it is.
+  const [shadowSending, setShadowSending] = useState(false);
+  const autoScenes = (live.scenes ?? []).filter((e) => e.one);
+  const shadowJob = labJobs.find((j) => j.job.status !== "failed" && autoScenes.some((e) => e.source === j.item.request?.images?.[0]));
+  const shadowReading = autoScenes.some((e) => session.some((i) => i.gen && itemOrigin(i).from[0] === e.source && !live.known.includes(`gen:${i.gen.id}`)));
+  const shadowing = shadowSending || !!shadowJob || shadowReading;
 
   const skipSticker = (s: Sticker) => {
     if (s.job) void cancelJob(s.job);
@@ -806,6 +805,39 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     onChange(d);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stickersLeft, stickerRows.length]);
+
+  // Shadow strength: the Automatic shadows layer redrawn from the model's version, its alpha as k of
+  // them stacked (1 - (1 - a)^k: darker stays a soft shadow, lighter fades evenly), as its next version.
+  const autoShadows = live.layers.find((l) => l.auto && l.effect);
+  const [strengthShown, setStrengthShown] = useState(100);
+  useEffect(() => setStrengthShown(Math.round((autoShadows?.strength ?? 1) * 100)), [autoShadows?.id, autoShadows?.strength]);
+  useEffect(() => {
+    const l = autoShadows;
+    const k = strengthShown / 100;
+    if (!l || Math.abs(k - (l.strength ?? 1)) < 0.001) return;
+    const id = window.setTimeout(async () => {
+      try {
+        const made = l.made ?? l.source;
+        const img = await loadImage(urls.source(made));
+        const c = document.createElement("canvas");
+        c.width = W;
+        c.height = H;
+        const ctx = c.getContext("2d")!;
+        ctx.drawImage(img, 0, 0, W, H);
+        const d = ctx.getImageData(0, 0, W, H);
+        for (let i = 3; i < d.data.length; i += 4) d.data[i] = Math.round(255 * (1 - Math.pow(1 - d.data[i] / 255, k)));
+        ctx.putImageData(d, 0, 0);
+        const rec = await api.upload(await toPng(c), "Shadows.png");
+        const src = `input:${rec.id}`;
+        const now = liveRef.current;
+        commitRef.current({ ...now, layers: now.layers.map((x) => (x.id === l.id ? { ...x, source: src, history: [...x.history, src], made, strength: k } : x)) });
+      } catch (e) {
+        toastError(e);
+      }
+    }, 400);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [strengthShown]);
 
   const commit = (next: LayerDoc) => {
     undoStack.current = [...undoStack.current, doc].slice(-50);
@@ -969,6 +1001,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
   });
 
   const onDown = (e: React.PointerEvent) => {
+    if (shadowing) return;
     if (areaOn && (e.button === 0 || e.button === 2)) {
       e.stopPropagation();
       try {
@@ -1138,6 +1171,12 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       out.width = mw;
       out.height = mh;
       const o = out.getContext("2d")!;
+      // Opaque, black under it: blurred on transparency, the frame's edge pixels came out partly
+      // transparent, and the service reads a mask with any transparency by its alpha (white strokes
+      // on a layer) -> the whole frame was the area, the guide all red, and Qwen copied the grey or
+      // the red (11-01, Halloween). The same seed fills cleanly with the mask opaque.
+      o.fillStyle = "#000";
+      o.fillRect(0, 0, mw, mh);
       o.filter = "blur(4px)"; // the soft edge of a painted area (InpaintEditor FEATHER)
       o.drawImage(c, 0, 0);
       const mask = await api.upload(await toPng(out), "mask.png");
@@ -1283,83 +1322,15 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     }
   };
 
-  /** Sets up a shadow edit in the prompt (the way that works, 10-31): the flattened layers
-   * (without the shadow layer it replaces) as the image, a ring around the object (or every object)
-   * as the painted area, reaching `inset` px into the objects (their bottom edge is redrawn with the
-   * contact shadow); deeper the objects are left out. */
-  const addShadows = async (of: DocLayer | null) => {
-    setBusy(true);
+
+  const autoShadowsNow = async () => {
+    const objects = live.layers.filter((l) => !l.base && !l.effect && !l.hidden).map((l) => l.id);
+    if (!objects.length) return toastInfo("No visible objects to make shadows for.");
+    setShadowSending(true);
     try {
-      const objects = of ? [of] : live.layers.filter((l) => !l.base && !l.effect && !l.hidden);
-      if (!objects.length) throw new Error("No visible object to make shadows for.");
-      const existing = live.layers.find((l) => l.effect && (of ? l.follows === of.id : !l.follows));
-      // On grey: holes the background still has would make the image transparent, and an edit of a
-      // transparent image keeps its transparency.
-      const layersOnly = await render(W, H, existing ? new Set([existing.id]) : undefined);
-      const flat = document.createElement("canvas");
-      flat.width = W;
-      flat.height = H;
-      const fctx = flat.getContext("2d")!;
-      fctx.fillStyle = "#808080";
-      fctx.fillRect(0, 0, W, H);
-      fctx.drawImage(layersOnly, 0, 0);
-      const holes = await hasHoles();
-      const k = Math.min(1, 2048 / Math.max(W, H));
-      const mw = Math.max(1, Math.round(W * k));
-      const mh = Math.max(1, Math.round(H * k));
-      const alphaOf = async (ls: DocLayer[]) => {
-        const px = (await render(mw, mh, undefined, ls)).getContext("2d")!.getImageData(0, 0, mw, mh).data;
-        const a = new Uint8Array(mw * mh);
-        for (let i = 0; i < a.length; i++) a[i] = px[i * 4 + 3] > 128 ? 255 : 0;
-        return a;
-      };
-      const obj = await alphaOf(objects);
-      // Every visible object stays out of the painted area, not only the one getting its shadow.
-      const all = of ? await alphaOf(live.layers.filter((l) => !l.base && !l.effect && !l.hidden)) : obj;
-      // The area: mostly below the object (where contact shadows fall), half as far sideways, a little
-      // above; `reach` % of the side (the Shadow reach slider).
-      const r = Math.max(4, Math.round((Math.max(mw, mh) * reach) / 100));
-      const grown = grow(obj, mw, mh, { down: r, left: r * 0.5, right: r * 0.5, up: r * 0.15 });
-      // The objects' own outline `inset` px deep is in the area too (left out: everything deeper).
-      const kept = inset > 0 ? erode(all, mw, mh, Math.max(1, Math.round(inset * k))) : all;
-      const mc = document.createElement("canvas");
-      mc.width = mw;
-      mc.height = mh;
-      const mctx = mc.getContext("2d")!;
-      const m = mctx.createImageData(mw, mh);
-      for (let i = 0; i < obj.length; i++) {
-        const v = grown[i] && !kept[i] ? 255 : 0;
-        m.data[i * 4] = m.data[i * 4 + 1] = m.data[i * 4 + 2] = v;
-        m.data[i * 4 + 3] = 255;
-      }
-      mctx.putImageData(m, 0, 0);
-      const soft = document.createElement("canvas");
-      soft.width = mw;
-      soft.height = mh;
-      const sctx = soft.getContext("2d")!;
-      sctx.filter = "blur(3px)";
-      sctx.drawImage(mc, 0, 0);
-      const mask = await api.upload(await toPng(soft), "mask.png");
-      const rec = await api.upload(await toPng(flat), "Layers for shadows.png");
-      addVersions([rec], 0);
-      const target = `input:${rec.id}`;
-      if (!editSource(target, false)) throw new Error("The flattened layers could not be opened.");
-      const refKey = getState().composer.refs[0]?.key;
-      const what = of ? `the ${of.name.toLowerCase()}` : "the objects";
-      const prompt = `Add a natural contact shadow under ${what} and the soft shadow ${of ? "it casts" : "they cast"} on the surface, matching the light of the scene. Keep ${what} and everything else unchanged.`;
-      if (refKey) updateComposer({ mask: { inputId: mask.id, refKey }, outpaint: null, mode: "auto", inpaintAction: "edit", prompt });
-      const effect: Effect = { source: target, mask: mask.id, of: of?.id ?? null, at: of ? { dx: of.dx, dy: of.dy, s: of.s } : undefined, layer: existing?.id };
-      commit({ ...live, pending: [...(live.pending ?? []), effect] });
-      focusPrompt(true);
-      toastInfo(
-        holes
-          ? "Ready in the prompt, but the background still has holes (grey here): Fill the holes first for real shadows."
-          : "The shadow area is painted on the flattened layers and the prompt is ready: change it if you like, then Generate. The result becomes a shadow layer here.",
-      );
-    } catch (e) {
-      toastError(e);
+      await sendScene({ shadows: objects, look: [], prompt: AUTO_SHADOWS_PROMPT, marks: false, send: true, one: true, hint: "Making the shadows: the model adds them to the whole scene where the light makes them, as one Shadows layer. Moved something? Make them again: the layer is replaced." });
     } finally {
-      setBusy(false);
+      setShadowSending(false);
     }
   };
 
@@ -1369,7 +1340,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       look: [],
       marks: true,
       prompt: marksPrompt(wantsNow()),
-      hint: "The whole scene with your marks is in the prompt (Prompt+ sees the marks too), then Generate. Each new object comes back as its own layer at the marks' place and size (no shadow: Add shadow makes it).",
+      hint: "The whole scene with your marks is in the prompt (Prompt+ sees the marks too), then Generate. Each new object comes back as its own layer at the marks' place and size (no shadow: Automatic shadows makes them).",
     });
 
   /** Several objects edited as one scene: the prompt is the user's; they take the edit's look. */
@@ -1399,9 +1370,36 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     }
   };
 
+  /** The layers as a Photoshop file: each one where and as big as it is here (hidden ones hidden). */
+  const exportPsd = async () => {
+    setBusy(true);
+    try {
+      const layers = [];
+      for (const l of live.layers) {
+        const c = await render(W, H, undefined, [{ ...l, hidden: false }]);
+        layers.push({ name: l.name, hidden: l.hidden, rgba: c.getContext("2d")!.getImageData(0, 0, W, H).data });
+      }
+      const flat = document.createElement("canvas");
+      flat.width = W;
+      flat.height = H;
+      const fx = flat.getContext("2d")!;
+      fx.fillStyle = "#fff";
+      fx.fillRect(0, 0, W, H);
+      fx.drawImage(await render(W, H), 0, 0);
+      const path = await native.savePsd(writePsd(W, H, layers, fx.getImageData(0, 0, W, H).data));
+      if (path) toastInfo(`Saved ${path.split(/[\\/]/).pop()}: each layer is its own layer in Photoshop.`);
+    } catch (e) {
+      toastError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return;
+      // Shadows being made for this layout: nothing moves or changes until they are in.
+      if (shadowing && e.key !== "Escape") return;
       const k = e.key.toLowerCase();
       if (e.code === "Space" && !e.repeat) {
         e.preventDefault();
@@ -1500,6 +1498,17 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
               <button className="btn" onClick={() => stickerRows.forEach((s, i) => (stickerStates[i] === "waiting" || stickerStates[i] === "making") && skipSticker(s))} title="Keep the rough cut-outs of the objects not done yet">
                 Skip all
               </button>
+            </div>
+          )}
+          {shadowing && (
+            <div className="doc-lock" onPointerDown={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}>
+              <div className="doc-lock-card">
+                <Loader2 size={18} className="spin" />
+                <span>
+                  {shadowJob ? <ShadowPhase job={shadowJob.job} item={shadowJob.item} /> : shadowSending ? "Sending the scene" : "Reading the shadows"}
+                  <small>The layers stay where they are until the shadows are in</small>
+                </span>
+              </div>
             </div>
           )}
           {maskTint && !stickering && <span className="doc-mask-chip">Painted area: Generate redoes what is pink · brush it here to change it (A)</span>}
@@ -1621,7 +1630,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
           </ZoomPan>
         </div>
 
-        <aside className="layers-panel">
+        <aside className={`layers-panel ${shadowing ? "locked" : ""}`}>
           <div className="layers-title">Layers</div>
           {live.layers.map((l, i) => {
             const info = infos[l.source];
@@ -1691,7 +1700,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
               </div>
               <p className="layers-help">
                 {sketch.marks.length
-                  ? "Say what goes at each colour. The whole scene goes to Qwen with your marks; each object comes back as its own layer at that place and size, without a shadow (Add shadow makes it). Prompt+ sees the marks too."
+                  ? "Say what goes at each colour. The whole scene goes to Qwen with your marks; each object comes back as its own layer at that place and size, without a shadow (Automatic shadows makes them). Prompt+ sees the marks too."
                   : "Draw where a new object goes (an outline or a scribble), one colour per object."}
               </p>
               {usedColours.map((c) => (
@@ -1774,11 +1783,6 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
                     <Sparkles size={14} /> Clean edges
                   </button>
                 )}
-                {!sel.base && !sel.effect && (
-                  <button className="btn" onClick={() => addShadows(sel)} disabled={busy} title="A brushed edit of the flattened layers around this object; the result becomes its shadow layer">
-                    <Sun size={14} /> {live.layers.some((l) => l.effect && l.follows === sel.id) ? "Shadow again" : "Add shadow"}
-                  </button>
-                )}
                 {sel.history.length > 1 && (
                   <button className={`btn ${versionsOpen ? "on" : ""}`} onClick={() => setVersionsOpen((o) => !o)} aria-expanded={versionsOpen} title="Show an earlier version of this layer">
                     <History size={14} /> Versions · {sel.history.length}
@@ -1811,42 +1815,10 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
             <p className="layers-help doc-none">Select a layer (here or on the image) to edit it with the prompt below. Shift+click selects more; the pencil (P) draws new objects.</p>
           )}
 
-          <div className="doc-footer">
-            <label className="layers-opt" title="How far the area painted for shadows reaches below the objects (half as far sideways). Check the pink area before Generate.">
-              Shadow reach
-              <input type="range" min={1} max={12} value={reach} onChange={(e) => setReach(Number(e.target.value))} />
-              <span>{reach}%</span>
-            </label>
-            <label className="layers-opt" title="How many pixels the shadow area goes inside the objects, so the model redraws their bottom edge with the contact shadow (0: the area stops at the objects)">
-              Into objects
-              <input type="range" min={0} max={30} value={inset} onChange={(e) => setInset(Number(e.target.value))} />
-              <span>{inset} px</span>
-            </label>
-            <div className="doc-grid">
-              <button
-                className="btn doc-wide"
-                onClick={() => {
-                  const objects = live.layers.filter((l) => !l.base && !l.effect && !l.hidden).map((l) => l.id);
-                  if (!objects.length) return toastInfo("No visible objects to make shadows for.");
-                  void sendScene({ shadows: objects, look: [], prompt: AUTO_SHADOWS_PROMPT, marks: false, send: true, one: true, hint: "Making the shadows: the model adds them to the whole scene where the light makes them, as one Shadows layer. Moved something? Make them again: the layer is replaced." });
-                }}
-                disabled={busy}
-                title="Nothing to paint: the whole scene goes to the model, which adds the shadows where the light makes them, as one Shadows layer (made again after moving things: it is replaced)"
-              >
-                <Sun size={14} /> Automatic shadows
-              </button>
-              <button className="btn doc-wide" onClick={() => addShadows(null)} disabled={busy} title="One brushed edit of the flattened layers around every visible object; the result becomes a Shadows layer above the background">
-                <Sun size={14} /> Shadows for all objects
-              </button>
-            </div>
-            <button className="btn primary" onClick={flatten} disabled={busy}>
-              <ImageDown size={14} /> Save as image
-            </button>
-          </div>
         </aside>
       </div>
 
-      <div className="editor-tools">
+      <div className={`editor-tools ${shadowing ? "locked" : ""}`}>
         <div className="group">
           <IconButton title="Select and move (V)" active={tool === "move" && !spacePressed} onClick={() => setTool("move")}>
             <MousePointer2 size={17} />
@@ -1891,6 +1863,30 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
           <IconButton title={`Redo (${shortcut("Y")})`} onClick={() => (tool === "area" && areaStep(false)) || redo()} disabled={!redoStack.current.length && !(tool === "area" && areaRedo.current.length)}>
             <Redo2 size={17} />
           </IconButton>
+        </div>
+        {/* The whole document's commands (the panel on the right is for the selected layer). */}
+        <div className="group">
+          <button
+            className="pill doc-cmd"
+            onClick={autoShadowsNow}
+            disabled={busy || shadowing}
+            title="Nothing to paint: the whole scene goes to the model, which adds the shadows where the light makes them, as one Shadows layer (made again after moving things: it is replaced)"
+          >
+            <Sun size={15} /> Automatic shadows
+          </button>
+          {autoShadows && (
+            <label className="slider" title="How dark the Shadows layer is, without making it again (100 %: as the model made it)">
+              Strength
+              <input type="range" min={50} max={200} step={10} value={strengthShown} onChange={(e) => setStrengthShown(Number(e.target.value))} />
+              <span className="doc-cmd-val">{strengthShown}%</span>
+            </label>
+          )}
+          <button className="pill doc-cmd" onClick={exportPsd} disabled={busy || shadowing} title="Save the layers as a Photoshop file (.psd), each one a layer, to open in Photoshop, Photopea, GIMP or Krita">
+            <FileDown size={15} /> Export PSD
+          </button>
+          <button className="pill doc-cmd primary" onClick={flatten} disabled={busy || shadowing}>
+            <ImageDown size={15} /> Save as image
+          </button>
         </div>
       </div>
     </div>

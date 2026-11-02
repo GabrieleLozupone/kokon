@@ -97,7 +97,8 @@ function LayersLab({ projectId }: { projectId: string }) {
             // Automatic shadows: the one layer, just above the background, replaced by the next result.
             if (s.of === "all") {
               const have = layers.find((l) => l.auto);
-              if (have) nextVersion(have.id, s.src);
+              // A new result starts at its own strength again.
+              if (have) layers = layers.map((l) => (l.id === have.id ? { ...l, source: s.src, history: [...l.history, s.src], made: undefined, strength: undefined } : l));
               else {
                 const layer: DocLayer = { id: `fx-${result}-all`, name: "Shadows", source: s.src, history: [s.src], hidden: false, base: false, effect: true, auto: true, dx: 0, dy: 0, s: 1 };
                 const at = layers.findIndex((l) => l.base);
@@ -129,7 +130,12 @@ function LayersLab({ projectId }: { projectId: string }) {
           update({ ...d, layers, known: [...d.known, ...seen, ...srcs], scenes: (d.scenes ?? []).map((x) => (x.source === e.source ? { ...x, made: madeBy } : x)) });
           if (r.notes.length) toastInfo(r.notes.join(" "));
         },
-        (err) => toastError(err),
+        (err) => {
+          // Seen anyway: Automatic shadows holds the layers until its result is read.
+          const d = latest.current!;
+          update({ ...d, known: [...d.known, ...made.map((i) => `gen:${i.gen!.id}`)] });
+          toastError(err);
+        },
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

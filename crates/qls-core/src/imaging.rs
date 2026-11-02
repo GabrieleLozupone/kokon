@@ -287,10 +287,13 @@ pub fn pad_solid(img: &RgbaImage, canvas: Size, offset: (u32, u32), fill: Rgba<u
 // ---------------------------------------------------------------------------------------
 
 /// Converts a user-supplied mask image to a single-channel mask. Masks painted on a
-/// transparent layer use alpha; opaque masks use luminance (white = edit).
+/// transparent layer use alpha; opaque masks use luminance (white = edit). A layer of strokes
+/// is empty somewhere; a white-on-black mask blurred on a canvas only comes out partly
+/// transparent at the frame's edge (alpha 77 there), and read by alpha it made the whole frame
+/// the area (the lab's fill, 11-01): luminance unless some pixel is (nearly) fully transparent.
 pub fn mask_from_image(img: &LoadedImage) -> GrayImage {
     let p = &img.pixels;
-    if img.has_transparency {
+    if img.has_transparency && p.pixels().any(|q| q[3] < 8) {
         GrayImage::from_fn(p.width(), p.height(), |x, y| Luma([p.get_pixel(x, y)[3]]))
     } else {
         GrayImage::from_fn(p.width(), p.height(), |x, y| {
@@ -966,6 +969,14 @@ mod tests {
         let li = LoadedImage { pixels: bw, format: "png", exif_orientation: 1, icc_profile: None, has_transparency: false, text: vec![] };
         let m = mask_from_image(&li);
         assert_eq!((m.get_pixel(1, 1)[0], m.get_pixel(8, 1)[0]), (255, 0));
+        // White on black whose edge came out partly transparent (a canvas blur): still luminance.
+        let soft = RgbaImage::from_fn(10, 10, |x, y| {
+            let a = if x == 0 || y == 0 || x == 9 || y == 9 { 77 } else { 255 };
+            if x < 5 { Rgba([255, 255, 255, a]) } else { Rgba([0, 0, 0, a]) }
+        });
+        let li = LoadedImage { pixels: soft, format: "png", exif_orientation: 1, icc_profile: None, has_transparency: true, text: vec![] };
+        let m = mask_from_image(&li);
+        assert_eq!((m.get_pixel(1, 1)[0], m.get_pixel(8, 1)[0], m.get_pixel(8, 0)[0]), (255, 0, 0));
     }
 
     #[test]

@@ -116,7 +116,8 @@ export function JobPct({ job, item }: { job: JobView; item: SessionItem }) {
 
 function JobPill({ j }: { j: LabJob }) {
   const layer = j.doc.layers.find((l) => l.id === j.layer);
-  const what = j.layer === "shadows" ? "the shadows" : j.layer === "scene" ? "the scene" : layer ? (layer.base ? "the background" : layer.name) : "";
+  const auto = j.layer === "scene" && j.doc.scenes?.some((e) => e.one && e.source === j.item.request?.images?.[0]);
+  const what = j.layer === "shadows" || auto ? "the shadows" : j.layer === "scene" ? "the scene" : layer ? (layer.base ? "the background" : layer.name) : "";
   if (j.job.status === "failed")
     return (
       <span className="lab-progress failed" title={j.job.error?.detail ?? undefined}>

@@ -85,6 +85,9 @@ export interface DocLayer {
   effect?: boolean;
   /** The one layer of Automatic shadows: the next one replaces it (its next version). */
   auto?: boolean;
+  /** Automatic shadows as the model made them (`strength` is applied to this), and the strength. */
+  made?: string;
+  strength?: number;
   /** An object's shadow moves and scales with the object (`follows`), from where the object was
    * when the shadow was made (`at`). */
   follows?: string;
@@ -459,4 +462,33 @@ export function jobLayer(doc: LayerDoc, image: string | undefined, mask: string 
   const p = doc.pending?.find((x) => x.source === image);
   if (!p) return null;
   return p.layer ?? p.of ?? "shadows";
+}
+
+/** What a failed fill copies into the holes instead of a background: the flat grey they were sent
+ * as, or the guide's marking (the highlight colour half over that grey, or the colour itself;
+ * pipeline.rs highlight, imaging.rs HIGHLIGHTS). Seen 11-01: one try kept the grey, the next the red. */
+const COPIED = [
+  [128, 128, 128],
+  ...[
+    [255, 0, 0],
+    [0, 230, 0],
+    [0, 80, 255],
+    [255, 0, 255],
+  ].flatMap((c) => [c, c.map((v) => (v + 128) >> 1)]),
+];
+
+/** The share of the painted area (`mask` > 127, RGBA both, `n` pixels) whose colour is one a failed
+ * fill copies (each channel within 28 levels of it). */
+export function copiedShare(rgba: ArrayLike<number>, mask: ArrayLike<number>, n: number): number {
+  let inside = 0;
+  let bad = 0;
+  for (let i = 0; i < n; i++) {
+    if (mask[i * 4] < 128) continue;
+    inside++;
+    const r = rgba[i * 4];
+    const g = rgba[i * 4 + 1];
+    const b = rgba[i * 4 + 2];
+    if (COPIED.some((c) => Math.abs(r - c[0]) <= 28 && Math.abs(g - c[1]) <= 28 && Math.abs(b - c[2]) <= 28)) bad++;
+  }
+  return inside ? bad / inside : 0;
 }

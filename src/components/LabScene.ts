@@ -8,12 +8,15 @@ import { api, urls } from "../lib/api";
 import { centre, type LayerDoc, type Place, type SceneEdit } from "../lib/layerDoc";
 import { dilate, fileSafe, fromLogits, refineEdges } from "../lib/layers";
 import { Segmenter } from "../lib/sam";
-import { alignEdit, blur, changed, darkness, IDENTITY, invertAffine, luminance, MARK_COLOURS, objectAt, scaleAffine, splitShadows, toneCurve, type Affine, type MarkColour } from "../lib/sceneEdit";
+import { alignEdit, attached, blur, changed, darkness, IDENTITY, invertAffine, luminance, MARK_COLOURS, objectAt, scaleAffine, splitShadows, toneCurve, type Affine, type MarkColour } from "../lib/sceneEdit";
 import type { InputRecord } from "../lib/types";
 import { loadImage, pixels, sourceInfo, toPng } from "./LayerDoc";
 
 /** Long side of the analysis (shadows are soft: no need for every pixel). */
 const SIDE = 1536;
+/** Automatic shadows: darkening above this (0-1, past darkness()'s floor) carries a shadow on from
+ * near the objects; where it stops the layer is ~10/255, no visible edge. */
+const SHADOW_LOW = 0.04;
 
 /** What a result made: images to add to the document. Keys: object ids (shadows, looks) and
  * mark colours (new objects, and their shadows). */
@@ -133,6 +136,51 @@ async function pair(beforeSrc: string, afterSrc: string, W: number, H: number, a
   return { w, h, before, after, lb: blur(luminance(before, n), w, h, r), la: blur(luminance(after, n), w, h, r), valid, t, img: ai };
 }
 
+/** Where the edit put back leaves no pixels (it came back zoomed in: a strip at the frame's edges,
+ * ~8 px of 1328 on 11-01), the value along the column, then the row, so a shadow reaches the edge
+ * instead of stopping short of it. Taken `m` px inside: the edit's own outermost rows are off (dark
+ * streaks along the whole edge, 11-01 Halloween), so they are filled too. Elsewhere (no comparison
+ * possible) 0. */
+function fillBorder(d: Float32Array, valid: Uint8Array, w: number, h: number) {
+  const m = Math.max(3, Math.round(Math.max(w, h) * 0.006));
+  const done = Uint8Array.from(valid);
+  for (let x = 0; x < w; x++) {
+    let top = -1;
+    let bottom = -1;
+    for (let y = 0; y < h; y++) {
+      if (!valid[y * w + x]) continue;
+      if (top < 0) top = y;
+      bottom = y;
+    }
+    if (top < 0 || bottom - top < 4 * m) continue;
+    top += m;
+    bottom -= m;
+    for (let y = 0; y < h; y++) {
+      if (y >= top && y <= bottom) continue;
+      d[y * w + x] = d[(y < top ? top : bottom) * w + x];
+      done[y * w + x] = 1;
+    }
+  }
+  for (let y = 0; y < h; y++) {
+    let left = -1;
+    let right = -1;
+    for (let x = 0; x < w; x++) {
+      if (!done[y * w + x]) continue;
+      if (left < 0) left = x;
+      right = x;
+    }
+    if (left >= 0 && right - left >= 4 * m) {
+      left += m;
+      right -= m;
+    }
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (done[i] && x >= left && x <= right) continue;
+      d[i] = left < 0 ? 0 : x < left ? d[y * w + left] : x > right ? d[y * w + right] : 0;
+    }
+  }
+}
+
 /** The darkening the edit added (tone change divided out), 0-1 per pixel; tone measured on the
  * pixels farther than `reach` from every object and outside `busy` (the marks). */
 function addedDarkness(p: Pair, objects: Uint8Array[], reach: number, busy?: Uint8Array): Float32Array {
@@ -149,7 +197,7 @@ function addedDarkness(p: Pair, objects: Uint8Array[], reach: number, busy?: Uin
   for (let i = 0; i < far.length; i++) far[i] = p.valid[i] && !grown[((((i / p.w) | 0) / q) | 0) * qw + (((i % p.w) / q) | 0)] ? 1 : 0;
   const lut = toneCurve(p.lb, p.la, far);
   const d = darkness(p.lb, p.la, lut);
-  for (let i = 0; i < d.length; i++) if (!p.valid[i]) d[i] = 0;
+  fillBorder(d, p.valid, p.w, p.h);
   // A touch of smoothing: decode speckle left above the floor.
   return blur(d, p.w, p.h, 1);
 }
@@ -223,7 +271,7 @@ export async function readScene(doc: LayerDoc, e: SceneEdit, result: string): Pr
   }
 
   // Shadows: only of the objects asked for. A new object comes alone (its shadow is made
-  // afterwards with Add shadow, the ring), whatever shadow Qwen drew for it is left out.
+  // afterwards with Automatic shadows), whatever shadow Qwen drew for it is left out.
   const targets = e.shadows.filter((id) => feet.has(id)).map((id) => ({ of: id, m: feet.get(id)! }));
   // One layer for all of them (Automatic shadows): the darkening within reach of the objects, taken
   // out only where an object is (it covers its own pixels). No band around the outlines to fill
@@ -238,9 +286,14 @@ export async function readScene(doc: LayerDoc, e: SceneEdit, result: string): Pr
     const small = new Uint8Array(qw * qh);
     for (let i = 0; i < near.length; i++) if (near[i]) small[(((i / w) | 0) / q | 0) * qw + (((i % w) / q) | 0)] = 255;
     const within = dilate(small, qw, qh, reach / q);
+    // Within reach is only where a shadow starts: it is kept as far as it goes on from there (the
+    // box-shaped reach cut the girl's long shadow with straight edges, 11-01 Halloween).
+    const seed = new Uint8Array(w * h);
+    for (let i = 0; i < seed.length; i++) seed[i] = within[(((i / w) | 0) / q | 0) * qw + (((i % w) / q) | 0)];
+    const keep = attached(dark, seed, w, h, SHADOW_LOW, near);
     const alpha = new Uint8Array(w * h);
     for (let i = 0; i < alpha.length; i++) {
-      if (near[i] || !within[(((i / w) | 0) / q | 0) * qw + (((i % w) / q) | 0)]) continue;
+      if (near[i] || !keep[i]) continue;
       alpha[i] = Math.round(Math.min(1, dark[i]) * 255);
     }
     if (total(alpha) < 255 * w * h * 0.0003) out.notes.push("No shadow was found.");

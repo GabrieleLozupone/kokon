@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alignEdit, applyAffine, changed, darkness, fillHoles, IDENTITY, invertAffine, marksPrompt, objectAt, phaseShift, splitShadows, toneCurve } from "./sceneEdit";
+import { alignEdit, applyAffine, attached, changed, darkness, fillHoles, IDENTITY, invertAffine, marksPrompt, objectAt, phaseShift, splitShadows, toneCurve } from "./sceneEdit";
 
 /** A textured test picture: smooth blobs of different sizes (edges everywhere, no repeats). */
 function picture(w: number, h: number, at: (x: number, y: number) => { x: number; y: number } = (x, y) => ({ x, y })): Float32Array {
@@ -167,5 +167,25 @@ describe("scene edits", () => {
       { colour: "red", what: "a bottle" },
       { colour: "blue", what: "" },
     ])).toMatch(/^Add a bottle where the red marks are and something that fits the scene where the blue marks are\./);
+  });
+});
+
+describe("attached", () => {
+  it("keeps a long shadow whole from the object, through it, and leaves loose darkening out", () => {
+    const w = 40;
+    const h = 10;
+    const dark = new Float32Array(w * h);
+    const seed = new Uint8Array(w * h);
+    const obj = new Uint8Array(w * h);
+    // A shadow along row 8 from x 2 to 30, the object (no darkening read on it) at x 10-11.
+    for (let x = 2; x <= 30; x++) dark[8 * w + x] = x === 10 || x === 11 ? 0 : 0.3;
+    for (const x of [10, 11]) obj[8 * w + x] = 1;
+    seed[8 * w + 12] = 1;
+    // Noise far away, not touching it.
+    dark[1 * w + 35] = 0.5;
+    const m = attached(dark, seed, w, h, 0.02, obj);
+    expect(m[8 * w + 30]).toBe(255);
+    expect(m[8 * w + 2]).toBe(255);
+    expect(m[1 * w + 35]).toBe(0);
   });
 });

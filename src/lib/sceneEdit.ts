@@ -459,6 +459,32 @@ export function objectAt(m: Uint8Array, seed: Uint8Array, w: number, h: number):
   return fillHoles(out, w, h);
 }
 
+/** The darkening that hangs together with what is near the objects: from `seed` (where to start:
+ * within reach of an object), through every pixel darker than `low` or in `through` (the objects:
+ * a shadow goes on past a leg), as far as it goes. A long cast shadow is kept whole wherever it
+ * reaches (a distance limit cut it with a straight edge, 11-01), and darkening that does not touch
+ * it (decode noise, the sky) stays out. */
+export function attached(dark: Float32Array, seed: Uint8Array, w: number, h: number, low: number, through?: Uint8Array): Uint8Array {
+  const out = new Uint8Array(w * h);
+  const ok = (i: number) => dark[i] > low || !!through?.[i];
+  const stack: number[] = [];
+  for (let i = 0; i < out.length; i++)
+    if (seed[i] && dark[i] > low) {
+      out[i] = 255;
+      stack.push(i);
+    }
+  while (stack.length) {
+    const i = stack.pop()!;
+    const x = i % w;
+    for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w])
+      if (j >= 0 && j < out.length && !out[j] && ok(j)) {
+        out[j] = 255;
+        stack.push(j);
+      }
+  }
+  return out;
+}
+
 /** Fills what the mask encloses (not reachable from the border without crossing it). */
 export function fillHoles(m: Uint8Array, w: number, h: number): Uint8Array {
   const outside = new Uint8Array(w * h);

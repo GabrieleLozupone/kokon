@@ -125,6 +125,14 @@ export const native = {
         { name: "WebP", extensions: ["webp"] },
       ],
     }),
+  /** The Layers lab's .psd: desktop asks where (null: cancelled), a browser downloads it. */
+  savePsd: async (psd: Uint8Array): Promise<string | null> => {
+    if (!inBrowser) return invoke<string | null>("save_psd", psd);
+    const url = URL.createObjectURL(new Blob([psd as BlobPart], { type: "image/vnd.adobe.photoshop" }));
+    native.download(url, "Layers.psd");
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return "Layers.psd";
+  },
   /** Browser: saves the file at `url` on this device (the browser's downloads). */
   download: (url: string, name: string) => {
     const a = document.createElement("a");

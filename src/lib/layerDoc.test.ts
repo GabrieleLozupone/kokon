@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cropFor, docFor, keepLabsIn, labSources, loadLab, saveLab, waitingMarks, jobLayer, labItems, leftovers, putDoc, type LabStore, shadowAlpha, mapPoint, placed, reconcile, reorder, toLayer, xfOf, type DocLayer, type LayerDoc } from "./layerDoc";
+import { copiedShare, cropFor, docFor, keepLabsIn, labSources, loadLab, saveLab, waitingMarks, jobLayer, labItems, leftovers, putDoc, type LabStore, shadowAlpha, mapPoint, placed, reconcile, reorder, toLayer, xfOf, type DocLayer, type LayerDoc } from "./layerDoc";
 
 const layer = (id: string, source: string, base = false): DocLayer => ({ id, name: id, source, history: [source], hidden: false, base, dx: 0, dy: 0, s: 1 });
 const doc = (layers: DocLayer[]): LayerDoc => ({ width: 100, height: 100, layers, known: [] });
@@ -219,5 +219,14 @@ describe("where the lab is kept", () => {
       keepLabsIn(null);
       localStorage.removeItem("kokon.layersLab.p");
     }
+  });
+});
+
+describe("copiedShare", () => {
+  const img = (px: number[][]) => px.flatMap((p) => [...p, 255]);
+  const mask = img([[255, 255, 255], [255, 255, 255], [255, 255, 255], [0, 0, 0]]);
+  it("finds the grey and the guide's red copied into the holes, not a real background", () => {
+    expect(copiedShare(img([[128, 130, 126], [184, 78, 78], [30, 60, 160], [128, 128, 128]]), mask, 4)).toBeCloseTo(2 / 3);
+    expect(copiedShare(img([[30, 60, 160], [40, 70, 170], [90, 50, 120], [128, 128, 128]]), mask, 4)).toBe(0);
   });
 });
