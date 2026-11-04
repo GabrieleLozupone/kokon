@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Kokon",
   "mainBinaryName": "Kokon",
-  "version": "0.11.2",
+  "version": "0.12.0",
   "identifier": "app.kokon.desktop",
   "build": {
     "beforeDevCommand": "npm run bundled && node scripts/dev/sidecars.mjs && npm run dev",
@@ -27,7 +27,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data: blob: http://127.0.0.1:*; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'"
+      "csp": "default-src 'self'; img-src 'self' data: blob: http://127.0.0.1:*; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self' 'wasm-unsafe-eval'"
     }
   },
   "bundle": {
@@ -50,7 +50,9 @@
       "binaries/kokon-mcp"
     ],
     "resources": {
-      "resources/4xNomos2_hq_mosr.pth": "bundled/4xNomos2_hq_mosr.pth"
+      "resources/4xNomos2_hq_mosr.pth": "bundled/4xNomos2_hq_mosr.pth",
+      "resources/encoder_P.onnx": "bundled/encoder_P.onnx",
+      "resources/decoder_P.onnx": "bundled/decoder_P.onnx"
     },
     "windows": {
       "nsis": {

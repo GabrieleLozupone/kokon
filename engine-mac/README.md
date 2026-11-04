@@ -31,9 +31,10 @@ python3 -I tools/compare_bench.py baseline-report.json kokon-bench-report.json  
 
 In the app: Kokon.app carries the engine (1.7 MB: `Contents/MacOS/kokon-engine-mac`, the kernels in
 `Contents/Resources/engine-mac/`; `tools/stage-app.sh`, called by `scripts/dev/mac-dev.sh` and
-`scripts/build-release-mac.sh`), and Settings → Performance → "Kokon's Mac engine (experimental)" turns it on. Off by
-default; at the first start on a Mac with 16 GB or more Kokon offers it once, before the model loads. sd.cpp stays the
-default, the fallback, and the engine on Windows and Linux. Without the app's copy (a service run with `cargo run`),
+`scripts/build-release-mac.sh`), and Settings → Performance → "Kokon's Mac engine (experimental)" switches it. Since 0.12 it
+is the default on Macs with 16 GB or more: at the first start Kokon switches it on once, before the model loads, unless
+the user already chose (0.11's "Not now", or Settings). sd.cpp stays the fallback (LoRAs, the upscaler model) and the
+engine on Windows and Linux and on smaller Macs. Without the app's copy (a service run with `cargo run`),
 `bash tools/install-dev.sh` puts the build in the stable-diffusion.cpp folder; `kokon-engine-mac kernels` prints where
 the kernels were found.
 

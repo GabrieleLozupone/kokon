@@ -91,6 +91,14 @@ pub struct GenerationRecord {
     pub request: serde_json::Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pipeline: Option<PipelineRecord>,
+    /// Left out of the gallery list (a step of the layers lab: only the image the user saves from
+    /// it is shown). The project still opens it by id.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hidden: bool,
+    /// The IPTC Digital Source Type when it is not the one of its mode (provenance.rs): an upscale
+    /// or a LUT of an imported image that was already AI-made stays marked as AI-made.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_type: Option<String>,
 }
 
 impl GenerationRecord {
@@ -240,6 +248,15 @@ impl Store {
              );",
         )
         .map_err(db_err)?;
+        // 0.12: `hidden` (layers lab steps). Added when missing; an older app ignores the column
+        // and its inserts get the default.
+        let has_hidden = conn
+            .prepare("SELECT 1 FROM pragma_table_info('generations') WHERE name = 'hidden'")
+            .and_then(|mut st| st.exists([]))
+            .map_err(db_err)?;
+        if !has_hidden {
+            conn.execute_batch("ALTER TABLE generations ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;").map_err(db_err)?;
+        }
         conn.pragma_update(None, "user_version", 1).map_err(db_err)?;
         Ok(Self { conn: Mutex::new(conn), data_dir: data_dir.to_path_buf() })
     }
@@ -274,8 +291,8 @@ impl Store {
             .lock()
             .unwrap()
             .execute(
-                "INSERT OR REPLACE INTO generations (id, created_at, prompt, mode, favorite, file_path, record) VALUES (?1,?2,?3,?4,?5,?6,?7)",
-                params![r.id, r.created_at, r.prompt, r.mode, r.favorite as i32, r.file_path, json],
+                "INSERT OR REPLACE INTO generations (id, created_at, prompt, mode, favorite, file_path, record, hidden) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                params![r.id, r.created_at, r.prompt, r.mode, r.favorite as i32, r.file_path, json, r.hidden as i32],
             )
             .map_err(db_err)?;
         Ok(())
@@ -327,7 +344,7 @@ impl Store {
             let esc = s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
             format!("%{esc}%")
         });
-        let where_ = "WHERE (?1 IS NULL OR prompt LIKE ?1 ESCAPE '\\' OR mode LIKE ?1 ESCAPE '\\') AND (?2 = 0 OR favorite = 1)";
+        let where_ = "WHERE (?1 IS NULL OR prompt LIKE ?1 ESCAPE '\\' OR mode LIKE ?1 ESCAPE '\\') AND (?2 = 0 OR favorite = 1) AND hidden = 0";
         let conn = self.conn.lock().unwrap();
         let total: i64 = conn
             .query_row(&format!("SELECT COUNT(*) FROM generations {where_}"), params![pattern, q.favorites as i32], |r| r.get(0))
@@ -347,6 +364,15 @@ impl Store {
             }
         }
         Ok((out, total.max(0) as u64))
+    }
+
+    /// Shows or hides result `id` in the gallery list (see [`GenerationRecord::hidden`]).
+    pub fn set_hidden(&self, id: &str, hidden: bool) -> AppResult<()> {
+        let mut rec = self.get_generation(id)?;
+        rec.hidden = hidden;
+        let json = serde_json::to_string(&rec).map_err(AppError::internal)?;
+        self.conn.lock().unwrap().execute("UPDATE generations SET hidden = ?2, record = ?3 WHERE id = ?1", params![id, hidden as i32, json]).map_err(db_err)?;
+        Ok(())
     }
 
     pub fn set_favorite(&self, id: &str, fav: bool) -> AppResult<()> {
@@ -541,6 +567,8 @@ mod tests {
             client: Some("ui".into()),
             request: serde_json::json!({"prompt": prompt}),
             pipeline: None,
+            hidden: false,
+            source_type: None,
         }
     }
 
@@ -617,6 +645,31 @@ mod tests {
         let s = Store::open(dir.path()).unwrap();
         assert_eq!(s.list_generations(&ListQuery::default()).unwrap().1, 2);
         assert_eq!(s.get_generation("c").unwrap().references[0].input_id, "abc");
+    }
+
+    #[test]
+    fn hidden_results_leave_the_list_only() {
+        let dir = tempfile::tempdir().unwrap();
+        // A gallery made before `hidden`: the column is added on open.
+        {
+            let c = Connection::open(dir.path().join("gallery.db")).unwrap();
+            c.execute_batch("CREATE TABLE generations (id TEXT PRIMARY KEY, created_at TEXT NOT NULL, prompt TEXT NOT NULL, mode TEXT NOT NULL, favorite INTEGER NOT NULL DEFAULT 0, file_path TEXT NOT NULL, record TEXT NOT NULL);").unwrap();
+            let r = rec("old", "kept", "2026-10-06T09:00:00.000Z");
+            c.execute("INSERT INTO generations (id, created_at, prompt, mode, favorite, file_path, record) VALUES (?1,?2,?3,?4,0,?5,?6)", params![r.id, r.created_at, r.prompt, r.mode, r.file_path, serde_json::to_string(&r).unwrap()]).unwrap();
+        }
+        let s = Store::open(dir.path()).unwrap();
+        s.insert_generation(&rec("a", "a step", "2026-10-06T10:00:00.000Z")).unwrap();
+        s.insert_generation(&GenerationRecord { hidden: true, ..rec("b", "a lab step", "2026-10-06T11:00:00.000Z") }).unwrap();
+        let ids = |s: &Store| s.list_generations(&ListQuery::default()).unwrap().0.into_iter().map(|r| r.id).collect::<Vec<_>>();
+        assert_eq!(ids(&s), vec!["a", "old"]);
+        assert!(s.get_generation("b").unwrap().hidden, "a project still opens it");
+        s.set_hidden("a", true).unwrap();
+        s.set_hidden("b", false).unwrap();
+        assert_eq!(ids(&s), vec!["b", "old"]);
+        assert_eq!(s.list_generations(&ListQuery::default()).unwrap().1, 2);
+        assert!(s.set_hidden("zzz", true).is_err());
+        // The record leaves `hidden` out unless set (older apps read the same JSON).
+        assert!(serde_json::to_value(rec("x", "p", "t")).unwrap().get("hidden").is_none());
     }
 
     #[test]

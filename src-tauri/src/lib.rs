@@ -207,6 +207,23 @@ async fn read_clipboard_image(app: tauri::AppHandle) -> Result<tauri::ipc::Respo
     Ok(tauri::ipc::Response::new(png))
 }
 
+/// The Layers lab's .psd (the request's raw body): asks where to save it, writes it there. Returns
+/// the path, or null when the dialog is cancelled.
+#[tauri::command]
+async fn save_psd(app: tauri::AppHandle, request: tauri::ipc::Request<'_>) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let tauri::ipc::InvokeBody::Raw(data) = request.body() else { return Err("No file to save.".into()) };
+    let data = data.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(path) = app.dialog().file().set_file_name("Layers.psd").add_filter("Photoshop", &["psd"]).blocking_save_file() else { return Ok(None) };
+        let path = path.into_path().map_err(|e| e.to_string())?;
+        std::fs::write(&path, data).map_err(|e| format!("Could not save the file: {e}"))?;
+        Ok(Some(path.to_string_lossy().into_owned()))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Before installing an update: stop the service so the installer can replace it.
 #[tauri::command]
 async fn prepare_update(state: tauri::State<'_, Arc<Shared>>) -> Result<(), String> {
@@ -242,7 +259,8 @@ fn open_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
 #[tauri::command]
 fn open_link(app: tauri::AppHandle, url: String) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
-    let allowed = ["https://github.com/", "https://huggingface.co/", "https://kokon.app/"];
+    // youtu.be: the video guides (src/lib/videos.ts), opened in the browser, never embedded.
+    let allowed = ["https://github.com/", "https://huggingface.co/", "https://kokon.app/", "https://youtu.be/"];
     if !allowed.iter().any(|p| url.starts_with(p)) || url.chars().any(|c| c.is_whitespace() || c == '"') {
         return Err("This link cannot be opened from the app.".into());
     }
@@ -307,7 +325,7 @@ pub fn run() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![connect, copy_image, read_clipboard_image, reveal, open_folder, open_link, data_folder, prepare_update])
+        .invoke_handler(tauri::generate_handler![connect, copy_image, read_clipboard_image, save_psd, reveal, open_folder, open_link, data_folder, prepare_update])
         .build(tauri::generate_context!())
         .expect("error while building Kokon");
     app.run(move |_handle, event| {

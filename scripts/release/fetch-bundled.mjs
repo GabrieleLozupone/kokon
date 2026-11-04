@@ -4,7 +4,7 @@
 //   node scripts/release/fetch-bundled.mjs
 //
 // Downloads the upscaler of crates/qls-core/src/catalog.rs (`UPSCALER`: our mirror first, then
-// the author's release) into src-tauri/resources/ unless it is already there, and checks its
+// the author's release) and the AI watermark models (`TRUSTMARK_P_*`) into src-tauri/resources/ unless it is already there, and checks its
 // size and SHA-256 against the catalog. Runs before every `tauri dev` / `tauri build`.
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -53,3 +53,6 @@ async function fetchBundled(name) {
 }
 
 await fetchBundled("UPSCALER");
+// The AI watermark (crates/qls-core/src/watermark): TrustMark P, MIT.
+await fetchBundled("TRUSTMARK_P_ENCODER");
+await fetchBundled("TRUSTMARK_P_DECODER");

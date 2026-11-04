@@ -1,6 +1,6 @@
 // Pure UI logic (unit-tested in logic.test.ts).
 
-import type { Advanced, GenerationRecord, GenerationRequest, InpaintAction, InputRecord, InstallItem, JobView, LoraItem, LutInfo, MacBenchState, Mode, ModelsStatus, StatusResponse, OutpaintSpec, Plan, Quality, ResolutionMode, Size } from "./types";
+import type { Advanced, GenerationRecord, GenerationRequest, InpaintAction, InputRecord, InstallItem, InstallStatus, JobView, LoraItem, LutInfo, MacBenchState, Mode, ModelsStatus, StatusResponse, OutpaintSpec, Plan, Quality, ResolutionMode, Size } from "./types";
 
 export interface Ref {
   key: string;
@@ -16,8 +16,9 @@ export interface Ref {
 export interface Composer {
   prompt: string;
   refs: Ref[];
-  /** Mask painted on refs[0] (input id of the mask PNG). */
-  mask: { inputId: string; refKey: string } | null;
+  /** Mask painted on refs[0] (input id of the mask PNG); `marks`: the coloured marks drawn there
+   * (input id of a transparent PNG), which the prompt names by colour. */
+  mask: { inputId: string; refKey: string; marks?: string } | null;
   /** What to do in the painted area. */
   inpaintAction: InpaintAction;
   outpaint: OutpaintSpec | null;
@@ -29,11 +30,13 @@ export interface Composer {
   customHeight: number;
   seed: number | null;
   advanced: Advanced;
-  /** Prompt enhancer on (remembered; used only where `enhancerApplies`). */
+  /** Prompt enhancer on (remembered). */
   enhance: boolean;
   /** Prompt+ writes its prompt into the box first, to read and change before making the image
    * (remembered); otherwise it writes and the image follows. */
   enhanceReview: boolean;
+  /** Prompt+ "Detailed": longer prompts with more context (remembered). */
+  enhanceDetail: boolean;
   /** The user's own words when the prompt in the box was written by Prompt+ (a review, or a
    * reused enhanced prompt): sent as is, without rewriting it again. */
   enhancedFrom: string | null;
@@ -56,7 +59,8 @@ export const emptyComposer = (prefs?: Partial<Composer>): Composer => ({
   prompt: "",
   refs: [],
   mask: null,
-  inpaintAction: "edit",
+  // Remove first: the most common brushed edit, and the one that needs no words.
+  inpaintAction: "remove",
   outpaint: null,
   mode: "auto",
   aspect: prefs?.aspect ?? "auto",
@@ -68,6 +72,7 @@ export const emptyComposer = (prefs?: Partial<Composer>): Composer => ({
   advanced: newChatAdvanced(prefs?.advanced),
   enhance: prefs?.enhance === true,
   enhanceReview: prefs?.enhanceReview === true,
+  enhanceDetail: prefs?.enhanceDetail === true,
   enhancedFrom: null,
   create: false,
   loras: null,
@@ -141,13 +146,15 @@ export function buildRequest(c: Composer, parentId?: string | null): GenerationR
   const custom = c.resolution === "custom";
   // Inpaint and expand keep the source's shape; create, edit and combine take the chosen ratio.
   const shaped = !maskValid && !outpaintInUse(c);
-  const reviewed = !!c.enhancedFrom && !!c.prompt.trim();
+  // Written by Prompt+ already (from the user's words, or from none: "" for a removal or Expand).
+  const reviewed = c.enhancedFrom != null && !!c.prompt.trim();
   return {
     prompt: c.prompt.trim(),
     mode: composing(c) ? "compose" : c.mode,
     images: c.mode === "generate" && !composing(c) ? [] : c.refs.map((r) => r.source),
     mask: maskValid ? `input:${c.mask!.inputId}` : null,
     ...(maskValid ? { inpaint_action: c.inpaintAction } : {}),
+    ...(maskValid && c.mask!.marks ? { marks: `input:${c.mask!.marks}` } : {}),
     outpaint: outpaintInUse(c) ? c.outpaint : null,
     quality: c.quality,
     resolution: c.resolution,
@@ -160,13 +167,19 @@ export function buildRequest(c: Composer, parentId?: string | null): GenerationR
     client: "ui",
     parent_id: parentId ?? null,
     // A prompt Prompt+ wrote already is sent as it is, with the user's words kept beside it.
-    ...(reviewed ? { enhanced_from: c.enhancedFrom } : c.enhance && enhancerApplies(c) ? { enhance: true } : {}),
+    ...(reviewed ? { enhanced_from: c.enhancedFrom } : c.enhance ? { enhance: true, ...(c.enhanceDetail ? { enhance_detail: true } : {}) } : {}),
   };
 }
 
-/** Prompt+ in review mode: Enter first has the prompt written into the box (no image yet). */
+/** Prompt+ in review mode: Enter first has the prompt written into the box (no image yet). A
+ * removal or an expansion with nothing typed is always written into the box first: Prompt+ names
+ * what is removed, or what the new areas show, for the user to approve or change. Prompt+ works on
+ * everything the prompt box makes: new images, edits, combines, coloured marks, a painted area
+ * (crates/qls-core/src/enhancer.rs AREA_SYSTEM_PROMPT) and Expand (EXPAND_SYSTEM_PROMPT). */
 export function wantsPromptReview(c: Composer): boolean {
-  return c.enhance && c.enhanceReview && enhancerApplies(c) && !c.enhancedFrom && !!c.prompt.trim();
+  if (!c.enhance || c.enhancedFrom != null) return false;
+  if (!typedWords(c)) return !needsPrompt(c) && (maskInUse(c) || outpaintInUse(c));
+  return c.enhanceReview;
 }
 
 /** The request that only writes the prompt (Prompt+ review). */
@@ -174,15 +187,28 @@ export function reviewRequest(c: Composer): GenerationRequest {
   return { ...buildRequest(c), enhance: true, enhance_only: true };
 }
 
-/** The prompt enhancer works on new images, edits and combines; a painted area or an expansion
- * wraps the prompt in its own instruction. */
-export function enhancerApplies(c: Composer): boolean {
-  return !maskInUse(c) && !outpaintInUse(c);
+/** The painted area in use is coloured marks (the prompt names them by colour). */
+export const marksInUse = (c: Composer) => maskInUse(c) && !!c.mask!.marks;
+
+/** The words each action of a painted area puts at the start of the prompt (the service takes
+ * them off again: planner.rs InpaintAction::subject). */
+export const ACTION_VERB: Record<InpaintAction, string> = { remove: "Remove", edit: "Change", replace: "Replace with", add: "Add" };
+const VERB_RE = /^\s*(?:remove|change|replace with|replace|add)\b[ \t]*/i;
+
+/** The prompt with `action`'s words in front, in place of another action's. */
+export function withActionVerb(prompt: string, action: InpaintAction): string {
+  return `${ACTION_VERB[action]} ${prompt.replace(VERB_RE, "")}`;
 }
 
-/** False only for a removal in a painted area, which needs no description. */
+/** What the user typed: for a painted area, without the action's own words ("Remove " alone is nothing). */
+export function typedWords(c: Composer): string {
+  return maskInUse(c) && !c.mask!.marks ? c.prompt.replace(VERB_RE, "").trim() : c.prompt.trim();
+}
+
+/** False for a removal in a painted area, which needs no description, and for Expand, which
+ * continues the scene (Prompt+ can write what the new areas show). */
 export function needsPrompt(c: Composer): boolean {
-  return !(maskInUse(c) && c.inpaintAction === "remove");
+  return !((maskInUse(c) && !c.mask!.marks && c.inpaintAction === "remove") || outpaintInUse(c));
 }
 
 /** Advanced fields that change how the model samples. They last for the session only: a value
@@ -231,7 +257,7 @@ export function composerFromRecord(g: GenerationRecord, base: Composer): Compose
     inpaintAction: req?.inpaint_action ?? "edit",
     outpaint: g.outpaint ? { ...g.outpaint, units: "pixels" } : null,
     // Upscales are started from the image toolbar, not the composer.
-    mode: req?.mode && req.mode !== "upscale" && req.mode !== "compose" && g.mode !== "lut" ? req.mode : "auto",
+    mode: req?.mode && req.mode !== "upscale" && req.mode !== "compose" && g.mode !== "lut" && g.mode !== "layers" ? req.mode : "auto",
     quality: normalizeQuality(g.quality, base.quality),
     resolution: req?.resolution ?? base.resolution,
     aspect: req?.aspect_ratio ?? "auto",
@@ -254,7 +280,7 @@ export function variationRequest(g: GenerationRecord): GenerationRequest | null 
   return { ...g.request, seed: null, client: "ui", parent_id: g.id };
 }
 
-export const MODE_LABEL: Record<Mode | "lut", string> = {
+export const MODE_LABEL: Record<Mode | "lut" | "layers", string> = {
   auto: "Auto",
   generate: "Create",
   edit: "Edit",
@@ -264,6 +290,7 @@ export const MODE_LABEL: Record<Mode | "lut", string> = {
   compose: "From references",
   upscale: "Upscale",
   lut: "LUT",
+  layers: "Layers",
 };
 
 /** How a LUT is shown: a preset ("kokon:<key>") by its title, a user's LUT by its file name. */
@@ -378,6 +405,37 @@ export function timeAgo(ms: number, now = Date.now()): string {
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   if (s < 86400 * 7) return `${Math.floor(s / 86400)}d ago`;
   return new Date(ms).toLocaleDateString();
+}
+
+/** A project's title as the list shows it: an image file's name without its extension. */
+export function projectTitle(title: string): string {
+  return title.replace(/\.(png|jpe?g|webp|heic|heif|avif|gif|bmp|tiff?)$/i, "").trim() || title;
+}
+
+/** A file name that says nothing about the picture ("image.png", "4.png", "IMG_1234.JPG",
+ * "Screenshot 2026-10-01 at 10.00.00"): a project named after it takes its first prompt instead. */
+export function isGenericName(name: string): boolean {
+  // "Screenshot 2026-10-01 at 10.00.00": the "at" of a date says nothing either.
+  const n = projectTitle(name).toLowerCase().replace(/ (at|alle) /g, " ");
+  return (
+    /^[\d\s_.()-]*$/.test(n) ||
+    /^(image|img|photo|pic|picture|untitled|unnamed|download|file|imported image|whatsapp image|screenshot|screen shot|schermata|immagine|foto)[\s\d_.()\-:,]*$/.test(n) ||
+    /^(img|dsc|dscn|pxl|mvimg)[_-]?\d[\d_.-]*$/.test(n)
+  );
+}
+
+/** The heading a project goes under in the list, by when it was last changed. */
+export function dayGroup(ms: number, now = Date.now()): string {
+  const day = (t: number) => {
+    const d = new Date(t);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  };
+  const days = Math.round((day(now) - day(ms)) / 86400000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return "Previous 7 days";
+  if (days < 30) return "Previous 30 days";
+  return "Older";
 }
 
 /** Short truthful status text for a job. */
@@ -665,9 +723,10 @@ export function modelChoiceUi(choice: "later" | "keep", version: string): Record
   return choice === "keep" ? { ownModelKept: true } : { modelUpdateSkipped: version };
 }
 
-/** Offer Kokon's Mac engine once, at start: set up, the engine in the app, off, never asked. Not below 16 GB: the
- * engine peaks at ~9 GB during a 1024² decode (M2 Pro, Benchmark button 2026-10-26) and was never run on 8 GB. */
-export function macEngineOfferDue(st: Pick<StatusResponse, "gpu" | "mac_engine"> | null, ui: Record<string, unknown>, setupComplete: boolean): boolean {
+/** Kokon's Mac engine is the default on Macs since 0.12: switch it on once, at start, when set up, the engine is in
+ * the app, it is off and nobody chose yet (`macEngineOffered`: the 0.11 offer's "Not now" or this switch). Not below
+ * 16 GB: the engine peaks at ~9 GB during a 1024² decode (M2 Pro, Benchmark button 2026-10-26) and was never run on 8 GB. */
+export function macEngineDefaultDue(st: Pick<StatusResponse, "gpu" | "mac_engine"> | null, ui: Record<string, unknown>, setupComplete: boolean): boolean {
   const engine = st?.mac_engine;
   return setupComplete && !!engine?.available && !engine.on && !ui.macEngineOffered && (st?.gpu?.memory_total_mib ?? 0) >= 15 * 1024;
 }
@@ -815,6 +874,17 @@ export function expandToSize(w: number, h: number, W: number, H: number): Outpai
   return { left: Math.floor(ex / 2), right: ex - Math.floor(ex / 2), top: Math.floor(ey / 2), bottom: ey - Math.floor(ey / 2), units: "pixels" };
 }
 
+/** The image moved to `left`, `top` (source px) inside the same expanded canvas: the extra space
+ * shifts between opposite sides, the final size stays. Snapped to 8 px; within 4 px of an edge, on it. */
+export function placeInCanvas(p: { left: number; right: number; top: number; bottom: number }, left: number, top: number): OutpaintSpec {
+  const snap = (v: number, max: number) => (v >= max - 4 ? max : Math.min(max, Math.max(0, Math.round(v / 8) * 8)));
+  const ex = p.left + p.right;
+  const ey = p.top + p.bottom;
+  const l = snap(left, ex);
+  const t = snap(top, ey);
+  return { left: l, right: ex - l, top: t, bottom: ey - t, units: "pixels" };
+}
+
 /** Expansion presets in source pixels. */
 export function expansionPreset(kind: "left" | "right" | "top" | "bottom" | "landscape" | "portrait" | "square", w: number, h: number, cur: OutpaintSpec): OutpaintSpec {
   const base: OutpaintSpec = { left: cur.left, right: cur.right, top: cur.top, bottom: cur.bottom, units: "pixels" };
@@ -868,7 +938,7 @@ export interface CompareBase {
 export function compareBase(g: GenerationRecord): CompareBase | null {
   const r = g.references[0];
   // A new image or a combination of several has no single "before".
-  if (!r || !["edit", "inpaint", "outpaint", "upscale", "lut"].includes(g.mode)) return null;
+  if (!r || !["edit", "inpaint", "outpaint", "upscale", "lut", "layers"].includes(g.mode)) return null;
   const o = g.outpaint;
   if (g.mode === "outpaint" && o) {
     // Expansion is in source pixels; the result is the source plus the expansion.
@@ -962,4 +1032,39 @@ export function starPromptDue(made: number, busy: boolean): boolean {
  * in a cache) does not reload again and again. */
 export function pageOutdated(pageVersion: string, serviceVersion: string | undefined, reloadedFor: string | null): boolean {
   return !!pageVersion && !!serviceVersion && pageVersion !== serviceVersion && reloadedFor !== serviceVersion;
+}
+
+// ---- Layers lab: what is being done, for the status lines and their Stop buttons ----
+
+/** A quick cut-out's step, for "Vase · model at work · 4 s". */
+export type CutStep = "model" | "preparing" | "sending" | "matting" | "edges" | "saving";
+
+/** The status line of a quick cut-out of `name`: its step, the download's % (`pct`) while the model
+ * is fetched, and the seconds the model has worked so far (a run is ~4-8 s, 11-04). */
+export function cutoutText(name: string, step: CutStep, seconds: number, pct: number | null): string {
+  const what =
+    step === "model"
+      ? `getting the sticker model (once, 224 MB)${pct != null ? ` · ${pct}%` : ""}`
+      : step === "preparing"
+        ? "preparing"
+        : step === "sending"
+          ? "sending to the model"
+          : step === "matting"
+            ? `model at work${seconds >= 1 ? ` · ${Math.floor(seconds)} s` : ""}`
+            : step === "edges"
+              ? "refining the edge"
+              : "saving";
+  return `${name} · ${what}`;
+}
+
+/** "step 3 of 8" once the engine reports steps, else "". */
+export function jobStepText(j: Pick<JobView, "status" | "step">): string {
+  if (j.status !== "running" || !j.step || !j.step[1]) return "";
+  return `step ${Math.min(j.step[0], j.step[1])} of ${j.step[1]}`;
+}
+
+/** The download running in the service is the one for `preset` (Cancel stops only that one: the
+ * installer is shared with Settings and the first setup). */
+export function downloadIsFor(st: Pick<InstallStatus, "running" | "preset"> | null | undefined, preset: string): boolean {
+  return !!st?.running && st.preset === preset;
 }

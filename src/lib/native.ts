@@ -60,7 +60,7 @@ export const native = {
   reveal: (path: string) => invoke<void>("reveal", { path }),
   openFolder: (path: string) => invoke<void>("open_folder", { path }),
   dataFolder: () => invoke<string>("data_folder"),
-  /** https links to github.com / huggingface.co only (desktop). */
+  /** https links to github.com / huggingface.co / kokon.app / youtu.be only (desktop). */
   openLink: async (url: string) => {
     if (inBrowser) window.open(url, "_blank", "noopener,noreferrer");
     else await invoke<void>("open_link", { url });
@@ -125,6 +125,14 @@ export const native = {
         { name: "WebP", extensions: ["webp"] },
       ],
     }),
+  /** The Layers lab's .psd: desktop asks where (null: cancelled), a browser downloads it. */
+  savePsd: async (psd: Uint8Array): Promise<string | null> => {
+    if (!inBrowser) return invoke<string | null>("save_psd", psd);
+    const url = URL.createObjectURL(new Blob([psd as BlobPart], { type: "image/vnd.adobe.photoshop" }));
+    native.download(url, "Layers.psd");
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return "Layers.psd";
+  },
   /** Browser: saves the file at `url` on this device (the browser's downloads). */
   download: (url: string, name: string) => {
     const a = document.createElement("a");

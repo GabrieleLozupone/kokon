@@ -185,8 +185,14 @@ fn png_err(e: png::EncodingError) -> AppError {
     AppError::new(ErrorCode::Internal, "Failed to encode PNG.").detail(e.to_string())
 }
 
+/// JPEG has no alpha: transparent pixels are flattened onto white, not shown with the colour
+/// hidden under alpha 0 (Qwen-Image's RGBA output leaves e.g. purple there: purple thumbnails).
 pub fn encode_jpeg(img: &RgbaImage, quality: u8) -> Result<Vec<u8>, AppError> {
-    let rgb = DynamicImage::ImageRgba8(img.clone()).into_rgb8();
+    let rgb = image::RgbImage::from_fn(img.width(), img.height(), |x, y| {
+        let p = img.get_pixel(x, y);
+        let a = p[3] as u32;
+        image::Rgb(std::array::from_fn(|c| ((p[c] as u32 * a + 255 * (255 - a) + 127) / 255) as u8))
+    });
     let mut out = Vec::new();
     let enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, quality.clamp(1, 100));
     rgb.write_with_encoder(enc).map_err(|e| AppError::new(ErrorCode::Internal, "Failed to encode JPEG.").detail(e.to_string()))?;
@@ -281,10 +287,13 @@ pub fn pad_solid(img: &RgbaImage, canvas: Size, offset: (u32, u32), fill: Rgba<u
 // ---------------------------------------------------------------------------------------
 
 /// Converts a user-supplied mask image to a single-channel mask. Masks painted on a
-/// transparent layer use alpha; opaque masks use luminance (white = edit).
+/// transparent layer use alpha; opaque masks use luminance (white = edit). A layer of strokes
+/// is empty somewhere; a white-on-black mask blurred on a canvas only comes out partly
+/// transparent at the frame's edge (alpha 77 there), and read by alpha it made the whole frame
+/// the area (the lab's fill, 11-01): luminance unless some pixel is (nearly) fully transparent.
 pub fn mask_from_image(img: &LoadedImage) -> GrayImage {
     let p = &img.pixels;
-    if img.has_transparency {
+    if img.has_transparency && p.pixels().any(|q| q[3] < 8) {
         GrayImage::from_fn(p.width(), p.height(), |x, y| Luma([p.get_pixel(x, y)[3]]))
     } else {
         GrayImage::from_fn(p.width(), p.height(), |x, y| {
@@ -426,12 +435,16 @@ pub fn outpaint_mask(size: Size, keep: Rect, overlap: crate::geometry::Expansion
 }
 
 /// Mask used to paste the original back into an outpainted result: 255 inside the
-/// original, ramping to 0 across `feather_px` on edges that were expanded.
+/// original, ramping (smoothstep) to 0 across `feather_px` on edges that were expanded.
 pub fn paste_back_mask(size: Size, expanded: crate::geometry::Expansion, feather_px: u32) -> GrayImage {
     let f = feather_px.max(1) as f32;
     GrayImage::from_fn(size.width, size.height, |x, y| {
         let mut v = 1.0f32;
-        let ramp = |d: u32| ((d as f32 + 0.5) / f).min(1.0);
+        // Smoothstep: a linear ramp shows its two ends as faint lines on flat areas.
+        let ramp = |d: u32| {
+            let t = ((d as f32 + 0.5) / f).min(1.0);
+            t * t * (3.0 - 2.0 * t)
+        };
         if expanded.left > 0 {
             v = v.min(ramp(x));
         }
@@ -448,29 +461,67 @@ pub fn paste_back_mask(size: Size, expanded: crate::geometry::Expansion, feather
     })
 }
 
+/// The original's pixels where `paste` < 255 (its blend band at expanded edges), mirrored across
+/// the nearest expanded edge onto a `canvas`-sized image (the original sits at `rect`), and where
+/// they landed. The truth to compare the new area against just outside the seam.
+pub fn mirror_band(source: &RgbaImage, paste: &GrayImage, rect: Rect, expanded: crate::geometry::Expansion, canvas: Size) -> (RgbaImage, GrayImage) {
+    let mut truth = RgbaImage::new(canvas.width, canvas.height);
+    let mut known = GrayImage::new(canvas.width, canvas.height);
+    let (w, h) = (source.width(), source.height());
+    for (x, y, p) in paste.enumerate_pixels() {
+        if p[0] == 255 {
+            continue;
+        }
+        // Nearest expanded edge, and the point as far outside it as (x, y) is inside.
+        let sides = [
+            (expanded.left > 0, x, (rect.x as i64 - 1 - x as i64, (rect.y + y) as i64)),
+            (expanded.right > 0, w - 1 - x, ((rect.right() + (w - 1 - x)) as i64, (rect.y + y) as i64)),
+            (expanded.top > 0, y, ((rect.x + x) as i64, rect.y as i64 - 1 - y as i64)),
+            (expanded.bottom > 0, h - 1 - y, ((rect.x + x) as i64, (rect.bottom() + (h - 1 - y)) as i64)),
+        ];
+        let Some(&(_, _, (mx, my))) = sides.iter().filter(|s| s.0).min_by_key(|s| s.1) else { continue };
+        if mx < 0 || my < 0 || mx >= canvas.width as i64 || my >= canvas.height as i64 {
+            continue;
+        }
+        truth.put_pixel(mx as u32, my as u32, *source.get_pixel(x, y));
+        known.put_pixel(mx as u32, my as u32, Luma([255]));
+    }
+    (truth, known)
+}
+
 /// Replaces the pixels where `mask` > 127 by a smooth continuation of the pixels around
 /// them (push-pull: weighted averages down a pyramid, then blended back up). Known pixels
 /// stay exact. Erases content before a removal so the model cannot copy it back.
 pub fn fill_masked(img: &RgbaImage, mask: &GrayImage) -> RgbaImage {
     assert_eq!(img.dimensions(), mask.dimensions());
-    struct Level {
+    let (w, h) = (img.width() as usize, img.height() as usize);
+    let color = img.pixels().map(|p| [p[0] as f32, p[1] as f32, p[2] as f32, p[3] as f32]).collect();
+    let weight = mask.pixels().map(|m| if m[0] > 127 { 0.0 } else { 1.0 }).collect();
+    let base = push_pull(w, h, color, weight, [128.0, 128.0, 128.0, 255.0]);
+    let mut out = img.clone();
+    for (i, (p, m)) in out.pixels_mut().zip(mask.pixels()).enumerate() {
+        if m[0] > 127 {
+            *p = Rgba(base[i].map(|v| v.round().clamp(0.0, 255.0) as u8));
+        }
+    }
+    out
+}
+
+/// Push-pull fill of a `w`×`h` grid: where `weight` < 1, values blend toward the bilinearly
+/// upsampled weighted means of a coarser pyramid level (fully known cells stay exact).
+fn push_pull<const N: usize>(w: usize, h: usize, color: Vec<[f32; N]>, weight: Vec<f32>, empty: [f32; N]) -> Vec<[f32; N]> {
+    struct Level<const N: usize> {
         w: usize,
         h: usize,
-        color: Vec<[f32; 4]>,
+        color: Vec<[f32; N]>,
         weight: Vec<f32>,
     }
-    let (w, h) = (img.width() as usize, img.height() as usize);
-    let mut levels = vec![Level {
-        w,
-        h,
-        color: img.pixels().map(|p| [p[0] as f32, p[1] as f32, p[2] as f32, p[3] as f32]).collect(),
-        weight: mask.pixels().map(|m| if m[0] > 127 { 0.0 } else { 1.0 }).collect(),
-    }];
+    let mut levels = vec![Level { w, h, color, weight }];
     // Push: each coarser pixel is the weighted mean of its (up to) 4 children.
     while levels.last().map(|l| l.w > 1 || l.h > 1).unwrap() {
         let cur = levels.last().unwrap();
         let (nw, nh) = (cur.w.div_ceil(2), cur.h.div_ceil(2));
-        let mut csum = vec![[0f32; 4]; nw * nh];
+        let mut csum = vec![[0f32; N]; nw * nh];
         let mut wsum = vec![0f32; nw * nh];
         for y in 0..cur.h {
             for x in 0..cur.w {
@@ -482,14 +533,14 @@ pub fn fill_masked(img: &RgbaImage, mask: &GrayImage) -> RgbaImage {
                 wsum[j] += wt;
             }
         }
-        let color = csum.iter().zip(&wsum).map(|(c, &s)| if s > 0.0 { c.map(|v| v / s) } else { [128.0, 128.0, 128.0, 255.0] }).collect();
+        let color = csum.iter().zip(&wsum).map(|(c, &s)| if s > 0.0 { c.map(|v| v / s) } else { empty }).collect();
         levels.push(Level { w: nw, h: nh, color, weight: wsum.iter().map(|s| s.min(1.0)).collect() });
     }
     // Pull: unknown (or partly known) pixels take the bilinearly upsampled coarser level.
     for l in (0..levels.len() - 1).rev() {
         let (fine, coarse) = levels.split_at_mut(l + 1);
         let (f, c) = (&mut fine[l], &coarse[0]);
-        let sample = |x: usize, y: usize| -> [f32; 4] {
+        let sample = |x: usize, y: usize| -> [f32; N] {
             let fx = ((x as f32 + 0.5) / 2.0 - 0.5).clamp(0.0, (c.w - 1) as f32);
             let fy = ((y as f32 + 0.5) / 2.0 - 0.5).clamp(0.0, (c.h - 1) as f32);
             let (x0, y0) = (fx as usize, fy as usize);
@@ -510,14 +561,105 @@ pub fn fill_masked(img: &RgbaImage, mask: &GrayImage) -> RgbaImage {
             }
         }
     }
-    let base = &levels[0];
-    let mut out = img.clone();
-    for (i, (p, m)) in out.pixels_mut().zip(mask.pixels()).enumerate() {
-        if m[0] > 127 {
-            *p = Rgba(base.color[i].map(|v| v.round().clamp(0.0, 255.0) as u8));
+    levels.swap_remove(0).color
+}
+
+/// Low-frequency colour difference `truth` − `generated` on a coarse grid over `generated`:
+/// measured where `known` > 0 (weighted by it) and spread smoothly everywhere else. Lets a
+/// generated area take on the colour of the original pixels it meets at a paste border (the
+/// model's colour cast), without touching detail.
+pub struct ColorShift {
+    w: usize,
+    h: usize,
+    cell: f32,
+    d: Vec<[f32; 3]>,
+}
+
+/// Grid cells along the longer side of a [`ColorShift`]: coarse on purpose, only the cast is wanted.
+const SHIFT_CELLS: u32 = 96;
+
+/// `truth` and `known` share a size and sit at `at` in `generated`; each channel's shift is
+/// capped at ±`max`. None when nothing is known.
+pub fn color_shift(generated: &RgbaImage, truth: &RgbaImage, known: &GrayImage, at: (u32, u32), max: f32) -> Option<ColorShift> {
+    assert_eq!(truth.dimensions(), known.dimensions());
+    let cell = generated.width().max(generated.height()).div_ceil(SHIFT_CELLS).max(1);
+    let (w, h) = (generated.width().div_ceil(cell) as usize, generated.height().div_ceil(cell) as usize);
+    let mut sum = vec![[0f32; 3]; w * h];
+    let mut wsum = vec![0f32; w * h];
+    for (x, y, k) in known.enumerate_pixels() {
+        let (gx, gy) = (x + at.0, y + at.1);
+        if k[0] == 0 || gx >= generated.width() || gy >= generated.height() {
+            continue;
+        }
+        let (t, g, wt) = (truth.get_pixel(x, y), generated.get_pixel(gx, gy), k[0] as f32 / 255.0);
+        let j = (gy / cell) as usize * w + (gx / cell) as usize;
+        for c in 0..3 {
+            sum[j][c] += (t[c] as f32 - g[c] as f32) * wt;
+        }
+        wsum[j] += wt;
+    }
+    if wsum.iter().all(|&s| s == 0.0) {
+        return None;
+    }
+    // A cell is fully trusted once a tenth of it is known.
+    let full = (cell * cell) as f32 * 0.1;
+    let d = sum.iter().zip(&wsum).map(|(s, &n)| if n > 0.0 { s.map(|v| (v / n).clamp(-max, max)) } else { [0.0; 3] }).collect();
+    let weight = wsum.iter().map(|&n| (n / full).min(1.0)).collect();
+    let mut d = push_pull(w, h, d, weight, [0.0; 3]);
+    // Smooth: detail differences inside the band must not print as blotches.
+    for _ in 0..2 {
+        d = box_cells(&d, w, h, 2);
+    }
+    Some(ColorShift { w, h, cell: cell as f32, d })
+}
+
+/// Box blur of a `w`×`h` grid, radius `r` cells, edges clamped.
+fn box_cells(d: &[[f32; 3]], w: usize, h: usize, r: usize) -> Vec<[f32; 3]> {
+    let pass = |src: &[[f32; 3]], horizontal: bool| -> Vec<[f32; 3]> {
+        (0..w * h)
+            .map(|i| {
+                let (x, y) = (i % w, i / w);
+                let (lo, hi) = if horizontal { (x.saturating_sub(r), (x + r).min(w - 1)) } else { (y.saturating_sub(r), (y + r).min(h - 1)) };
+                let mut s = [0f32; 3];
+                for k in lo..=hi {
+                    let v = if horizontal { src[y * w + k] } else { src[k * w + x] };
+                    for c in 0..3 {
+                        s[c] += v[c];
+                    }
+                }
+                s.map(|v| v / (hi - lo + 1) as f32)
+            })
+            .collect()
+    };
+    pass(&pass(d, true), false)
+}
+
+impl ColorShift {
+    /// The shift at pixel (`x`, `y`) of the generated image (bilinear between cell centres).
+    pub fn at(&self, x: u32, y: u32) -> [f32; 3] {
+        let fx = ((x as f32 + 0.5) / self.cell - 0.5).clamp(0.0, (self.w - 1) as f32);
+        let fy = ((y as f32 + 0.5) / self.cell - 0.5).clamp(0.0, (self.h - 1) as f32);
+        let (x0, y0) = (fx as usize, fy as usize);
+        let (x1, y1) = ((x0 + 1).min(self.w - 1), (y0 + 1).min(self.h - 1));
+        let (tx, ty) = (fx - x0 as f32, fy - y0 as f32);
+        let p = |x: usize, y: usize| self.d[y * self.w + x];
+        let (a, b, c, e) = (p(x0, y0), p(x1, y0), p(x0, y1), p(x1, y1));
+        std::array::from_fn(|k| (a[k] * (1.0 - tx) + b[k] * tx) * (1.0 - ty) + (c[k] * (1.0 - tx) + e[k] * tx) * ty)
+    }
+
+    /// Adds the shift to `img` (the generated image), scaled per pixel by `weight` (0..1).
+    pub fn apply(&self, img: &mut RgbaImage, weight: impl Fn(u32, u32) -> f32) {
+        for (x, y, p) in img.enumerate_pixels_mut() {
+            let wt = weight(x, y);
+            if wt <= 0.0 {
+                continue;
+            }
+            let d = self.at(x, y);
+            for c in 0..3 {
+                p[c] = (p[c] as f32 + d[c] * wt).round().clamp(0.0, 255.0) as u8;
+            }
         }
     }
-    out
 }
 
 /// Colors for marking an area on a guide image, as named in the prompt.
@@ -549,6 +691,23 @@ pub fn pick_highlight(img: &RgbaImage, mask: &GrayImage) -> (&'static str, [u8; 
     HIGHLIGHTS[k]
 }
 
+/// `img` with the area where `mask` > 127 only outlined in `color` (a line just outside it), what
+/// is inside left as it is: for Prompt+ to see and name it. A tint over it made the 8B read the
+/// tint as a thing ("a red cloth covering the bowl", 2026-11-04).
+pub fn outline(img: &RgbaImage, mask: &GrayImage, color: [u8; 3]) -> RgbaImage {
+    assert_eq!(img.dimensions(), mask.dimensions());
+    let inside = binarize(mask, 127);
+    let ring = dilate(&inside, (img.width().max(img.height()) / 160).max(3));
+    RgbaImage::from_fn(img.width(), img.height(), |x, y| {
+        let p = img.get_pixel(x, y);
+        if inside.get_pixel(x, y)[0] == 0 && ring.get_pixel(x, y)[0] > 0 {
+            Rgba([color[0], color[1], color[2], 255])
+        } else {
+            Rgba([p[0], p[1], p[2], 255])
+        }
+    })
+}
+
 /// Guide image: `img` with the area where `mask` > 127 tinted with `color` and outlined,
 /// so a prompt can refer to "the area marked in red". Fully opaque.
 pub fn highlight(img: &RgbaImage, mask: &GrayImage, color: [u8; 3]) -> RgbaImage {
@@ -571,6 +730,34 @@ pub fn highlight(img: &RgbaImage, mask: &GrayImage, color: [u8; 3]) -> RgbaImage
 #[cfg(test)]
 mod fill_tests {
     use super::*;
+
+    #[test]
+    fn color_shift_takes_the_cast_measured_in_the_band_and_nothing_else() {
+        // A generated image warmer than the truth; only a band at the truth's left is known.
+        let truth = RgbaImage::from_pixel(300, 200, Rgba([120, 120, 120, 255]));
+        let generated = RgbaImage::from_pixel(400, 200, Rgba([130, 125, 120, 255]));
+        let known = GrayImage::from_fn(300, 200, |x, _| Luma([if x < 30 { 255 } else { 0 }]));
+        let s = color_shift(&generated, &truth, &known, (100, 0), 32.0).unwrap();
+        for (x, y) in [(0, 0), (50, 100), (110, 150), (399, 199)] {
+            let d = s.at(x, y);
+            assert!((d[0] + 10.0).abs() < 0.5 && (d[1] + 5.0).abs() < 0.5 && d[2].abs() < 0.5, "{x},{y}: {d:?}");
+        }
+        let mut g = generated.clone();
+        s.apply(&mut g, |x, _| if x < 100 { 1.0 } else { 0.0 });
+        assert_eq!(g.get_pixel(10, 10).0, [120, 120, 120, 255]);
+        assert_eq!(g.get_pixel(200, 10).0, [130, 125, 120, 255]);
+        // No cast, no change; nothing known, no shift.
+        assert!(color_shift(&truth, &truth, &known, (0, 0), 32.0).unwrap().at(5, 5).iter().all(|v| v.abs() < 1e-3));
+        assert!(color_shift(&truth, &truth, &GrayImage::new(300, 200), (0, 0), 32.0).is_none());
+    }
+
+    #[test]
+    fn color_shift_is_capped() {
+        let truth = RgbaImage::from_pixel(64, 64, Rgba([0, 0, 0, 255]));
+        let generated = RgbaImage::from_pixel(64, 64, Rgba([200, 200, 200, 255]));
+        let s = color_shift(&generated, &truth, &GrayImage::from_pixel(64, 64, Luma([255])), (0, 0), 24.0).unwrap();
+        assert!((s.at(30, 30)[0] + 24.0).abs() < 1e-3);
+    }
 
     #[test]
     fn fill_masked_keeps_known_pixels_and_continues_colors() {
@@ -633,6 +820,16 @@ mod tests {
         assert!(decode_image(&png).is_err(), "imports keep the limit");
         assert_eq!(decode_engine_image(&png, 8192).unwrap().dimensions(), (w, h));
         assert!(decode_engine_image(&png, 4096).is_err(), "larger than the plan allows");
+    }
+
+    #[test]
+    fn jpeg_flattens_transparency_onto_white() {
+        // Left half: purple under alpha 0 (Qwen-Image's RGBA background); right half opaque red.
+        let img = RgbaImage::from_fn(64, 32, |x, _| if x < 32 { Rgba([155, 75, 196, 0]) } else { Rgba([200, 0, 0, 255]) });
+        let back = decode_image(&encode_jpeg(&img, 95).unwrap()).unwrap().pixels;
+        let (bg, fg) = (back.get_pixel(8, 16), back.get_pixel(56, 16));
+        assert!(bg.0[..3].iter().all(|&c| c > 245), "{bg:?}");
+        assert!(fg[0] > 180 && fg[1] < 30, "{fg:?}");
     }
 
     /// Builds a JPEG with an EXIF APP1 segment carrying the given orientation.
@@ -789,6 +986,14 @@ mod tests {
         let li = LoadedImage { pixels: bw, format: "png", exif_orientation: 1, icc_profile: None, has_transparency: false, text: vec![] };
         let m = mask_from_image(&li);
         assert_eq!((m.get_pixel(1, 1)[0], m.get_pixel(8, 1)[0]), (255, 0));
+        // White on black whose edge came out partly transparent (a canvas blur): still luminance.
+        let soft = RgbaImage::from_fn(10, 10, |x, y| {
+            let a = if x == 0 || y == 0 || x == 9 || y == 9 { 77 } else { 255 };
+            if x < 5 { Rgba([255, 255, 255, a]) } else { Rgba([0, 0, 0, a]) }
+        });
+        let li = LoadedImage { pixels: soft, format: "png", exif_orientation: 1, icc_profile: None, has_transparency: true, text: vec![] };
+        let m = mask_from_image(&li);
+        assert_eq!((m.get_pixel(1, 1)[0], m.get_pixel(8, 1)[0], m.get_pixel(8, 0)[0]), (255, 0, 0));
     }
 
     #[test]

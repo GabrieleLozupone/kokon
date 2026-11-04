@@ -2,13 +2,32 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:video="http://www.google.com/schemas/sitemap-video/1.1" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
   <url>
     <loc>https://kokon.app/</loc>
-    <lastmod>2026-10-22</lastmod>
+    <lastmod>2026-11-05</lastmod>
     <video:video>
       <video:thumbnail_loc>https://kokon.app/assets/kokon-poster.jpg?v=3</video:thumbnail_loc>
       <video:title>Kokon: edit photos by describing the change, on your own GPU</video:title>
       <video:description>Kokon in use: creating an image from a sentence, painting an area to remove a scooter, adding a cat, and six more edits made with Qwen-Image 2.1 on a local GPU.</video:description>
       <video:content_loc>https://kokon.app/assets/kokon.mp4?v=3</video:content_loc>
       <video:duration>85</video:duration>
+    </video:video>
+    <video:video>
+      <video:thumbnail_loc>https://kokon.app/assets/img/videos/usecases.webp</video:thumbnail_loc>
+      <video:title>Free AI photo editor on your PC: remove people, restore old photos, change colors</video:title>
+      <video:description>What Kokon can do, in examples made with it: remove photobombers, fix closed eyes, restore and colorize an old photo, add someone who is missing, try a haircut or a jacket, repaint a wall.</video:description>
+      <video:content_loc>https://kokon.app/assets/usecases.mp4?v=1</video:content_loc>
+      <video:player_loc>https://www.youtube.com/embed/WDbHxkbpU4s</video:player_loc>
+      <video:duration>85</video:duration>
+    </video:video>
+  </url>
+  <url>
+    <loc>https://kokon.app/image-to-layers/</loc>
+    <lastmod>2026-11-05</lastmod>
+    <video:video>
+      <video:thumbnail_loc>https://kokon.app/assets/img/videos/update-0.12.webp</video:thumbnail_loc>
+      <video:title>Kokon 0.12: split any image into layers, move objects, export to PSD</video:title>
+      <video:description>The Layers lab: objects cut out onto their own layers, the background filled behind them, layers moved and edited, a layered PSD exported.</video:description>
+      <video:player_loc>https://www.youtube.com/embed/eGr9yYe7NVc</video:player_loc>
+      <video:duration>141</video:duration>
     </video:video>
   </url>
   <url><loc>https://kokon.app/qwen-image-2-1-local/</loc><lastmod>2026-10-10</lastmod></url>

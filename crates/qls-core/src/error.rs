@@ -76,6 +76,8 @@ impl AppError {
             ErrorCode::Unauthorized | ErrorCode::LoginRequired => 401,
             ErrorCode::Forbidden => 403,
             ErrorCode::NotFound => 404,
+            // Stopped by the user (a quick cut-out): an answer, not a failure of the service.
+            ErrorCode::Cancelled => 409,
             ErrorCode::QueueFull | ErrorCode::TooManyAttempts => 429,
             ErrorCode::Unsupported => 422,
             ErrorCode::ServerUnavailable | ErrorCode::ServerStartFailed | ErrorCode::ServerCrashed => 503,

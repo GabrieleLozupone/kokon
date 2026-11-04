@@ -81,6 +81,10 @@ Full requests (`/jobs`) also accept `"mode": "upscale"` with `"upscale": {"scale
 `"mode": "compose"` (the references case of `/generate`), and with `"enhance": true` (Prompt+)
 `"enhance_only": true`: the job only writes the prompt (`enhanced_prompt` in the job, no image), so it
 can be read and changed; send it back as `prompt` with `"enhanced_from"` set to your original words.
+Prompt+ works on every mode but upscales; for a painted area (`mask`) and an expansion it writes only
+what goes in the area (for a removal: what is removed) or in the new borders, and the prompt may be
+empty for a removal and an expansion. `"enhance_detail": true` asks Prompt+ for a longer prompt with more context
+about what is in the image or what changes.
 
 ## Input images
 
@@ -91,6 +95,7 @@ can be read and changed; send it back as `prompt` with `"enhanced_from"` set to 
 | GET | `/inputs/{id}` | The stored input's record |
 | GET | `/inputs/{id}/image`, `/inputs/{id}/thumb` | The image, or its thumbnail |
 | GET | `/inputs/{id}/preview` | A screen-sized copy (at most 1280 px on the long side, JPEG; PNG if it has transparency), made on first request |
+| POST | `/provenance/check` | What an image's AI markings say: raw image bytes as the body (up to 210 MB), nothing stored. Answers `ai`, `metadata` (`digital_source_type`, `creator_tool`, `c2pa_manifest`), `watermark` (`checked`, `found`, `kokon`, `text`), `sha256`, `checked_at`; see [ai-marking.md](ai-marking.md) |
 | POST | `/image-info` | Size, aspect, type and embedded generation metadata of an image |
 | POST | `/private/clear` | End private mode: delete every private input and result |
 

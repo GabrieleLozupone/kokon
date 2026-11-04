@@ -1,6 +1,6 @@
 # Status
 
-**Updated 2026-10-28.** What is in progress, what comes next, and where help is welcome. Kept current at the end
+**Updated 2026-11-04.** What is in progress, what comes next, and where help is welcome. Kept current at the end
 of every task (see [AGENTS.md](../AGENTS.md#keeping-docsstatusmd-current)); GitHub is the source of truth.
 
 ## Current version: [0.11.2](https://github.com/GabrieleLozupone/kokon/releases/tag/v0.11.2) (2026-10-28)
@@ -9,7 +9,11 @@ Windows, macOS (Apple Silicon, 15+) and Linux (`.deb`, `.rpm`). Installed copies
 
 ## Next
 
-- **0.12: reliability foundations** (details soon).
+- **0.12: reliability foundations** (details soon). Being finished for it: Prompt+ for brushed areas and Expand
+  (it can name what to remove or write what the new borders show, for you to approve), Delete for several versions
+  of a project at once, a clearer project list, the click-to-select model downloaded on first use, and AI marking
+  as the EU AI Act asks: the IPTC Digital Source Type in every file's XMP plus an invisible TrustMark watermark,
+  and Settings → General → Check an image ([docs/ai-marking.md](ai-marking.md)).
 - After 0.11: the desktop app as a client of a Kokon server elsewhere, and a Docker image for AMD and Intel
   (Vulkan) once it can be tested.
 - On the list, no dates yet: a custom upscaler picker

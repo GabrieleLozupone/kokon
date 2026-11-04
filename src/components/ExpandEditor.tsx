@@ -1,8 +1,8 @@
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, ChevronDown, Lock, LockOpen, Maximize, RotateCcw, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { urls } from "../lib/api";
-import { LONG_SIDE_PRESETS, aspectLabel, expandToRatio, expandToSize, expansionPixels, expansionPreset, parseRatio, sizeForLongSide } from "../lib/logic";
-import { focusPrompt, setState, updateComposer, useStore } from "../lib/store";
+import { LONG_SIDE_PRESETS, aspectLabel, expandToRatio, expandToSize, expansionPixels, expansionPreset, parseRatio, placeInCanvas, sizeForLongSide } from "../lib/logic";
+import { closeEditor, focusPrompt, updateComposer, useStore } from "../lib/store";
 import type { OutpaintSpec, Units } from "../lib/types";
 import { AspectGrid, RatioIcon } from "./SizeMenus";
 import { IconButton, Popover, Seg } from "./ui";
@@ -77,13 +77,22 @@ function SizeForm(props: { w: number; h: number; minW: number; minH: number; onA
         </span>
       )}
       <span className="muted">
-        At least {props.minW}×{props.minH} (the image itself); the extra space is split evenly.
+        At least {props.minW}×{props.minH} (the image itself); the image starts centred: drag it, or use the grid, to place it.
       </span>
       <button className="btn" disabled={!ok} onClick={() => props.onApply(w, h)}>
         Use this size
       </button>
     </div>
   );
+}
+
+/** How far the canvas (`size` px of a view `room` px) moves from the centre while `pin`'s side is
+ * dragged: its opposite edge stays at `pin.at`, as far as the view allows. */
+function pinShift(pin: { side: Side; at: number } | null, axis: "x" | "y", size: number, room: number): number {
+  if (!pin || (axis === "x") !== (pin.side === "left" || pin.side === "right")) return 0;
+  const start = pin.side === "right" || pin.side === "bottom" ? pin.at : pin.at - size;
+  const clamped = Math.min(Math.max(start, Math.min(0, room - size)), Math.max(0, room - size));
+  return clamped - (room - size) / 2;
 }
 
 export function ExpandEditor() {
@@ -93,7 +102,17 @@ export function ExpandEditor() {
   const stageRef = useRef<HTMLDivElement>(null);
   const [stage, setStage] = useState({ w: 800, h: 600 });
   const [frozenScale, setFrozenScale] = useState<number | null>(null);
-  const drag = useRef<{ side: Side; start: number; startVal: number } | null>(null);
+  // The side being dragged, and where the canvas's opposite edge was then (px from the view's
+  // left/top): it holds still there, slides only once the canvas reaches the window's other edge.
+  const [pin, setPin] = useState<{ side: Side; at: number } | null>(null);
+  // A side being dragged: `s0` the view's scale when it was grabbed, `pos` the pointer now, `extra`
+  // what holding it at the window's edge has added (source px).
+  const drag = useRef<{ side: Side; start: number; startVal: number; s0: number; pos: number; extra: number; moved: boolean } | null>(null);
+  const raf = useRef(0);
+  const liveScale = useRef(1);
+  useEffect(() => () => cancelAnimationFrame(raf.current), []);
+  // Moving the image inside the new canvas: the same final size, the extra space shifted between sides.
+  const move = useRef<{ x: number; y: number; px: { left: number; right: number; top: number; bottom: number } } | null>(null);
 
   useLayoutEffect(() => {
     const el = stageRef.current;
@@ -104,10 +123,10 @@ export function ExpandEditor() {
   }, []);
 
   useEffect(() => {
-    if (!ref0) setState({ overlay: null });
+    if (!ref0) closeEditor();
   }, [ref0]);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setState({ overlay: null });
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeEditor();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
@@ -119,7 +138,10 @@ export function ExpandEditor() {
   const finalW = W + px.left + px.right;
   const finalH = H + px.top + px.bottom;
   const fitScale = Math.min(stage.w / finalW, stage.h / finalH, 1.5);
-  const scale = frozenScale ?? fitScale;
+  // Dragging a side: the view keeps its scale while the canvas fits, and shrinks smoothly once it
+  // reaches the window's edge (zooming out at the grab was a jarring jump, 11-04).
+  const scale = frozenScale ?? (drag.current ? Math.min(fitScale, drag.current.s0) : fitScale);
+  liveScale.current = scale;
   const src = ref0.source.startsWith("gen:") ? urls.gen(ref0.source.slice(4)) : urls.input(ref0.source.slice(6));
 
   const toUnits = (pixels: number, side: Side) => {
@@ -129,25 +151,72 @@ export function ExpandEditor() {
   };
   const setSide = (side: Side, v: number) => setSpec((s) => ({ ...s, [side]: Math.max(0, Number.isFinite(v) ? v : 0) }));
 
+  /** The dragged side's size: the pointer's way out (at the scale it was grabbed at) plus what
+   * holding it at the edge added, snapped to 8 px. */
+  const applyDrag = (d: NonNullable<typeof drag.current>) => {
+    const delta = (d.pos - d.start) / d.s0;
+    const outward = (d.side === "left" || d.side === "top" ? -delta : delta) + d.extra;
+    setSide(d.side, toUnits(Math.max(0, Math.round((d.startVal + outward) / 8) * 8), d.side));
+  };
   const onHandleDown = (side: Side) => (e: React.PointerEvent) => {
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    const cw0 = finalW * scale;
+    const ch0 = finalH * scale;
+    setPin({ side, at: side === "right" ? (stage.w - cw0) / 2 : side === "left" ? (stage.w + cw0) / 2 : side === "bottom" ? (stage.h - ch0) / 2 : (stage.h + ch0) / 2 });
+    const pos = side === "left" || side === "right" ? e.clientX : e.clientY;
+    const d = { side, start: pos, startVal: px[side], s0: scale, pos, extra: 0, moved: false };
+    drag.current = d;
+    // Held at the window's edge (or past it), the side keeps growing, faster the further out the
+    // pointer is: no letting go and grabbing again to go on.
+    let last = performance.now();
+    const loop = (now: number) => {
+      if (drag.current !== d) return;
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      const r = stageRef.current?.getBoundingClientRect();
+      if (r && d.moved) {
+        const edge = 28;
+        const over = side === "right" ? d.pos - (r.right - edge) : side === "left" ? r.left + edge - d.pos : side === "bottom" ? d.pos - (r.bottom - edge) : r.top + edge - d.pos;
+        if (over > 0) {
+          d.extra += ((160 + 8 * over) * dt) / liveScale.current;
+          applyDrag(d);
+        }
+      }
+      raf.current = requestAnimationFrame(loop);
+    };
+    raf.current = requestAnimationFrame(loop);
+  };
+  const onImageDown = (e: React.PointerEvent) => {
+    if (px.left + px.right + px.top + px.bottom === 0) return;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     setFrozenScale(scale);
-    drag.current = { side, start: side === "left" || side === "right" ? e.clientX : e.clientY, startVal: px[side] };
+    move.current = { x: e.clientX, y: e.clientY, px };
   };
   const onHandleMove = (e: React.PointerEvent) => {
+    const m = move.current;
+    if (m) {
+      applyPixels(placed(m.px, m.px.left + (e.clientX - m.x) / (frozenScale ?? scale), m.px.top + (e.clientY - m.y) / (frozenScale ?? scale)));
+      return;
+    }
     const d = drag.current;
     if (!d) return;
-    const pos = d.side === "left" || d.side === "right" ? e.clientX : e.clientY;
-    const delta = (pos - d.start) / (frozenScale ?? scale);
-    const outward = d.side === "left" || d.side === "top" ? -delta : delta;
-    // Snap to 8 px for tidy numbers.
-    const pixels = Math.max(0, Math.round((d.startVal + outward) / 8) * 8);
-    setSide(d.side, toUnits(pixels, d.side));
+    d.pos = d.side === "left" || d.side === "right" ? e.clientX : e.clientY;
+    if (Math.abs(d.pos - d.start) > 4) d.moved = true;
+    applyDrag(d);
   };
   const onHandleUp = () => {
+    cancelAnimationFrame(raf.current);
     drag.current = null;
+    move.current = null;
     setFrozenScale(null);
+    setPin(null);
   };
+  const placed = (p: typeof px, left: number, top: number): OutpaintSpec => placeInCanvas(p, left, top);
+  // Where the image sits: 0 = left/top, 0.5 = centre, 1 = right/bottom (the 3x3 grid).
+  const exX = px.left + px.right;
+  const exY = px.top + px.bottom;
+  const anchorAt = (ax: number, ay: number) => applyPixels({ left: Math.round(exX * ax), right: exX - Math.round(exX * ax), top: Math.round(exY * ay), bottom: exY - Math.round(exY * ay), units: "pixels" });
+  const anchored = (ax: number, ay: number) => Math.abs(px.left - Math.round(exX * ax)) <= 4 && Math.abs(px.top - Math.round(exY * ay)) <= 4;
 
   const preset = (k: Parameters<typeof expansionPreset>[0]) => applyPixels(expansionPreset(k, W, H, { ...px, units: "pixels" as Units }));
   const applyPixels = (next: OutpaintSpec) => {
@@ -176,14 +245,28 @@ export function ExpandEditor() {
           {W}×{H} ({aspectLabel(W, H)}) → <strong className="expand-final">{finalW}×{finalH} ({aspectLabel(finalW, finalH)})</strong>
         </span>
         <span className="spacer" />
-        <IconButton title="Cancel (Esc)" onClick={() => setState({ overlay: null })}>
+        <IconButton title="Cancel (Esc)" onClick={() => closeEditor()}>
           <X size={18} />
         </IconButton>
       </div>
       <div className="editor-stage" ref={stageRef} onPointerMove={onHandleMove} onPointerUp={onHandleUp}>
-        <div className="expand-area" style={{ width: cw, height: ch }}>
+        <div
+          className="expand-area"
+          style={{
+            width: cw,
+            height: ch,
+            // While a side is dragged its opposite edge holds still, so the handle follows the
+            // pointer (centred, it moved at half its speed).
+            transform: `translate(${pinShift(pin, "x", cw, stage.w)}px, ${pinShift(pin, "y", ch, stage.h)}px)`,
+          }}
+        >
           <div className="expand-canvas" style={{ left: 0, top: 0, width: cw, height: ch }} />
-          <div className="expand-src" style={{ left: px.left * scale, top: px.top * scale, width: W * scale, height: H * scale }}>
+          <div
+            className={`expand-src ${any ? "movable" : ""}`}
+            style={{ left: px.left * scale, top: px.top * scale, width: W * scale, height: H * scale }}
+            onPointerDown={onImageDown}
+            title={any ? "Drag to place the image in the new canvas" : undefined}
+          >
             <img src={src} alt="" draggable={false} />
           </div>
           <div className="handle h" style={{ left: 0, top: ch / 2 }} onPointerDown={onHandleDown("left")} title="Drag to extend left" />
@@ -252,6 +335,22 @@ export function ExpandEditor() {
                 />
               )}
             </Popover>
+            {/* Where the image goes in the new canvas: the extra space goes to the other sides. */}
+            <div className="anchor-grid" role="group" aria-label="Place the image">
+              {[0, 0.5, 1].map((ay) =>
+                [0, 0.5, 1].map((ax) => (
+                  <button
+                    key={`${ax}-${ay}`}
+                    className={any && anchored(ax, ay) ? "on" : ""}
+                    disabled={!any || (exX === 0 && ax !== 0.5) || (exY === 0 && ay !== 0.5)}
+                    onClick={() => anchorAt(ax, ay)}
+                    title={`Image ${ay === 0 ? "top" : ay === 1 ? "bottom" : ""}${ay !== 0.5 && ax !== 0.5 ? " " : ""}${ax === 0 ? "left" : ax === 1 ? "right" : ""}${ax === 0.5 && ay === 0.5 ? "centred" : ""}: the new space on the ${[ax === 0 ? "right" : ax === 1 ? "left" : exX ? "left and right" : "", ay === 0 ? "bottom" : ay === 1 ? "top" : exY ? "top and bottom" : ""].filter(Boolean).join(", ")}`}
+                  >
+                    <span />
+                  </button>
+                )),
+              )}
+            </div>
             <IconButton title="Reset" onClick={() => setSpec({ left: 0, right: 0, top: 0, bottom: 0, units: spec.units })}>
               <RotateCcw size={17} />
             </IconButton>
@@ -280,7 +379,7 @@ export function ExpandEditor() {
             title={tooBig ? `Max ${MAX_FINAL}px per side` : undefined}
             onClick={() => {
               updateComposer({ outpaint: spec, mask: null, mode: "auto" });
-              setState({ overlay: null });
+              closeEditor();
               focusPrompt();
             }}
           >

@@ -9,7 +9,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { urls } from "../lib/api";
 import { haptic } from "../lib/haptics";
-import { timeAgo } from "../lib/logic";
+import { projectTitle, timeAgo } from "../lib/logic";
 import { native } from "../lib/native";
 import { deleteProject, deleteProjects, newProject, renameProject, setState, switchProject, useStore, type ProjectMeta } from "../lib/store";
 import { Composer } from "./Composer";
@@ -62,6 +62,10 @@ export function PhoneApp() {
   // On a phone the sidebar's place is the library, a screen of its own.
   const library = useStore((s) => s.sidebar) || overlay === "gallery";
   useVisualViewport();
+  // No Layers lab on a phone (a window narrowed with it open): its layers are only looked at.
+  useEffect(() => {
+    if (overlay === "layers") setState({ overlay: null });
+  }, [overlay]);
   return (
     <div className="phone-app">
       {library ? <Library /> : <ProjectScreen />}
@@ -315,10 +319,8 @@ function ProjectCard({ p, current, picked, onOpen, onHold }: { p: ProjectMeta; c
         {p.cover && <DevelopImg src={urls.sourceThumb(p.cover)} lazy />}
         {picked !== null && <span className="pick-mark">{picked && <Check size={14} strokeWidth={3} />}</span>}
       </span>
-      <span className="lib-card-title">{p.title}</span>
-      <span className="lib-card-sub">
-        {p.count} {p.count === 1 ? "image" : "images"} · {timeAgo(p.updatedAt)}
-      </span>
+      <span className="lib-card-title">{projectTitle(p.title)}</span>
+      <span className="lib-card-sub">{timeAgo(p.updatedAt)}</span>
     </button>
   );
 }

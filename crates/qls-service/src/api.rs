@@ -80,6 +80,12 @@ pub fn router(state: Arc<AppState>, lan: bool) -> Router {
         .route("/models/dit", post(models_new_dit))
         .route("/upscalers", get(list_upscalers))
         .route("/upscalers/{name}/download", post(download_upscaler))
+        .route("/matte", get(matte_status).post(matte_image))
+        .route("/matte/download", post(matte_download))
+        .route("/matte/cancel", post(matte_cancel))
+        .route("/segment", get(segment_status))
+        .route("/segment/download", post(segment_download))
+        .route("/segment/models/{file}", get(segment_model))
         .route("/config", get(get_config).put(put_config))
         .route("/enhancer/defaults", get(enhancer_defaults))
         .route("/mac-engine/bench", get(mac_bench_status).post(mac_bench_start).delete(mac_bench_clear))
@@ -107,6 +113,7 @@ pub fn router(state: Arc<AppState>, lan: bool) -> Router {
         .route("/inputs/{id}/thumb", get(input_thumb))
         .route("/inputs/{id}/preview", get(input_preview))
         .route("/gallery", get(gallery_list))
+        .route("/gallery/layers", post(gallery_save_layers))
         .route("/gallery/{id}", get(gallery_get).patch(gallery_patch).delete(gallery_delete))
         .route("/gallery/{id}/image", get(gallery_image))
         .route("/gallery/{id}/thumb", get(gallery_thumb))
@@ -133,7 +140,10 @@ pub fn router(state: Arc<AppState>, lan: bool) -> Router {
         .route("/remote/password", post(remote_password).delete(remote_password_clear))
         .layer(middleware::from_fn_with_state(ctx.clone(), auth))
         .layer(DefaultBodyLimit::max(4 * 1024 * 1024));
-    let uploads = Router::new().route("/inputs", post(upload_input)).layer(DefaultBodyLimit::max(210 * 1024 * 1024));
+    let uploads = Router::new()
+        .route("/inputs", post(upload_input))
+        .route("/provenance/check", post(check_provenance))
+        .layer(DefaultBodyLimit::max(210 * 1024 * 1024));
     Router::new()
         .route("/api/v1/ping", get(ping))
         .route("/api/v1/auth/session", get(web::session))
@@ -275,7 +285,11 @@ async fn status(State(s): St) -> Json<Value> {
 
 async fn setup(State(s): St) -> ApiResult<Json<Value>> {
     let e = s.engine.clone();
-    let _ = tokio::task::spawn_blocking(move || e.place_bundled_upscaler()).await;
+    let _ = tokio::task::spawn_blocking(move || {
+        e.place_bundled_upscaler();
+        e.place_bundled_watermark();
+    })
+    .await;
     let cfg = s.engine.config();
     let srv_ok = s.engine.server.status().state == qls_core::process::ServerState::Ready;
     let e = s.engine.clone();
@@ -437,7 +451,11 @@ async fn install_start(State(s): St, Json(b): Json<InstallBody>) -> ApiResult<Js
     });
     // The bundled upscaler first, so it is not downloaded again.
     let e = s.engine.clone();
-    let _ = tokio::task::spawn_blocking(move || e.place_bundled_upscaler()).await;
+    let _ = tokio::task::spawn_blocking(move || {
+        e.place_bundled_upscaler();
+        e.place_bundled_watermark();
+    })
+    .await;
     let label = if user { format!("user:{}", preset.id) } else { preset.id.to_string() };
     s.engine.installer.start(cfg.sdcpp_dir.clone(), &label, downloads, on_finish)?;
     Ok(Json(serde_json::to_value(s.engine.installer.status()).unwrap()))
@@ -464,6 +482,87 @@ async fn download_upscaler(State(s): St, AxPath(name): AxPath<String>) -> ApiRes
     let dir = s.engine.config().sdcpp_dir;
     s.engine.installer.start(dir, &format!("upscaler:{name}"), vec![d], Box::new(|_| {}))?;
     Ok(Json(serde_json::to_value(s.engine.installer.status()).unwrap()))
+}
+
+/// The fast-sticker model (layers lab): there or not, and its download size.
+async fn matte_status(State(s): St) -> Json<Value> {
+    let path = qls_core::matting::model_path(&s.engine.config().sdcpp_dir);
+    Json(json!({ "installed": path.is_file(), "bytes": qls_core::matting::BIREFNET_LITE.size }))
+}
+
+async fn matte_download(State(s): St) -> ApiResult<Json<Value>> {
+    let dir = s.engine.config().sdcpp_dir;
+    s.engine.installer.start(dir, "matting", vec![qls_core::matting::BIREFNET_LITE], Box::new(|_| {}))?;
+    Ok(Json(serde_json::to_value(s.engine.installer.status()).unwrap()))
+}
+
+/// The layers lab's click-to-select model (MobileSAM, run in the webview): there or not, and its size.
+async fn segment_status(State(s): St) -> Json<Value> {
+    let dir = s.engine.config().sdcpp_dir;
+    let bytes: u64 = qls_core::matting::MOBILE_SAM.iter().map(|d| d.size).sum();
+    Json(json!({ "installed": qls_core::matting::sam_installed(&dir), "bytes": bytes }))
+}
+
+async fn segment_download(State(s): St) -> ApiResult<Json<Value>> {
+    let dir = s.engine.config().sdcpp_dir;
+    s.engine.installer.start(dir, "segment", qls_core::matting::MOBILE_SAM.to_vec(), Box::new(|_| {}))?;
+    Ok(Json(serde_json::to_value(s.engine.installer.status()).unwrap()))
+}
+
+/// One MobileSAM file, for onnxruntime-web in the webview (only these two names are served).
+async fn segment_model(State(s): St, AxPath(file): AxPath<String>) -> ApiResult<Response> {
+    let path = qls_core::matting::sam_file(&s.engine.config().sdcpp_dir, &file)
+        .filter(|p| p.is_file())
+        .ok_or_else(|| AppError::new(ErrorCode::NotFound, "The selection model is not downloaded."))?;
+    serve_file(&path, Some("application/octet-stream")).await
+}
+
+#[derive(Deserialize)]
+struct MatteBody {
+    /// "input:<id>" / "gen:<id>".
+    image: String,
+    /// The app's id for this cut-out, for Stop (`/matte/cancel`).
+    run: Option<String>,
+}
+
+/// The matte of an image (grey PNG at its size) for a fast sticker.
+async fn matte_image(State(s): St, Json(b): Json<MatteBody>) -> ApiResult<Response> {
+    let engine = s.engine.clone();
+    let image = b.image.clone();
+    // Every run has an id: when the app drops the request (Stop, the lab closed), the guard below
+    // stops the model too instead of letting it finish for no one.
+    let run = b.run.clone().unwrap_or_else(|| format!("auto-{}", uuid::Uuid::new_v4()));
+    struct StopIfDropped(String, bool);
+    impl Drop for StopIfDropped {
+        fn drop(&mut self) {
+            if !self.1 && qls_core::matting::cancel(&self.0) {
+                tracing::info!("quick cut-out {} dropped by the app: its model run stopped", self.0);
+            }
+        }
+    }
+    let mut guard = StopIfDropped(run.clone(), false);
+    let started = std::time::Instant::now();
+    let res = tokio::task::spawn_blocking(move || engine.matte(&b.image, Some(&run))).await.map_err(AppError::internal)?;
+    guard.1 = true;
+    // Logged: a quick cut-out that fails or crawls is otherwise invisible (the lab runs it in the window).
+    match &res {
+        Ok(_) => tracing::info!("quick cut-out matte of {image} in {} ms", started.elapsed().as_millis()),
+        Err(e) if e.code == ErrorCode::Cancelled => tracing::info!("quick cut-out matte of {image} stopped after {} ms", started.elapsed().as_millis()),
+        Err(e) => tracing::warn!("quick cut-out matte of {image} failed after {} ms: {} {:?}", started.elapsed().as_millis(), e.message, e.detail),
+    }
+    Ok(([(header::CONTENT_TYPE, "image/png")], res?).into_response())
+}
+
+#[derive(Deserialize)]
+struct MatteCancelBody {
+    run: String,
+}
+
+/// Stop for a quick cut-out: its model run ends at once (or as soon as it starts).
+async fn matte_cancel(Json(b): Json<MatteCancelBody>) -> Json<Value> {
+    let running = qls_core::matting::cancel(&b.run);
+    tracing::info!("quick cut-out {} stopped ({})", b.run, if running { "while running" } else { "before it ran" });
+    Json(json!({ "stopped": running }))
 }
 
 /// Upscaler models of earlier versions in the app's own folder (Settings offers to delete
@@ -931,6 +1030,14 @@ struct PrivateQ {
     private: bool,
 }
 
+/// "Check an image": what its AI markings say (provenance::check). The image is read in memory
+/// and never stored (the Code of Practice's zero retention for detection).
+async fn check_provenance(State(s): St, body: Bytes) -> ApiResult<Json<Value>> {
+    let dir = s.engine.config().sdcpp_dir;
+    let report = tokio::task::spawn_blocking(move || qls_core::provenance::check(&dir, &body)).await.map_err(AppError::internal)??;
+    Ok(Json(report))
+}
+
 async fn upload_input(State(s): St, Query(q): Query<PrivateQ>, headers: HeaderMap, body: Bytes) -> ApiResult<Json<Value>> {
     if body.is_empty() {
         return Err(AppError::invalid("The upload was empty.").into());
@@ -1121,6 +1228,9 @@ async fn gallery_get(State(s): St, AxPath(id): AxPath<String>) -> ApiResult<Json
 #[derive(Deserialize)]
 struct PatchBody {
     favorite: Option<bool>,
+    /// Left out of the gallery list (layers lab steps).
+    #[serde(default)]
+    hidden: Option<bool>,
 }
 
 async fn gallery_patch(State(s): St, AxPath(id): AxPath<String>, Json(b): Json<PatchBody>) -> ApiResult<Json<GenerationRecord>> {
@@ -1129,7 +1239,29 @@ async fn gallery_patch(State(s): St, AxPath(id): AxPath<String>, Json(b): Json<P
         store.set_favorite(&id, f)?;
         let _ = s.engine.events.send(qls_core::engine::Event::Gallery { id: id.clone(), change: "updated" });
     }
+    if let Some(h) = b.hidden {
+        store.set_hidden(&id, h)?;
+        let _ = s.engine.events.send(qls_core::engine::Event::Gallery { id: id.clone(), change: "updated" });
+    }
     Ok(Json(store.get_generation(&id)?))
+}
+
+#[derive(Deserialize)]
+struct LayersBody {
+    /// The flattened image ("input:<id>").
+    image: String,
+    /// The image the layers were split from.
+    #[serde(default)]
+    from: Option<String>,
+    #[serde(default)]
+    private: bool,
+}
+
+/// The layers lab's image, saved to the gallery (its steps are hidden there).
+async fn gallery_save_layers(State(s): St, Json(b): Json<LayersBody>) -> ApiResult<Json<GenerationRecord>> {
+    let engine = s.engine.clone();
+    let rec = tokio::task::spawn_blocking(move || engine.save_layers(&b.image, b.from.as_deref(), b.private)).await.map_err(AppError::internal)??;
+    Ok(Json(rec))
 }
 
 async fn gallery_delete(State(s): St, AxPath(id): AxPath<String>) -> ApiResult<Json<Value>> {
