@@ -535,8 +535,8 @@ async fn matte_image(State(s): St, Json(b): Json<MatteBody>) -> ApiResult<Respon
     struct StopIfDropped(String, bool);
     impl Drop for StopIfDropped {
         fn drop(&mut self) {
-            if !self.1 {
-                qls_core::matting::cancel(&self.0);
+            if !self.1 && qls_core::matting::cancel(&self.0) {
+                tracing::info!("quick cut-out {} dropped by the app: its model run stopped", self.0);
             }
         }
     }
