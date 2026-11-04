@@ -3,7 +3,7 @@ import {
   cutoutText,
   downloadIsFor,
   jobStepText,
-  macEngineOfferDue,
+  macEngineDefaultDue,
   modelChoiceUi,
   modelOfferDue,
   whatsNewDue,
@@ -700,19 +700,19 @@ describe("macBenchProgress", () => {
   });
 });
 
-describe("macEngineOfferDue", () => {
+describe("macEngineDefaultDue", () => {
   const gpu = (gb: number) => ({ name: "Apple M2 Pro", vendor: "apple", unified: true, memory_total_mib: gb * 1024, memory_used_mib: 0, memory_free_mib: 0, driver_version: "" });
   const st = (available: boolean, on: boolean, gb = 16) => ({ gpu: gpu(gb), mac_engine: { available, on } });
-  it("offers it once on a set-up Mac with the engine in the app", () => {
-    expect(macEngineOfferDue(st(true, false), {}, true)).toBe(true);
-    expect(macEngineOfferDue(st(true, false), { macEngineOffered: true }, true)).toBe(false);
+  it("switches it on once on a set-up Mac with the engine in the app", () => {
+    expect(macEngineDefaultDue(st(true, false), {}, true)).toBe(true);
+    expect(macEngineDefaultDue(st(true, false), { macEngineOffered: true }, true)).toBe(false);
   });
   it("not before setup, without the engine, when it is on, or below 16 GB", () => {
-    expect(macEngineOfferDue(st(true, false), {}, false)).toBe(false);
-    expect(macEngineOfferDue(st(false, false), {}, true)).toBe(false);
-    expect(macEngineOfferDue(st(true, true), {}, true)).toBe(false);
-    expect(macEngineOfferDue(st(true, false, 8), {}, true)).toBe(false);
-    expect(macEngineOfferDue({ gpu: null, mac_engine: undefined }, {}, true)).toBe(false);
+    expect(macEngineDefaultDue(st(true, false), {}, false)).toBe(false);
+    expect(macEngineDefaultDue(st(false, false), {}, true)).toBe(false);
+    expect(macEngineDefaultDue(st(true, true), {}, true)).toBe(false);
+    expect(macEngineDefaultDue(st(true, false, 8), {}, true)).toBe(false);
+    expect(macEngineDefaultDue({ gpu: null, mac_engine: undefined }, {}, true)).toBe(false);
   });
 });
 

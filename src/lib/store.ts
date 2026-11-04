@@ -9,11 +9,11 @@ import { inBrowser, isNarrow } from "./platform";
 import { useSyncExternalStore } from "react";
 import { markFresh } from "../components/Cocoon";
 import { api, ApiError, setPrivateInputs, subscribe, urls } from "./api";
-import { activeLoras, buildRequest, composing, emptyComposer, goneVersions, isGenericName, macEngineOfferDue, needsPrompt, newKey, pageOutdated, persistentAdvanced, refFromGen, refFromInput, reviewRequest, stageFitsPreview, starPromptDue, timelineLinks, typedWords, undoTarget, versionLabels, wantsPromptReview, type CompareMode, type Composer, type Ref } from "./logic";
+import { activeLoras, buildRequest, composing, emptyComposer, goneVersions, isGenericName, macEngineDefaultDue, needsPrompt, newKey, pageOutdated, persistentAdvanced, refFromGen, refFromInput, reviewRequest, stageFitsPreview, starPromptDue, timelineLinks, typedWords, undoTarget, versionLabels, wantsPromptReview, type CompareMode, type Composer, type Ref } from "./logic";
 import { keepLabsIn, labsChanged, labSources, loadLab, type LabStore } from "./layerDoc";
 import type { AppErrorBody, GenerationRecord, GenerationRequest, InputRecord, JobView, LoraItem, MacBenchState, ServerState, StatusResponse } from "./types";
 
-export type Overlay = null | "gallery" | "settings" | "inpaint" | "expand" | "layers" | "welcome" | "whats-new" | "mac-engine" | "prompt-tips" | "shortcuts" | "ai-check";
+export type Overlay = null | "gallery" | "settings" | "inpaint" | "expand" | "layers" | "welcome" | "whats-new" | "prompt-tips" | "shortcuts" | "ai-check";
 
 export interface SessionItem {
   key: string;
@@ -560,17 +560,27 @@ export function dismissToast(id: string) {
 
 let unsub: (() => void) | null = null;
 
-/** After Setup or What's new: the Mac engine offer when it is due (the answer decides which engine loads), else the
- * model loads in the background so the first image starts at once. */
+/** Kokon's Mac engine, the default on Macs it suits since 0.12: switched on once (`macEngineDefaultDue`), with a note
+ * on how to go back. Remembered like the 0.11 offer's answer, so a later "off" in Settings stays off. */
+export async function turnOnMacEngine(): Promise<void> {
+  try {
+    const cfg = await api.config();
+    const ui = { ...((cfg.ui ?? {}) as Record<string, unknown>), macEngineOffered: true };
+    await api.saveConfig({ ...cfg, macEngine: true, ui });
+    toastInfo("Kokon's Mac engine is on: about 4 times faster. LoRAs and the upscaler model need the standard engine (Settings → Performance).");
+  } catch (e) {
+    toastError(e);
+  }
+}
+
+/** After Setup or What's new: Kokon's Mac engine switched on when it is due (before the model loads, so it loads on
+ * it), then the model loads in the background so the first image starts at once. */
 export async function afterStartScreens() {
   try {
     const [cfg, st] = await Promise.all([api.config(), api.status()]);
-    if (!inBrowser && macEngineOfferDue(st, (cfg.ui ?? {}) as Record<string, unknown>, cfg.setupComplete)) {
-      setState({ overlay: "mac-engine" });
-      return;
-    }
+    if (!inBrowser && macEngineDefaultDue(st, (cfg.ui ?? {}) as Record<string, unknown>, cfg.setupComplete)) await turnOnMacEngine();
   } catch {
-    // The offer can wait for the next start; the model still loads.
+    // It can wait for the next start; the model still loads.
   }
   api.startBackend().then(refreshStatus, () => refreshStatus());
 }

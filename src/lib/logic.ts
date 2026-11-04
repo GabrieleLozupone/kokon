@@ -723,9 +723,10 @@ export function modelChoiceUi(choice: "later" | "keep", version: string): Record
   return choice === "keep" ? { ownModelKept: true } : { modelUpdateSkipped: version };
 }
 
-/** Offer Kokon's Mac engine once, at start: set up, the engine in the app, off, never asked. Not below 16 GB: the
- * engine peaks at ~9 GB during a 1024² decode (M2 Pro, Benchmark button 2026-10-26) and was never run on 8 GB. */
-export function macEngineOfferDue(st: Pick<StatusResponse, "gpu" | "mac_engine"> | null, ui: Record<string, unknown>, setupComplete: boolean): boolean {
+/** Kokon's Mac engine is the default on Macs since 0.12: switch it on once, at start, when set up, the engine is in
+ * the app, it is off and nobody chose yet (`macEngineOffered`: the 0.11 offer's "Not now" or this switch). Not below
+ * 16 GB: the engine peaks at ~9 GB during a 1024² decode (M2 Pro, Benchmark button 2026-10-26) and was never run on 8 GB. */
+export function macEngineDefaultDue(st: Pick<StatusResponse, "gpu" | "mac_engine"> | null, ui: Record<string, unknown>, setupComplete: boolean): boolean {
   const engine = st?.mac_engine;
   return setupComplete && !!engine?.available && !engine.on && !ui.macEngineOffered && (st?.gpu?.memory_total_mib ?? 0) >= 15 * 1024;
 }

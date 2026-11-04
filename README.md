@@ -615,9 +615,10 @@ image at Balanced in about 80 s (first image, model loading included); Intel Arc
 untested, and integrated graphics are not supported. Please
 [open an issue](https://github.com/GabrieleLozupone/kokon/issues) with your card and how it went.
 
-Mac: yes, in beta, on Apple Silicon (M1 or newer) with macOS 15 Sequoia or newer. It runs on a
-16 GB Mac in a lighter mode, but slowly (about 4 minutes per 1-megapixel image on an M2 Pro);
-32 GB or more and a Pro, Max or Ultra chip are recommended. See the [requirements](#requirements)
+Mac: yes, in beta, on Apple Silicon (M1 or newer) with macOS 15 Sequoia or newer. Since 0.12 Kokon runs its own
+Mac engine by default on Macs with 16 GB or more: about a minute per new 1-megapixel image on an M2 Pro (about 106 s
+for an edit), four times faster than before. LoRAs and the upscaler model still use the standard engine (Settings →
+Performance). 32 GB or more and a Pro, Max or Ultra chip are recommended. See the [requirements](#requirements)
 and [docs/platforms.md](docs/platforms.md).
 
 Linux: yes, in beta, on x86-64 with a `.deb` (Ubuntu, Debian, Mint) or an `.rpm` (Fedora). NVIDIA
