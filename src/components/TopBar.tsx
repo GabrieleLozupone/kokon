@@ -1,7 +1,8 @@
 // The top bar: the project's title, then undo/redo, the update pill, the status capsule,
-// private mode, shortcuts and (only while the sidebar is hidden) Settings, then the window's
+// private mode, the Help menu (shortcuts, video guides, prompt tips) and (only while the sidebar is hidden) Settings, then the window's
 // buttons. Its own file so the launch video (marketing/video) shows the same bar.
-import { ArrowDownToLine, CircleHelp, EyeOff, PanelLeft, Redo2, Settings, SquarePen, Undo2 } from "lucide-react";
+import { ArrowDownToLine, CircleHelp, CirclePlay, EyeOff, Keyboard, Lightbulb, PanelLeft, Redo2, Settings, SquarePen, Undo2 } from "lucide-react";
+import type { ReactNode } from "react";
 import { api } from "../lib/api";
 import { native } from "../lib/native";
 import { haptic } from "../lib/haptics";
@@ -11,7 +12,8 @@ import { installUpdate } from "../lib/updates";
 import { SilkSpin } from "./Cocoon";
 import { ProjectTitle, Wordmark } from "./Sidebar";
 import { WindowControls } from "./TitleBar";
-import { IconButton } from "./ui";
+import { VIDEOS } from "../lib/videos";
+import { IconButton, Popover } from "./ui";
 
 /** `quiet`: nothing while the model is loaded and idle (the phone bar has no room for "all is well"). */
 export function StatusIndicator({ quiet = false }: { quiet?: boolean }) {
@@ -117,6 +119,42 @@ export function togglePrivateMode() {
   setPrivateMode(!getState().privateMode, () => native.confirm("Turn off private mode? The images made in private mode will be deleted.", "Private mode"));
 }
 
+/** The "?" button: shortcuts, the video guides on YouTube (opened in the browser) and the prompt tips. */
+export function HelpMenu() {
+  const item = (icon: ReactNode, label: string, onClick: () => void, sub?: string) => (
+    <button className="opt" role="menuitem" onClick={onClick}>
+      <span className="check">{icon}</span>
+      <span>{label}</span>
+      {sub && <span className="sub">{sub}</span>}
+    </button>
+  );
+  const video = (v: { url: string; title: string }, close: () => void) =>
+    item(<CirclePlay size={15} />, v.title, () => (close(), native.openLink(v.url).catch(toastError)));
+  return (
+    <Popover
+      className="help-menu"
+      placement="bottom-end"
+      trigger={(open, toggle) => (
+        <button className={`icon-btn ${open ? "active" : ""}`} title="Help" aria-label="Help" aria-haspopup="menu" aria-expanded={open} onClick={toggle}>
+          <CircleHelp size={18} />
+        </button>
+      )}
+    >
+      {(close) => (
+        <div role="menu" aria-label="Help">
+          {item(<Keyboard size={15} />, "Keyboard shortcuts", () => (close(), setState({ overlay: "shortcuts" })), "?")}
+          {item(<Lightbulb size={15} />, "Prompt tips", () => (close(), setState({ overlay: "prompt-tips" })))}
+          <div className="menu-sep" />
+          <div className="label">Video guides · YouTube</div>
+          {video(VIDEOS.useCases, close)}
+          {video(VIDEOS.update012, close)}
+          {video(VIDEOS.remote011, close)}
+        </div>
+      )}
+    </Popover>
+  );
+}
+
 export function TopBar() {
   const overlay = useStore((s) => s.overlay);
   const needsSetup = useStore((s) => s.needsSetup);
@@ -142,9 +180,7 @@ export function TopBar() {
         <UpdatePill />
         <StatusIndicator />
         {!needsSetup && <PrivateToggle />}
-        <IconButton title="Shortcuts (?)" onClick={() => setState({ overlay: "shortcuts" })}>
-          <CircleHelp size={18} />
-        </IconButton>
+        <HelpMenu />
         {/* Settings lives at the foot of the sidebar; here only while the sidebar is hidden. */}
         {(!sidebar || needsSetup) && (
           <IconButton title="Settings" onClick={() => setState({ overlay: "settings" })}>

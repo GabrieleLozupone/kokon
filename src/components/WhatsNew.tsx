@@ -1,9 +1,11 @@
-import { CircleAlert, FolderTree, Layers, Palette, ShieldCheck, Sparkles, WandSparkles } from "lucide-react";
+import { CircleAlert, CirclePlay, FolderTree, Layers, Palette, ShieldCheck, Sparkles, WandSparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { formatBytes, installProgress, installStep, installTimeLeft, modelChoiceUi, modelOfferDue, whatsNewDue as due } from "../lib/logic";
 import { afterStartScreens, refreshStatus, setState, toastError, useStore } from "../lib/store";
 import type { GpuBackend, InstallItem, InstallStatus, ModelsStatus } from "../lib/types";
+import { native } from "../lib/native";
+import { VIDEOS } from "../lib/videos";
 import { KokonMark } from "./Welcome";
 
 /** The release these notes describe. Shown once to people updating from an earlier version. */
@@ -14,6 +16,7 @@ const NEWS = [
     icon: Layers,
     title: "Layers lab (experimental)",
     text: "Split a photo into layers: click the objects, Kokon cuts them out and fills the background behind them. Move, resize, hide or edit each one, draw new objects with the pencil, then save one image or a PSD for Photoshop.",
+    video: VIDEOS.update012.url,
   },
   {
     icon: Sparkles,
@@ -179,11 +182,21 @@ export function WhatsNew() {
         <KokonMark size={44} />
         <h1>What's new in Kokon {WHATS_NEW_VERSION}</h1>
         <div className="welcome-grid">
-          {NEWS.map(({ icon: Icon, title, text }) => (
+          {NEWS.map(({ icon: Icon, title, text, video }: { icon: typeof Layers; title: string; text: string; video?: string }) => (
             <div className="welcome-item" key={title}>
               <Icon size={20} />
               <strong>{title}</strong>
-              <span>{text}</span>
+              <span>
+                {text}
+                {video && (
+                  <>
+                    {" "}
+                    <button className="link-btn" onClick={() => native.openLink(video).catch(toastError)} title="On YouTube (opens in your browser)">
+                      <CirclePlay size={13} /> Watch the 0.12 video
+                    </button>
+                  </>
+                )}
+              </span>
             </div>
           ))}
         </div>

@@ -60,7 +60,7 @@ export const native = {
   reveal: (path: string) => invoke<void>("reveal", { path }),
   openFolder: (path: string) => invoke<void>("open_folder", { path }),
   dataFolder: () => invoke<string>("data_folder"),
-  /** https links to github.com / huggingface.co only (desktop). */
+  /** https links to github.com / huggingface.co / kokon.app / youtu.be only (desktop). */
   openLink: async (url: string) => {
     if (inBrowser) window.open(url, "_blank", "noopener,noreferrer");
     else await invoke<void>("open_link", { url });

@@ -1330,3 +1330,10 @@ kbd { min-width: 22px; height: 22px; padding: 0 6px; border-radius: 6px; display
 .blend-buttons { display: flex; gap: 8px; }
 @media (max-width: 560px) { .blend-fields { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .split-choice, .split-card { animation: none; transition: none; } }
+/* Help menu ("?" in the top bar): shortcuts, prompt tips, the video guides. */
+.popover.help-menu { width: 300px; }
+.popover.help-menu .opt > span:not(.check):not(.sub) { flex: 1; min-width: 0; }
+.popover.help-menu .opt .check { flex: none; color: var(--text-2); }
+.welcome-item .link-btn { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; vertical-align: baseline; }
+.welcome-item .link-btn svg { margin: 0; }
+.row-btns { display: flex; gap: 6px; flex: none; }

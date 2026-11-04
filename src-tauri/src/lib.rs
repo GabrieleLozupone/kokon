@@ -259,7 +259,8 @@ fn open_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
 #[tauri::command]
 fn open_link(app: tauri::AppHandle, url: String) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
-    let allowed = ["https://github.com/", "https://huggingface.co/", "https://kokon.app/"];
+    // youtu.be: the video guides (src/lib/videos.ts), opened in the browser, never embedded.
+    let allowed = ["https://github.com/", "https://huggingface.co/", "https://kokon.app/", "https://youtu.be/"];
     if !allowed.iter().any(|p| url.starts_with(p)) || url.chars().any(|c| c.is_whitespace() || c == '"') {
         return Err("This link cannot be opened from the app.".into());
     }
