@@ -12,6 +12,8 @@ pub mod heif;
 pub mod imaging;
 pub mod installer;
 pub mod lora;
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+mod glibc_compat;
 pub mod lut;
 pub mod matting;
 pub mod mac_bench;
