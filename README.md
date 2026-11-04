@@ -495,6 +495,8 @@ Kokon makes only two kinds of network request:
 
 - **Setup:** `github.com` for the stable-diffusion.cpp release (and the MoSR upscaler, if the copy
   that comes with the app is missing) and `huggingface.co` for the models and the other upscalers.
+  The AI watermark's models come with the app; Adobe's model host (`cai-watermark.adobe.net`) is
+  contacted only if that copy is missing.
 - **Update check:** at most once a day, the app fetches `latest.json` from this repository's
   latest GitHub release, a small file with the newest version number. Nothing about you or your
   images is sent. Turn it off on the welcome screen or in Settings → General. Updates are
@@ -844,6 +846,13 @@ place to start. Please run the tests above before opening a pull request.
 
 Kokon edits real photos. Don't use it to deceive, harass or impersonate people, or to make
 images of someone without their consent. You are responsible for what you create and share.
+
+Every image Kokon makes or changes with AI is marked as such, as the EU AI Act asks: in the file's
+metadata (IPTC Digital Source Type) and with an invisible watermark ([TrustMark](https://github.com/adobe/trustmark),
+the text `Kokon-AI`) that survives JPEG, resizing and screenshots. Please don't remove these
+marks. If you publish a realistic image of real people, places or events, say that it was made
+or changed with AI. Settings → General → **Check an image** reads the marks of any image;
+[docs/ai-marking.md](docs/ai-marking.md) has the details.
 
 ## License
 

@@ -64,6 +64,8 @@ export interface GenerationRequest {
   enhance?: boolean;
   /** Prompt+ review: only write the prompt (the job ends with `enhanced_prompt` and no image). */
   enhance_only?: boolean;
+  /** Prompt+ "Detailed": a longer prompt with more context about what is there or what changes. */
+  enhance_detail?: boolean;
   /** Layers lab "Blend into scene": only read the place the object with this name stands in
    * (the job ends with `scene` and no image). */
   read_scene?: string;

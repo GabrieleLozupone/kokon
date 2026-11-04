@@ -1,15 +1,65 @@
 // Click-to-select for the layers lab (components/LayersEditor.tsx): MobileSAM (Apache-2.0, Acly's
-// ONNX export, MIT) run in the webview with onnxruntime-web. Experimental: the model files are not
-// shipped; the vite dev server serves them from `lab-models/mobilesam/` (gitignored). The planned
-// app version runs SAM in kokon-service instead.
+// ONNX export, MIT) run in the webview with onnxruntime-web. kokon-service downloads the two files
+// the first time Select is used (44 MB, pinned: crates/qls-core/src/matting.rs MOBILE_SAM) and serves
+// them; without the service's copy, the vite dev server's `lab-models/mobilesam/` (gitignored).
 //
 // The encoder runs once per image (longest side 1024, 0-255 RGB, HWC); the decoder runs per click
 // on the cached embeddings and returns SAM's 4 masks at the size asked for: index 0 = the single-mask
 // output, 1-3 = sub-part / part / whole (their order and the predicted IoU are unreliable, S1).
 
 import type * as Ort from "onnxruntime-web";
+import { api, urls } from "./api";
 
-const MODEL_DIR = "/lab-models/mobilesam/";
+const DEV_DIR = "/lab-models/mobilesam/";
+const ENCODER = "mobile_sam_image_encoder.onnx";
+const DECODER = "sam_mask_decoder_multi.onnx";
+
+/** Everyone waiting for the one download (the lab's split and scene both load the model at once). */
+const progressListeners = new Set<(pct: number) => void>();
+let downloading: Promise<void> | null = null;
+
+/** Downloads the files through kokon-service and waits for it. A request the service refuses
+ * because an install is already running (the other caller's) still waits for that install: before,
+ * the refusal read as "could not be downloaded" while the download went on (Mac, 2026-11-04). */
+async function download() {
+  try {
+    await api.downloadSegment();
+  } catch (e) {
+    console.warn("segment download not started (another install running?)", e);
+  }
+  progressListeners.forEach((f) => f(0));
+  for (;;) {
+    await new Promise((r) => window.setTimeout(r, 700));
+    const i = await api.installStatus().catch(() => null);
+    if (!i) break;
+    const items = i.items.filter((x) => x.id.startsWith("mobile_sam"));
+    if (items.some((x) => x.state === "failed" || x.state === "cancelled")) break;
+    const size = items.reduce((n, x) => n + (x.size || 0), 0);
+    if (size) {
+      const pct = Math.floor((100 * items.reduce((n, x) => n + x.received, 0)) / size);
+      progressListeners.forEach((f) => f(pct));
+    }
+    if (!i.running) break;
+  }
+}
+
+/** Where the model files are: kokon-service's copy (downloaded now if it isn't there, `onProgress`
+ * 0-100), else the dev server's. Null when neither has them. */
+async function modelUrls(onProgress?: (pct: number) => void): Promise<((file: string) => string) | null> {
+  const st = await api.segmentStatus().catch(() => null);
+  if (st && !st.installed) {
+    if (onProgress) progressListeners.add(onProgress);
+    try {
+      await (downloading ??= download().finally(() => (downloading = null)));
+    } finally {
+      if (onProgress) progressListeners.delete(onProgress);
+    }
+  }
+  if ((await api.segmentStatus().catch(() => null))?.installed) return urls.segmentModel;
+  const head = await fetch(DEV_DIR + DECODER, { method: "HEAD" }).catch(() => null);
+  if (head?.ok && !head.headers.get("content-type")?.includes("text/html")) return (f) => DEV_DIR + f;
+  return null;
+}
 const SIDE = 1024;
 
 let ort: Promise<typeof Ort> | null = null;
@@ -33,10 +83,10 @@ export class Segmenter {
     readonly device: string,
   ) {}
 
-  /** Null when the model files are not there (a release build). */
-  static async load(webgpu = true): Promise<Segmenter | null> {
-    const head = await fetch(MODEL_DIR + "sam_mask_decoder_multi.onnx", { method: "HEAD" }).catch(() => null);
-    if (!head?.ok || head.headers.get("content-type")?.includes("text/html")) return null;
+  /** Null when the model files could not be had (no service copy, the download failed). */
+  static async load(webgpu = true, onProgress?: (pct: number) => void): Promise<Segmenter | null> {
+    const at = await modelUrls(onProgress);
+    if (!at) return null;
     const o = await loadOrt();
     o.env.logLevel = "error";
     // WebGPU when the webview has it, else WASM (one thread: the page is not cross-origin isolated).
@@ -44,14 +94,14 @@ export class Segmenter {
     let device = "wasm";
     if (webgpu && "gpu" in navigator) {
       try {
-        enc = await o.InferenceSession.create(MODEL_DIR + "mobile_sam_image_encoder.onnx", { executionProviders: ["webgpu"] });
+        enc = await o.InferenceSession.create(at(ENCODER), { executionProviders: ["webgpu"] });
         device = "webgpu";
       } catch {
         enc = null;
       }
     }
-    enc ??= await o.InferenceSession.create(MODEL_DIR + "mobile_sam_image_encoder.onnx", { executionProviders: ["wasm"] });
-    const dec = await o.InferenceSession.create(MODEL_DIR + "sam_mask_decoder_multi.onnx", { executionProviders: ["wasm"] });
+    enc ??= await o.InferenceSession.create(at(ENCODER), { executionProviders: ["wasm"] });
+    const dec = await o.InferenceSession.create(at(DECODER), { executionProviders: ["wasm"] });
     return new Segmenter(o, enc, dec, device);
   }
 

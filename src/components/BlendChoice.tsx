@@ -50,10 +50,13 @@ export function BlendChoice({ rows, onChange, onBlend, onCancel }: { rows: Blend
             <X size={18} />
           </IconButton>
         </span>
-        <h2 id="blend-choice-title">Blend into the scene</h2>
+        <h2 id="blend-choice-title">
+          Blend into the scene <span className="exp-tag">Experimental</span>
+        </h2>
         <p className="split-choice-lead">
           The AI looked at where {rows.length === 1 ? "the object stands" : "each object stands"}. It redraws the scene with what that place does: the contact shadow, the
-          shadow, a reflection on wet or shiny ground. Check what it read and change anything that is wrong.
+          shadow, a reflection on wet or shiny ground. Check what it read and change anything that is wrong. It is
+          experimental and often does not work yet: blending all the objects at once works best.
         </p>
         <div className="blend-rows">
           {rows.map((row) => {

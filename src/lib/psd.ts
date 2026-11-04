@@ -1,6 +1,24 @@
 // Layered Photoshop file (.psd, 8-bit RGB) of the Layers lab's document: each layer a pixel layer
 // cropped to what it shows, RLE (PackBits) channels, and the flattened image for apps that read
-// only that. Layer names in Unicode ('luni'), hidden layers kept hidden.
+// only that. Layer names in Unicode ('luni'), hidden layers kept hidden. The AI marking (as in
+// crates/qls-core/src/provenance.rs) is an XMP packet in image resource 1060, where Photoshop keeps its own.
+
+/** The XMP marking a layered lab file: IPTC Digital Source Type "composite with trained algorithmic media"
+ * (the lab's layers come from the model: split, filled behind, blended), Kokon as the creator tool, the date. */
+export function aiMarkingXmp(appVersion: string, date = new Date()): string {
+  const pad = (n: number) => String(Math.floor(Math.abs(n))).padStart(2, "0");
+  const off = -date.getTimezoneOffset();
+  const when =
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}` +
+    `${off < 0 ? "-" : "+"}${pad(off / 60)}:${pad(off % 60)}`;
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return (
+    `<?xpacket begin="\u{feff}" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Kokon"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">` +
+    `<rdf:Description rdf:about="" xmlns:Iptc4xmpExt="http://iptc.org/std/Iptc4xmpExt/2008-02-29/" xmlns:xmp="http://ns.adobe.com/xap/1.0/" ` +
+    `Iptc4xmpExt:DigitalSourceType="http://cv.iptc.org/newscodes/digitalsourcetype/compositeWithTrainedAlgorithmicMedia" ` +
+    `xmp:CreatorTool="Kokon ${esc(appVersion)}" xmp:CreateDate="${when}"/></rdf:RDF></x:xmpmeta><?xpacket end="w"?>`
+  );
+}
 
 export interface PsdLayer {
   name: string;
@@ -114,8 +132,9 @@ function opaqueBox(rgba: Uint8ClampedArray, W: number, H: number) {
   return x1 < 0 ? null : { x0, y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
 }
 
-/** The .psd file: `layers` top first (as the lab lists them), `flat` the flattened image (opaque). */
-export function writePsd(width: number, height: number, layers: PsdLayer[], flat: Uint8ClampedArray): Uint8Array {
+/** The .psd file: `layers` top first (as the lab lists them), `flat` the flattened image (opaque), `xmp` the
+ * metadata packet (aiMarkingXmp) as image resource 1060. */
+export function writePsd(width: number, height: number, layers: PsdLayer[], flat: Uint8ClampedArray, xmp?: string): Uint8Array {
   const w = new Writer();
   // Header: RGB, 8 bits, 3 channels in the flattened image.
   w.ascii("8BPS");
@@ -127,7 +146,18 @@ export function writePsd(width: number, height: number, layers: PsdLayer[], flat
   w.u16(8);
   w.u16(3);
   w.u32(0); // colour mode data
-  w.u32(0); // image resources
+  // Image resources: one block, "8BIM", id 1060 (XMP), an empty Pascal name padded to even, the UTF-8 packet padded to even.
+  const endResources = w.length();
+  if (xmp) {
+    const data = new TextEncoder().encode(xmp);
+    w.ascii("8BIM");
+    w.u16(1060);
+    w.u16(0);
+    w.u32(data.length);
+    w.bytes(data);
+    if (data.length % 2) w.u8(0);
+  }
+  endResources();
 
   const endMasks = w.length();
   const endInfo = w.length();

@@ -81,6 +81,18 @@ export interface RemoteStatus {
 
 const json = (body: unknown) => JSON.stringify(body);
 
+/** The answer of "Check an image" (crates/qls-core/src/provenance.rs `check`). */
+export interface AiCheckReport {
+  ai: boolean;
+  metadata: { digital_source_type: string | null; ai: boolean; creator_tool: string | null; c2pa_manifest: boolean };
+  watermark: { checked: boolean; found?: boolean; kokon?: boolean; text?: string; schema?: string };
+  width: number;
+  height: number;
+  sha256: string;
+  checked_at: string;
+  checker: string;
+}
+
 export const api = {
   status: () => call<StatusResponse>("/status"),
   setup: () => call<SetupReport>("/setup"),
@@ -113,6 +125,10 @@ export const api = {
   upscalers: () => call<{ selected: string; active: string | null; items: UpscalerItem[] }>("/upscalers"),
   /** Progress in `installStatus` (preset "upscaler:<name>"). */
   downloadUpscaler: (name: string) => call<InstallStatus>(`/upscalers/${encodeURIComponent(name)}/download`, { method: "POST" }),
+  /** The click-to-select model (MobileSAM, run here in the webview): there or not, and its size. */
+  segmentStatus: () => call<{ installed: boolean; bytes: number }>("/segment"),
+  /** Progress in `installStatus` (preset "segment"). */
+  downloadSegment: () => call<InstallStatus>("/segment/download", { method: "POST" }),
   /** The fast-sticker model of the layers lab: there or not, and its download size. */
   matteStatus: () => call<{ installed: boolean; bytes: number }>("/matte"),
   /** Progress in `installStatus` (preset "matting"). */
@@ -158,6 +174,9 @@ export const api = {
   cancel: (id: string) => call<JobView>(`/jobs/${id}/cancel`, { method: "POST" }),
   upload: (bytes: Blob | ArrayBuffer | Uint8Array, name?: string) =>
     call<InputRecord>(`/inputs${privateQuery()}`, { method: "POST", body: bytes as BodyInit, headers: { "Content-Type": "application/octet-stream", ...(name ? { "x-filename": encodeURIComponent(name) } : {}) } }),
+  /** What an image's AI markings say (metadata and Kokon's invisible watermark); nothing is kept. */
+  checkImage: (bytes: Blob | ArrayBuffer | Uint8Array) =>
+    call<AiCheckReport>("/provenance/check", { method: "POST", body: bytes as BodyInit, headers: { "Content-Type": "application/octet-stream" } }),
   importPath: (path: string) => call<InputRecord>(`/inputs/import${privateQuery()}`, { method: "POST", body: json({ path }) }),
   clearPrivate: () => call<{ cleared: number }>("/private/clear", { method: "POST" }),
   input: (id: string) => call<InputRecord>(`/inputs/${id}`),
@@ -235,6 +254,8 @@ export const urls = {
   lutPreview: (name: string, source: string, max: number) => `${base}/luts/${encodeURIComponent(name)}/preview?source=${encodeURIComponent(source)}&max=${max}${tq("&")}`,
   sourcePreview: (s: string) => (s.startsWith("gen:") ? urls.genPreview(s.slice(4)) : urls.inputPreview(s.slice(6))),
   sourceThumb: (s: string) => (s.startsWith("gen:") ? urls.genThumb(s.slice(4)) : urls.inputThumb(s.slice(6))),
+  /** A MobileSAM file kokon-service downloaded (`segmentStatus`). */
+  segmentModel: (file: string) => `${base}/segment/models/${file}${tq("?")}`,
 };
 
 /** Server-sent events with automatic reconnect. Returns an unsubscribe function. */

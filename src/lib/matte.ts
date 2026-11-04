@@ -124,6 +124,23 @@ export function stickerAlpha(matte: Float32Array, sel: Mask, w: number, h: numbe
   return dropsPiece(a, sel, w, h) ? { alpha: bandAlpha(matte, sel, w, h), fellBack: true } : { alpha: a, fellBack: false };
 }
 
+/** How much of the selection the sticker keeps (0-1): the share of selected pixels with alpha over
+ * one half. A quick cut-out that keeps almost nothing failed (an empty or wrong matte), and must
+ * say so instead of putting an invisible layer in place of the object. */
+export function keptShare(alpha: Float32Array, sel: Mask): number {
+  let inside = 0;
+  let kept = 0;
+  for (let i = 0; i < sel.length; i++) {
+    if (sel[i] <= 127) continue;
+    inside++;
+    if (alpha[i] > 0.5) kept++;
+  }
+  return inside ? kept / inside : 0;
+}
+
+/** Below this share of its selection kept, a quick cut-out counts as failed. */
+export const MIN_KEPT = 0.2;
+
 /** Foreground colours of `rgba` under `alpha` (0-1): what the edge pixels would be without the
  * background mixed in (multilevel estimation of Germer, Uelwer, Conrad, Harmeling 2020, as in
  * pymatting's estimate_foreground_ml: coarse to fine, F and B solved per pixel from the neighbours). */

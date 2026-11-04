@@ -2,6 +2,7 @@ import { Brush, Check, Contrast, Eraser, Hand, Loader2, MousePointerClick, Palet
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, urls } from "../lib/api";
 import { area, dilate, fromLogits, maskOrder, samSelection } from "../lib/layers";
+import { withActionVerb } from "../lib/logic";
 import { inBrowser, shortcut } from "../lib/platform";
 import { Segmenter, type SamResult } from "../lib/sam";
 import { MARK_COLOURS, marksPrompt, type MarkColour } from "../lib/sceneEdit";
@@ -63,6 +64,8 @@ export function InpaintEditor() {
   const [colour, setColour] = useState<MarkColour>("red");
   const [wants, setWantsState] = useState<Partial<Record<MarkColour, string>>>(() => lastWants.get(ref0?.source ?? "") ?? {});
   const [used, setUsed] = useState<MarkColour[]>([]);
+  /** Where each colour is on the image (0-1): its box goes there, above it. */
+  const [where, setWhere] = useState<Partial<Record<MarkColour, Box>>>({});
   const [tool, setTool] = useState<"brush" | "eraser" | "pan" | "select">("brush");
   const [spacePressed, setSpacePressed] = useState(false);
   // Right button held: the other tool is in use, and the toolbar shows it.
@@ -70,6 +73,8 @@ export function InpaintEditor() {
   const [brush, setBrush] = useState(48); // in screen px
   const [busy, setBusy] = useState(false);
   const [sam, setSam] = useState<"idle" | "loading" | "ready" | "missing" | "error">("idle");
+  // The selection model being downloaded (the first time), in %.
+  const [samPct, setSamPct] = useState<number | null>(null);
   const [selecting, setSelecting] = useState(false);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -157,7 +162,11 @@ export function InpaintEditor() {
 
   useEffect(() => {
     redraw(ops);
-    if (colours) setUsed(coloursOn(canvasRef.current, mw, mh));
+    if (colours) {
+      const on = coloursOn(canvasRef.current, mw, mh);
+      setUsed(on.used);
+      setWhere(on.where);
+    }
   }, [ops, redraw, colours, mw, mh]);
 
   /** Colours <-> Area: the drawing starts again (one kind per request). */
@@ -192,8 +201,9 @@ export function InpaintEditor() {
     setSam("loading");
     (async () => {
       try {
-        const s = await Segmenter.load();
+        const s = await Segmenter.load(true, (pct) => open.current && setSamPct(pct));
         if (!open.current) return;
+        setSamPct(null);
         if (!s) return setSam("missing");
         const img = new Image();
         img.crossOrigin = "anonymous";
@@ -230,7 +240,7 @@ export function InpaintEditor() {
   const select = async (x: number, y: number, remove: boolean) => {
     const s = segmenter.current;
     if (!s) {
-      toastInfo(sam === "missing" ? "The selection model is not in this build yet: paint with the brush." : sam === "error" ? "The selection model could not start: paint with the brush." : "The selection model is still getting ready.");
+      toastInfo(sam === "missing" ? "The selection model could not be downloaded: paint with the brush." : samPct != null ? `Downloading the selection model… ${samPct}%` : sam === "error" ? "The selection model could not start: paint with the brush." : "The selection model is still getting ready.");
       return;
     }
     const prev = lastClick.current;
@@ -458,7 +468,10 @@ export function InpaintEditor() {
         // Colours: the prompt names each colour's thing (Prompt+, when on, rewrites it seeing the marks).
         const named = used.some((u) => wants[u]?.trim());
         const prompt = marks && (named || !getState().composer.prompt.trim()) ? marksPrompt(used.map((u) => ({ colour: u, what: wants[u] ?? "" }))) : undefined;
-        updateComposer({ mask: { inputId: rec.id, refKey, ...(marks ? { marks } : {}) }, outpaint: null, mode: "auto", ...(prompt ? { prompt, enhancedFrom: null } : {}) });
+        // Area: the action's words start the prompt (Remove by default), unless something is typed.
+        const c0 = getState().composer;
+        const verb = !marks && !c0.prompt.trim() ? withActionVerb("", c0.inpaintAction) : undefined;
+        updateComposer({ mask: { inputId: rec.id, refKey, ...(marks ? { marks } : {}) }, outpaint: null, mode: "auto", ...(prompt ? { prompt, enhancedFrom: null } : verb ? { prompt: verb, enhancedFrom: null } : {}) });
       }
       closeEditor();
       focusPrompt();
@@ -479,9 +492,11 @@ export function InpaintEditor() {
 
   const selectTitle =
     sam === "missing"
-      ? "Select (S): the selection model is not in this build yet"
+      ? "Select (S): the selection model could not be downloaded (open the editor again to retry)"
       : sam === "loading"
-        ? "Select (S): getting the selection model ready…"
+        ? samPct != null
+          ? `Select (S): downloading the selection model (44 MB, once)… ${samPct}%`
+          : "Select (S): getting the selection model ready…"
         : `Select (S): click an object to ${colours ? "fill it with the colour" : "paint it"} · click again for a bigger part · right-click takes it out`;
 
   return (
@@ -543,6 +558,34 @@ export function InpaintEditor() {
                 onPointerCancel={onUp}
                 onPointerLeave={() => setCursor(null)}
               />
+              {/* What goes at each colour, on the image above its area (below when that is at the top). */}
+              {colours &&
+                used.map((c) => {
+                  const b = where[c];
+                  if (!b) return null;
+                  const below = b.y0 < 0.1;
+                  return (
+                    <label
+                      key={c}
+                      className="marks-want on-stage"
+                      style={{
+                        left: `${((b.x0 + b.x1) / 2) * 100}%`,
+                        top: `${(below ? b.y1 : b.y0) * 100}%`,
+                        transform: `translate(-50%, ${below ? "8px" : "calc(-100% - 8px)"}) scale(${1 / k})`,
+                        transformOrigin: below ? "top center" : "bottom center",
+                      }}
+                      onPointerDown={(e) => e.stopPropagation()}
+                    >
+                      <span className="doc-swatch" style={{ background: cssOf(c) }} />
+                      <input
+                        value={wants[c] ?? ""}
+                        placeholder={`What goes here, e.g. “a green velvet armchair”`}
+                        onChange={(e) => setWants({ ...wants, [c]: e.target.value })}
+                        spellCheck={false}
+                      />
+                    </label>
+                  );
+                })}
               {cursor && !isPanningActive && tool !== "select" && (
                 <div
                   className="brush-cursor"
@@ -564,20 +607,9 @@ export function InpaintEditor() {
         <div className="marks-panel">
           <p className="marks-help">
             {used.length
-              ? "Say what goes at each colour. Works best when the colour fills the whole area the thing should take."
+              ? "Say what goes at each colour in its box on the image. Works best when the colour fills the whole area the thing should take."
               : "Fill the whole area where something should go, one colour per thing (Select fills an object in one click). The rest of the photo stays as it is."}
           </p>
-          {used.map((c) => (
-            <label key={c} className="marks-want">
-              <span className="doc-swatch" style={{ background: cssOf(c) }} />
-              <input
-                value={wants[c] ?? ""}
-                placeholder={`What goes at the ${c} area, e.g. “a green velvet armchair”`}
-                onChange={(e) => setWants({ ...wants, [c]: e.target.value })}
-                spellCheck={false}
-              />
-            </label>
-          ))}
         </div>
       )}
 
@@ -668,13 +700,17 @@ export function InpaintEditor() {
   );
 }
 
-/** The mark colours on the canvas (sampled; an opaque pixel goes to the nearest colour). */
-function coloursOn(c: HTMLCanvasElement | null, w: number, h: number): MarkColour[] {
+type Box = { x0: number; y0: number; x1: number; y1: number };
+
+/** The mark colours on the canvas and the box of each (0-1 of the image; sampled, an opaque pixel goes
+ * to the nearest colour). */
+function coloursOn(c: HTMLCanvasElement | null, w: number, h: number): { used: MarkColour[]; where: Partial<Record<MarkColour, Box>> } {
   const ctx = c?.getContext("2d");
-  if (!ctx) return [];
+  const where: Partial<Record<MarkColour, Box>> = {};
+  if (!ctx) return { used: [], where };
   const d = ctx.getImageData(0, 0, w, h).data;
   const seen = new Set<MarkColour>();
-  for (let i = 0; i < d.length && seen.size < MARK_COLOURS.length; i += 4 * 7) {
+  for (let i = 0; i < d.length; i += 4 * 7) {
     if (d[i + 3] < 200) continue;
     let best: (typeof MARK_COLOURS)[number] = MARK_COLOURS[0];
     let bd = Infinity;
@@ -683,8 +719,15 @@ function coloursOn(c: HTMLCanvasElement | null, w: number, h: number): MarkColou
       if (dd < bd) [best, bd] = [m, dd];
     }
     seen.add(best.name);
+    const x = ((i / 4) % w) / w;
+    const y = ((i / 4 / w) | 0) / h;
+    const b = (where[best.name] ??= { x0: x, y0: y, x1: x, y1: y });
+    b.x0 = Math.min(b.x0, x);
+    b.x1 = Math.max(b.x1, x);
+    b.y0 = Math.min(b.y0, y);
+    b.y1 = Math.max(b.y1, y);
   }
-  return MARK_COLOURS.map((m) => m.name).filter((n) => seen.has(n));
+  return { used: MARK_COLOURS.map((m) => m.name).filter((n) => seen.has(n)), where };
 }
 
 /** A selection as a canvas in its colour (made once per selection). */

@@ -5,7 +5,8 @@ import {
   modelOfferDue,
   whatsNewDue,
   macBenchProgress,
-  activeLoras, activeOverrides, buildRequest, composing, editing, reviewRequest, wantsPromptReview, toggleLora, MAX_LORAS, jobPercent, compareBase, composerFromRecord, enhancerApplies, diffPixels, emptyComposer, expansionPixels, expansionPreset, jobLabel, jobSecondsLeft, lutInfo, moveRef, needsPrompt, normalizeQuality, persistentAdvanced, pipelineSummary,
+  dayGroup, isGenericName, placeInCanvas, projectTitle, typedWords, withActionVerb,
+  activeLoras, activeOverrides, buildRequest, composing, editing, reviewRequest, wantsPromptReview, toggleLora, MAX_LORAS, jobPercent, compareBase, composerFromRecord, diffPixels, emptyComposer, expansionPixels, expansionPreset, jobLabel, jobSecondsLeft, lutInfo, moveRef, needsPrompt, normalizeQuality, persistentAdvanced, pipelineSummary,
   planPipeline, remainingSeconds, sizeForWidth, timeAgo, upscaleRequest, upscaleTargets, versionLabels, type JobClock, type Ref,
   neighbourAfterRemoval, pageOutdated, previewIndex, starPromptDue, STAR_PROMPT_AFTER, formatBytes, formatDuration, installItemShort, installItemText, installProgress, installStep, installTimeLeft, timelineLinks, undoTarget, aspectLabel, parseRatio, sizeForRatio, sizeForLongSide, expandToRatio, expandToSize, arcLayout,
   goneVersions, PREVIEW_SIDE, stageFitsPreview, viewerWantsFull,
@@ -75,7 +76,6 @@ describe("buildRequest", () => {
   it("coloured marks go with the mask, as an edit Prompt+ can write", () => {
     const plain = { ...emptyComposer(), prompt: "x", refs: [ref(1)], mask: { inputId: "m", refKey: "k1" }, inpaintAction: "remove" as const, enhance: true };
     expect(buildRequest(plain).marks).toBeUndefined();
-    expect(enhancerApplies(plain)).toBe(false);
     expect(needsPrompt(plain)).toBe(false);
     const marked = { ...plain, mask: { inputId: "m", refKey: "k1", marks: "k" } };
     const r = buildRequest(marked);
@@ -122,11 +122,53 @@ describe("buildRequest", () => {
     const on = { ...off, enhance: true };
     expect(buildRequest(on).enhance).toBe(true);
     expect(buildRequest({ ...on, refs: [ref(1), ref(2)] }).enhance).toBe(true);
+    // A painted area and Expand too: Prompt+ writes what goes there inside Kokon's instruction.
     const masked = { ...on, refs: [ref(1)], mask: { inputId: "m", refKey: "k1" } };
-    expect(enhancerApplies(masked)).toBe(false);
-    expect("enhance" in buildRequest(masked)).toBe(false);
+    expect(buildRequest(masked).enhance).toBe(true);
     const expanded = { ...on, refs: [ref(1)], outpaint: { left: 10, right: 0, top: 0, bottom: 0, units: "percent" as const } };
-    expect("enhance" in buildRequest(expanded)).toBe(false);
+    expect(buildRequest(expanded).enhance).toBe(true);
+    expect(needsPrompt(expanded)).toBe(false);
+  });
+  it("each painted-area action puts its words at the start of the prompt; Remove is the default", () => {
+    expect(emptyComposer().inpaintAction).toBe("remove");
+    expect(withActionVerb("", "remove")).toBe("Remove ");
+    expect(withActionVerb("Remove the lamp", "replace")).toBe("Replace with the lamp");
+    expect(withActionVerb("Replace with a cat", "add")).toBe("Add a cat");
+    expect(withActionVerb("a red sofa", "edit")).toBe("Change a red sofa");
+    const area = { ...emptyComposer(), refs: [ref(1)], mask: { inputId: "m", refKey: "k1" }, enhance: true };
+    // The action's words alone are nothing typed: Remove + Prompt+ has it written, Change still needs words.
+    expect(typedWords({ ...area, prompt: "Remove " })).toBe("");
+    expect(wantsPromptReview({ ...area, prompt: "Remove " })).toBe(true);
+    expect(needsPrompt({ ...area, prompt: "Change ", inpaintAction: "edit" as const }) && !typedWords({ ...area, prompt: "Change ", inpaintAction: "edit" as const })).toBe(true);
+    expect(typedWords({ ...area, prompt: "Remove the lamp" })).toBe("the lamp");
+    // Not for a new image or an edit without a painted area.
+    expect(typedWords({ ...emptyComposer(), prompt: "Add a hat" })).toBe("Add a hat");
+  });
+  it("Prompt+ Detailed goes with the request only while Prompt+ writes", () => {
+    const c = { ...emptyComposer(), prompt: "un gatto", enhance: true, enhanceDetail: true };
+    expect(buildRequest(c)).toMatchObject({ enhance: true, enhance_detail: true });
+    expect(reviewRequest(c)).toMatchObject({ enhance_only: true, enhance_detail: true });
+    expect("enhance_detail" in buildRequest({ ...c, enhanceDetail: false })).toBe(false);
+    expect("enhance_detail" in buildRequest({ ...c, enhance: false })).toBe(false);
+    // Already written: sent as it is.
+    expect("enhance_detail" in buildRequest({ ...c, enhancedFrom: "un gatto" })).toBe(false);
+  });
+  it("nothing typed for a removal or Expand: Prompt+ writes it into the box first, once", () => {
+    const remove = { ...emptyComposer(), enhance: true, enhanceReview: false, refs: [ref(1)], mask: { inputId: "m", refKey: "k1" }, inpaintAction: "remove" as const };
+    expect(wantsPromptReview(remove)).toBe(true);
+    expect(wantsPromptReview({ ...remove, enhance: false })).toBe(false);
+    // Typed words follow the user's choice (write, or review first).
+    expect(wantsPromptReview({ ...remove, prompt: "the lamp" })).toBe(false);
+    expect(wantsPromptReview({ ...remove, prompt: "the lamp", enhanceReview: true })).toBe(true);
+    // Written from nothing: sent as it is, not written again.
+    const written = { ...remove, prompt: "the brass floor lamp on the left", enhancedFrom: "" };
+    expect(wantsPromptReview(written)).toBe(false);
+    expect(buildRequest(written)).toMatchObject({ enhanced_from: "" });
+    expect("enhance" in buildRequest(written)).toBe(false);
+    const expand = { ...emptyComposer(), enhance: true, refs: [ref(1)], outpaint: { left: 10, right: 0, top: 0, bottom: 0, units: "percent" as const } };
+    expect(wantsPromptReview(expand)).toBe(true);
+    // A change still needs words.
+    expect(wantsPromptReview({ ...remove, inpaintAction: "edit" as const })).toBe(false);
   });
   it("reusing an enhanced result's settings gives the user's prompt with the enhancer on", () => {
     const g = { prompt: "A tabby cat sleeping on a sunlit windowsill.", original_prompt: "un gatto", references: [], mask_input_id: null, outpaint: null, quality: "fast", request: null } as unknown as GenerationRecord;
@@ -167,7 +209,8 @@ describe("buildRequest", () => {
     expect(wantsPromptReview({ ...c, enhanceReview: false })).toBe(false);
     expect(wantsPromptReview({ ...c, enhance: false })).toBe(false);
     expect(wantsPromptReview({ ...c, prompt: "  " })).toBe(false);
-    expect(wantsPromptReview({ ...c, refs: [ref(1)], mask: { inputId: "m", refKey: "k1" } })).toBe(false);
+    // A painted area is written too (what goes there), as any edit.
+    expect(wantsPromptReview({ ...c, refs: [ref(1)], mask: { inputId: "m", refKey: "k1" } })).toBe(true);
     const r = reviewRequest(c);
     expect([r.enhance, r.enhance_only, r.prompt]).toEqual([true, true, "un gatto"]);
     // The written prompt is sent as is, with the user's words, and not rewritten again.
@@ -701,5 +744,35 @@ describe("modelOfferDue", () => {
     expect(modelOfferDue(dit("own"), modelChoiceUi("later", "0.11.1"), "0.12.0")).toBe(true);
     // Already the Q4_K_M, or another file of theirs: the service reports nothing to offer.
     expect(modelOfferDue(dit(null), {}, "0.11.1")).toBe(false);
+  });
+});
+
+describe("project list", () => {
+  it("projectTitle drops an image file's extension only", () => {
+    expect(projectTitle("4.png")).toBe("4");
+    expect(projectTitle("Kitchen.JPG")).toBe("Kitchen");
+    expect(projectTitle("make it night.")).toBe("make it night.");
+  });
+  it("isGenericName: names that say nothing about the picture", () => {
+    for (const n of ["image", "image.png", "4.png", "IMG_1234.JPG", "Screenshot 2026-10-01 at 10.00.00.png", "WhatsApp Image 2026-10-01 at 10.00.00.jpeg", "image (3).png", "PXL_20261001_101010.jpg", "Imported image"]) expect(isGenericName(n), n).toBe(true);
+    for (const n of ["Kitchen Scene", "photo of my dog", "grandma.jpg", "Halloween Project", "imagery"]) expect(isGenericName(n), n).toBe(false);
+  });
+  it("dayGroup: by calendar day", () => {
+    const now = new Date(2026, 10, 4, 10).getTime();
+    expect(dayGroup(new Date(2026, 10, 4, 1).getTime(), now)).toBe("Today");
+    expect(dayGroup(new Date(2026, 10, 3, 23).getTime(), now)).toBe("Yesterday");
+    expect(dayGroup(new Date(2026, 9, 30).getTime(), now)).toBe("Previous 7 days");
+    expect(dayGroup(new Date(2026, 9, 10).getTime(), now)).toBe("Previous 30 days");
+    expect(dayGroup(new Date(2026, 0, 1).getTime(), now)).toBe("Older");
+  });
+});
+
+describe("expand: placing the image", () => {
+  it("moves the extra space between sides, keeps the size, snaps to 8 px and to the edges", () => {
+    const centred = { left: 100, right: 100, top: 50, bottom: 50 };
+    expect(placeInCanvas(centred, 0, 50)).toEqual({ left: 0, right: 200, top: 48, bottom: 52, units: "pixels" });
+    expect(placeInCanvas(centred, 197, 103)).toEqual({ left: 200, right: 0, top: 100, bottom: 0, units: "pixels" });
+    expect(placeInCanvas(centred, -40, 999)).toEqual({ left: 0, right: 200, top: 100, bottom: 0, units: "pixels" });
+    expect(placeInCanvas({ left: 0, right: 0, top: 30, bottom: 30 }, 20, 0).left).toBe(0);
   });
 });

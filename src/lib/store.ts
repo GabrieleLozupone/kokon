@@ -9,11 +9,11 @@ import { inBrowser, isNarrow } from "./platform";
 import { useSyncExternalStore } from "react";
 import { markFresh } from "../components/Cocoon";
 import { api, ApiError, setPrivateInputs, subscribe, urls } from "./api";
-import { activeLoras, buildRequest, composing, emptyComposer, goneVersions, macEngineOfferDue, needsPrompt, newKey, pageOutdated, persistentAdvanced, refFromGen, refFromInput, reviewRequest, stageFitsPreview, starPromptDue, timelineLinks, undoTarget, versionLabels, wantsPromptReview, type CompareMode, type Composer, type Ref } from "./logic";
+import { activeLoras, buildRequest, composing, emptyComposer, goneVersions, isGenericName, macEngineOfferDue, needsPrompt, newKey, pageOutdated, persistentAdvanced, refFromGen, refFromInput, reviewRequest, stageFitsPreview, starPromptDue, timelineLinks, typedWords, undoTarget, versionLabels, wantsPromptReview, type CompareMode, type Composer, type Ref } from "./logic";
 import { keepLabsIn, labsChanged, labSources, loadLab, type LabStore } from "./layerDoc";
 import type { AppErrorBody, GenerationRecord, GenerationRequest, InputRecord, JobView, LoraItem, MacBenchState, ServerState, StatusResponse } from "./types";
 
-export type Overlay = null | "gallery" | "settings" | "inpaint" | "expand" | "layers" | "welcome" | "whats-new" | "mac-engine" | "prompt-tips" | "shortcuts";
+export type Overlay = null | "gallery" | "settings" | "inpaint" | "expand" | "layers" | "welcome" | "whats-new" | "mac-engine" | "prompt-tips" | "shortcuts" | "ai-check";
 
 export interface SessionItem {
   key: string;
@@ -98,6 +98,8 @@ export interface State {
   loras: LoraItem[];
   /** Tab Settings opens on (then cleared). */
   settingsTab: string | null;
+  /** A section of that tab to scroll to once open (its element id is `settings-<name>`). */
+  settingsFocus: string | null;
   /** Prompt+ is writing a prompt into the box for review: its job, and the user's words. */
   review: { jobId: string; prompt: string } | null;
 }
@@ -118,9 +120,9 @@ function loadPrefs(): Partial<Composer> {
 
 function savePrefs(c: Composer) {
   try {
-    const { quality, resolution, aspect, customWidth, customHeight, enhance, enhanceReview } = c;
+    const { quality, resolution, aspect, customWidth, customHeight, enhance, enhanceReview, enhanceDetail } = c;
     const advanced = persistentAdvanced(c.advanced);
-    localStorage.setItem(PREFS_KEY, JSON.stringify({ quality, resolution, aspect, customWidth, customHeight, advanced, enhance, enhanceReview }));
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ quality, resolution, aspect, customWidth, customHeight, advanced, enhance, enhanceReview, enhanceDetail }));
   } catch {
     /* storage unavailable */
   }
@@ -202,7 +204,8 @@ keepLabsIn({
       return;
     }
     labsHere.delete(id);
-    projects[id] = { ...projects[id], lab };
+    const p = projects[id];
+    projects[id] = { ...p, lab, meta: { ...p.meta, cover: lastCover(p.items, lab) } };
     hideLabSteps(lab);
     persistProjects([id]);
   },
@@ -330,10 +333,16 @@ const toStored = (i: SessionItem): StoredItem => ({
 });
 
 function titleOf(items: SessionItem[]): string | null {
+  const prompt = (i: SessionItem) => i.gen?.original_prompt || i.gen?.prompt || i.request?.prompt;
   for (const i of items) {
-    const p = i.gen?.original_prompt || i.gen?.prompt || i.request?.prompt;
+    const p = prompt(i);
     if (p) return p;
-    if (i.input) return i.input.original_name ? safeDecode(i.input.original_name) : "Imported image";
+    if (i.input) {
+      const name = i.input.original_name ? safeDecode(i.input.original_name) : "Imported image";
+      // A file name that says nothing ("image.png", "IMG_1234.jpg"): the project's first prompt,
+      // so it can be told apart in the list.
+      return isGenericName(name) ? (items.map(prompt).find(Boolean) ?? name) : name;
+    }
   }
   return null;
 }
@@ -346,10 +355,14 @@ function safeDecode(s: string) {
   }
 }
 
-const lastCover = (items: StoredItem[]) => {
+/** The cover: the latest image that is not a layers lab step (one object's crop, a fill...): the
+ * lab's `made` list (lib/layerDoc.ts), as the service does (crates/qls-core/src/projects.rs). */
+const lastCover = (items: StoredItem[], lab?: unknown) => {
+  const made = (lab as { made?: unknown } | undefined)?.made;
+  const steps = new Set(Array.isArray(made) ? (made as string[]) : []);
   for (let k = items.length - 1; k >= 0; k--) {
     const s = storedSource(items[k]);
-    if (s) return s;
+    if (s && !steps.has(s)) return s;
   }
   return null;
 };
@@ -374,7 +387,7 @@ function syncProject(prev: State) {
       title: old?.meta.named ? old.meta.title : titleOf(state.session) ?? old?.meta.title ?? "Untitled",
       named: old?.meta.named,
       updatedAt: edited || !old ? Date.now() : old.meta.updatedAt,
-      cover: lastCover(items),
+      cover: lastCover(items, old?.lab ?? labsHere.get(id)),
       count: countOf(items),
     },
     items,
@@ -470,6 +483,7 @@ let state: State = {
   starPrompt: false,
   loras: [],
   settingsTab: null,
+  settingsFocus: null,
   review: null,
 };
 
@@ -698,7 +712,7 @@ function onJob(job: JobView) {
       p.items = [...p.items.slice(0, k), ...stored, ...p.items.slice(k + 1)];
       if (wasSelected && stored[0]) p.selected = stored[0].key;
       // Shown at once; the service made the same change and saves it (no save from here).
-      p.meta = { ...p.meta, cover: lastCover(p.items), count: countOf(p.items), updatedAt: Date.now() };
+      p.meta = { ...p.meta, cover: lastCover(p.items, p.lab), count: countOf(p.items), updatedAt: Date.now() };
       return { jobs, projects: projectList() };
     }
     // A job from another client (e.g. MCP): track it but do not add it to a project.
@@ -867,8 +881,8 @@ export async function refreshLoras() {
 }
 
 /** Opens Settings on one of its tabs. */
-export function openSettings(tab: string) {
-  setState({ overlay: "settings", settingsTab: tab });
+export function openSettings(tab: string, focus: string | null = null) {
+  setState({ overlay: "settings", settingsTab: tab, settingsFocus: focus });
 }
 
 /** Adds the example projects that ship with Kokon (made by Kokon itself), except the ones
@@ -995,7 +1009,7 @@ export function forgetGeneration(id: string) {
   for (const p of Object.values(projects)) {
     if (!p.items.some((i) => i.genId === id)) continue;
     p.items = p.items.filter((i) => i.genId !== id);
-    p.meta = { ...p.meta, cover: lastCover(p.items), count: countOf(p.items) };
+    p.meta = { ...p.meta, cover: lastCover(p.items, p.lab), count: countOf(p.items) };
     changed.push(p.meta.id);
   }
   persistProjects(changed);
@@ -1238,7 +1252,7 @@ export async function submitComposer() {
   const req: GenerationRequest = { ...buildRequest(s.composer, parent), loras: activeLoras(s.composer, s.loras) };
   // Made from the layers lab: a step, out of the gallery (only the image saved from the lab shows).
   if (s.overlay === "layers" || isLabStep(target)) req.hidden = true;
-  if (!req.prompt && needsPrompt(s.composer)) {
+  if (!typedWords(s.composer) && needsPrompt(s.composer)) {
     toastInfo("Describe what to create or change.");
     return;
   }
@@ -1313,13 +1327,20 @@ export function focusPrompt(cursorToEnd = false) {
 }
 
 export function removeSessionItem(key: string) {
+  removeSessionItems([key]);
+}
+
+/** Versions taken out of the open project (their images stay in All images). */
+export function removeSessionItems(keys: string[]) {
   const s = getState();
-  const removed = s.session.find((i) => i.key === key);
-  const session = s.session.filter((i) => i.key !== key);
-  const src = removed ? itemSource(removed) : null;
-  const refs = src ? s.composer.refs.filter((r) => r.source !== src) : s.composer.refs;
+  const gone = new Set(keys);
+  const removed = s.session.filter((i) => gone.has(i.key));
+  if (!removed.length) return;
+  const session = s.session.filter((i) => !gone.has(i.key));
+  const srcs = new Set(removed.map(itemSource).filter(Boolean));
+  const refs = s.composer.refs.filter((r) => !srcs.has(r.source));
   setState({ session, composer: refs.length === s.composer.refs.length ? s.composer : { ...s.composer, refs, mask: null, outpaint: null } });
-  if (s.selected === key) {
+  if (s.selected && gone.has(s.selected)) {
     const next = session[session.length - 1];
     if (next) selectItem(next.key);
     else setState({ selected: null });

@@ -182,6 +182,53 @@ function fillBorder(d: Float32Array, valid: Uint8Array, w: number, h: number) {
   }
 }
 
+/** The edit put back (RGBA w×h), carried to the frame's edges: where it leaves no pixels, and its own
+ * `m` outermost rows (off, see fillBorder), the pixel `m` inside along the column, then the row, made
+ * opaque. Blend pastes the edit as it is, so without it a shadow stopped a few px short of the edge
+ * with the original showing in the strip (Gabriele 11-03, the girl and the spider). In place. */
+function extendToEdges(q: Uint8ClampedArray, w: number, h: number, m: number) {
+  const copy = (to: number, from: number) => {
+    q[to * 4] = q[from * 4];
+    q[to * 4 + 1] = q[from * 4 + 1];
+    q[to * 4 + 2] = q[from * 4 + 2];
+    q[to * 4 + 3] = 255;
+  };
+  const done = new Uint8Array(w * h);
+  for (let x = 0; x < w; x++) {
+    let top = -1;
+    let bottom = -1;
+    for (let y = 0; y < h; y++) {
+      if (q[(y * w + x) * 4 + 3] <= 250) continue;
+      if (top < 0) top = y;
+      bottom = y;
+    }
+    if (top < 0 || bottom - top < 4 * m) continue;
+    top += m;
+    bottom -= m;
+    for (let y = 0; y < h; y++) {
+      done[y * w + x] = 1;
+      if (y < top) copy(y * w + x, top * w + x);
+      else if (y > bottom) copy(y * w + x, bottom * w + x);
+    }
+  }
+  for (let y = 0; y < h; y++) {
+    let left = -1;
+    let right = -1;
+    for (let x = 0; x < w; x++) {
+      if (!done[y * w + x]) continue;
+      if (left < 0) left = x;
+      right = x;
+    }
+    if (left < 0 || right - left < 4 * m) continue;
+    left += m;
+    right -= m;
+    for (let x = 0; x < w; x++) {
+      if (x < left) copy(y * w + x, y * w + left);
+      else if (x > right) copy(y * w + x, y * w + right);
+    }
+  }
+}
+
 /** The darkening the edit added (tone change divided out), 0-1 per pixel; tone measured on the
  * pixels farther than `reach` from every object and outside `busy` (the marks). */
 function addedDarkness(p: Pair, objects: Uint8Array[], reach: number, busy?: Uint8Array): Float32Array {
@@ -278,7 +325,14 @@ export async function readScene(doc: LayerDoc, e: SceneEdit, result: string): Pr
   if (targets.length && e.blend) {
     const all = new Uint8Array(w * h);
     for (const t of targets) for (let i = 0; i < t.m.length; i++) if (t.m[i]) all[i] = 255;
-    const r = blendKeep(p.before, p.after, p.valid, all, w, h);
+    // The edit carried to the frame's edges, so what is pasted reaches them (extendToEdges).
+    const m = Math.max(3, Math.round(Math.max(w, h) * 0.006));
+    const after = Uint8ClampedArray.from(p.after);
+    extendToEdges(after, w, h, m);
+    const valid = Uint8Array.from(p.valid, (_, i) => (after[i * 4 + 3] > 250 && p.before[i * 4 + 3] > 250 ? 1 : 0));
+    const r = blendKeep(p.before, after, valid, all, w, h);
+    // The objects not blended were not in what Qwen got: the Blend layer on top leaves them showing.
+    for (const [id, m] of feet) if (!e.shadows.includes(id)) for (let i = 0; i < m.length; i++) if (m[i]) r.alpha[i] = 0;
     if (r.n < w * h * 0.0003) {
       out.notes.push("Nothing was added round the objects. Blend again, or check what the AI read.");
       return out;
@@ -288,6 +342,7 @@ export async function readScene(doc: LayerDoc, e: SceneEdit, result: string): Pr
     const fctx = full.getContext("2d")!;
     const px = fctx.getImageData(0, 0, W, H);
     const q = px.data;
+    extendToEdges(q, W, H, Math.max(3, Math.round((m * W) / w)));
     for (let i = 0; i < q.length; i += 4) {
       const l = 0.2126 * q[i] + 0.7152 * q[i + 1] + 0.0722 * q[i + 2];
       const k = (r.lut[Math.min(255, Math.round(l))] + 1) / (l + 1);

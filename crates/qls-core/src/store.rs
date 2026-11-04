@@ -95,6 +95,10 @@ pub struct GenerationRecord {
     /// it is shown). The project still opens it by id.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hidden: bool,
+    /// The IPTC Digital Source Type when it is not the one of its mode (provenance.rs): an upscale
+    /// or a LUT of an imported image that was already AI-made stays marked as AI-made.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_type: Option<String>,
 }
 
 impl GenerationRecord {
@@ -564,6 +568,7 @@ mod tests {
             request: serde_json::json!({"prompt": prompt}),
             pipeline: None,
             hidden: false,
+            source_type: None,
         }
     }
 

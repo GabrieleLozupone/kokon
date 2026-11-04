@@ -3,7 +3,7 @@
 //! sticker with the user's selection (`src/lib/matte.ts`: the selection decides what, the matte the
 //! edge). Spike s17 (2026-11-02): cleaner edges than SAM, deterministic, ~4 s per object on a
 //! 16-thread CPU, no VRAM taken from the image engine. The webview could not run it (WebGPU kernels
-//! rejected, WASM out of memory), hence here.
+//! rejected, WASM out of memory), hence here. Also the MobileSAM files the lab's Select uses.
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -30,6 +30,49 @@ pub const BIREFNET_LITE: Download = Download {
     provides: &[],
     engine_tag: None,
 };
+
+/// Click-to-select in the layers lab: MobileSAM (Apache-2.0) in Acly's ONNX export (MIT), pinned.
+/// It runs in the webview (src/lib/sam.ts, onnxruntime-web); kokon-service downloads the two files
+/// the first time the lab is opened and serves them to it (`/segment/models/<file>`), since 0.12
+/// (before: the dev server only, so a release had no Select).
+pub const MOBILE_SAM: [Download; 2] = [
+    Download {
+        id: "mobile_sam_encoder",
+        label: "MobileSAM image encoder (click to select)",
+        kind: FileKind::Model,
+        url: "https://huggingface.co/Acly/MobileSAM/resolve/0d3b403339b4674a82493d5e97964dd78089ddc8/mobile_sam_image_encoder.onnx",
+        fallback_urls: &[],
+        page: "https://huggingface.co/Acly/MobileSAM",
+        size: 28_157_093,
+        sha256: "580f5fb648ea1062c0aabc26217aed56921985f03f0cbbd852bba81d760cc749",
+        dest: "models/segment/mobile_sam_image_encoder.onnx",
+        provides: &[],
+        engine_tag: None,
+    },
+    Download {
+        id: "mobile_sam_decoder",
+        label: "MobileSAM mask decoder (click to select)",
+        kind: FileKind::Model,
+        url: "https://huggingface.co/Acly/MobileSAM/resolve/0d3b403339b4674a82493d5e97964dd78089ddc8/sam_mask_decoder_multi.onnx",
+        fallback_urls: &[],
+        page: "https://huggingface.co/Acly/MobileSAM",
+        size: 16_496_559,
+        sha256: "8976b90a87ba50a6a72217a5ff994f7d25ce16f2229fcc1ed259e1294c622ffe",
+        dest: "models/segment/sam_mask_decoder_multi.onnx",
+        provides: &[],
+        engine_tag: None,
+    },
+];
+
+/// A MobileSAM file by its name (the last part of its `dest`), for the webview; None for any other name.
+pub fn sam_file(sdcpp_dir: &Path, name: &str) -> Option<PathBuf> {
+    MOBILE_SAM.iter().find(|d| d.dest.rsplit('/').next() == Some(name)).map(|d| join_rel(sdcpp_dir, d.dest))
+}
+
+/// Both MobileSAM files are there.
+pub fn sam_installed(sdcpp_dir: &Path) -> bool {
+    MOBILE_SAM.iter().all(|d| join_rel(sdcpp_dir, d.dest).is_file())
+}
 
 /// The model's input side (the export is fixed at 1024²).
 const SIDE: u32 = 1024;
@@ -80,7 +123,7 @@ pub fn matte(sdcpp_dir: &Path, img: &RgbaImage) -> AppResult<GrayImage> {
     let mut guard = SESSION.lock().unwrap_or_else(|p| p.into_inner());
     if guard.as_ref().is_none_or(|(p, _, _)| p != &path) {
         let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
-        let env = ort::init().with_name("kokon-stickers").build().map_err(ort_err)?;
+        let env = crate::onnx::environment().map_err(ort_err)?;
         let s = Session::builder(&env)
             .map_err(ort_err)?
             .with_optimization_level(GraphOptimizationLevel::Level3)
@@ -104,6 +147,17 @@ pub fn matte(sdcpp_dir: &Path, img: &RgbaImage) -> AppResult<GrayImage> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_sam_files_are_served() {
+        let d = Path::new("/kokon");
+        assert_eq!(sam_file(d, "sam_mask_decoder_multi.onnx"), Some(join_rel(d, "models/segment/sam_mask_decoder_multi.onnx")));
+        assert!(sam_file(d, "mobile_sam_image_encoder.onnx").is_some());
+        for bad in ["birefnet_lite.onnx", "../models/segment/sam_mask_decoder_multi.onnx", "", "segment"] {
+            assert_eq!(sam_file(d, bad), None, "{bad}");
+        }
+        assert!(!sam_installed(d));
+    }
 
     #[test]
     fn input_is_normalised_chw() {
@@ -155,5 +209,23 @@ mod real_model {
             eprintln!("matte {:?} in {:.2} s", m.dimensions(), t.elapsed().as_secs_f32());
             m.save(std::env::temp_dir().join("kokon-matte.png")).unwrap();
         }
+    }
+}
+
+#[cfg(test)]
+mod shared_runtime_tests {
+    /// With the real models (KOKON_TEST_SDCPP: a folder holding models/matting/birefnet_lite.onnx and
+    /// models/watermark/*.onnx): a result is watermarked, then a fast sticker is matted, in one
+    /// process. Before crate::onnx, the second to start failed ("only one environment is allowed
+    /// per process"): every quick cut-out after a result (Windows), no watermark after a sticker (Mac).
+    #[test]
+    fn watermark_then_sticker_in_one_process() {
+        let Ok(dir) = std::env::var("KOKON_TEST_SDCPP") else { return };
+        let dir = std::path::PathBuf::from(dir);
+        let img = image::RgbaImage::from_fn(400, 300, |x, y| image::Rgba([(x / 2) as u8, (y / 2) as u8, if (150..250).contains(&x) { 230 } else { 40 }, 255]));
+        let marked = crate::watermark::embed(&dir, &img).unwrap().unwrap();
+        let m = super::matte(&dir, &marked).unwrap();
+        assert_eq!(m.dimensions(), (400, 300));
+        assert!(crate::watermark::detect(&dir, &marked).unwrap().unwrap().kokon);
     }
 }

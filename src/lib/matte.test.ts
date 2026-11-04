@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { foreground, stickerAlpha } from "./matte";
+import { foreground, keptShare, MIN_KEPT, stickerAlpha } from "./matte";
 
 const W = 64;
 const H = 64;
@@ -33,6 +33,17 @@ describe("fast sticker alpha", () => {
     const { alpha, fellBack } = stickerAlpha(matte, sel, W, H);
     expect(fellBack).toBe(true);
     expect(alpha[32 * W + 46]).toBe(1);
+  });
+});
+
+describe("quick cut-out check", () => {
+  it("counts how much of the selection the sticker keeps", () => {
+    const sel = Uint8Array.from([255, 255, 255, 255, 0, 0]);
+    expect(keptShare(Float32Array.from([1, 1, 0.9, 0.6, 1, 1]), sel)).toBe(1);
+    expect(keptShare(Float32Array.from([1, 0, 0, 0, 1, 1]), sel)).toBe(0.25);
+    // An empty matte (the model failed or saw nothing): fails the check, the layer stays.
+    expect(keptShare(new Float32Array(6), sel)).toBeLessThan(MIN_KEPT);
+    expect(keptShare(new Float32Array(6), new Uint8Array(6))).toBe(0);
   });
 });
 

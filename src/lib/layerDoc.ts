@@ -480,6 +480,23 @@ export function shadowAlpha(before: ArrayLike<number>, after: ArrayLike<number>,
   return out;
 }
 
+/** A Blend or Shadows layer at strength `k` (RGBA, `made` = as the model made it, `under` = the
+ * layers under it): the change it makes, times k. Up to fully opaque the alpha carries it; past
+ * that the colours move on from what is under it (k = 2 on an opaque paste: twice the darkening). */
+export function strengthPixels(made: ArrayLike<number>, under: ArrayLike<number>, k: number): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(made.length);
+  for (let j = 0; j < made.length; j += 4) {
+    const t = (made[j + 3] / 255) * Math.max(0, k);
+    if (t <= 1) {
+      out.set([made[j], made[j + 1], made[j + 2], Math.round(t * 255)], j);
+      continue;
+    }
+    for (let c = 0; c < 3; c++) out[j + c] = Math.round(under[j + c] + t * (made[j + c] - under[j + c]));
+    out[j + 3] = 255;
+  }
+  return out;
+}
+
 /** The pencil's marks sent with New objects / Edit together whose result has not come back yet
  * (input ids): shown over the layers, here and on the Stage, until the objects are there. */
 export const waitingMarks = (doc: LayerDoc): string[] => (doc.scenes ?? []).filter((e) => e.marks && !e.made).map((e) => e.marks!);

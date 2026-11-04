@@ -691,6 +691,23 @@ pub fn pick_highlight(img: &RgbaImage, mask: &GrayImage) -> (&'static str, [u8; 
     HIGHLIGHTS[k]
 }
 
+/// `img` with the area where `mask` > 127 only outlined in `color` (a line just outside it), what
+/// is inside left as it is: for Prompt+ to see and name it. A tint over it made the 8B read the
+/// tint as a thing ("a red cloth covering the bowl", 2026-11-04).
+pub fn outline(img: &RgbaImage, mask: &GrayImage, color: [u8; 3]) -> RgbaImage {
+    assert_eq!(img.dimensions(), mask.dimensions());
+    let inside = binarize(mask, 127);
+    let ring = dilate(&inside, (img.width().max(img.height()) / 160).max(3));
+    RgbaImage::from_fn(img.width(), img.height(), |x, y| {
+        let p = img.get_pixel(x, y);
+        if inside.get_pixel(x, y)[0] == 0 && ring.get_pixel(x, y)[0] > 0 {
+            Rgba([color[0], color[1], color[2], 255])
+        } else {
+            Rgba([p[0], p[1], p[2], 255])
+        }
+    })
+}
+
 /// Guide image: `img` with the area where `mask` > 127 tinted with `color` and outlined,
 /// so a prompt can refer to "the area marked in red". Fully opaque.
 pub fn highlight(img: &RgbaImage, mask: &GrayImage, color: [u8; 3]) -> RgbaImage {

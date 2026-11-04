@@ -3,12 +3,14 @@
 // own versions; clicking it opens that image's layers.
 
 import { Layers, Loader2, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { docId, docsVersion, jobLayer, waitingMarks, labItems, leftovers, loadLab, saveLab, subscribeDocs, type LabStore, type LayerDoc } from "../lib/layerDoc";
 import { editSource, itemOrigin, itemSource, removeSessionItem, setState, useStore, type SessionItem } from "../lib/store";
 import type { JobView } from "../lib/types";
 import { urls } from "../lib/api";
 import { useJobPercent } from "./jobMotion";
+import { DevelopImg } from "./Develop";
+import { useNarrow } from "../lib/platform";
 import { renderDoc } from "./LayerDoc";
 
 /** Opens `doc`'s layers: the prompt goes to its photo (or one of its layers), which picks the
@@ -56,28 +58,44 @@ export const docById = (lab: Lab, id: string | null | undefined) => (id ? lab.st
 
 /** The layered image as an object URL (redrawn when a layer changes; the old one stays until then). */
 export function useLabImage(doc: LayerDoc | null, maxSide: number): string | null {
-  const key = doc ? JSON.stringify([doc.width, doc.height, doc.layers.map((l) => [l.source, l.hidden, l.dx, l.dy, l.s, l.follows, l.at])]) : "";
-  const [url, setUrl] = useState<string | null>(null);
-  const shown = useRef<string | null>(null);
+  const key = doc ? JSON.stringify([maxSide, doc.width, doc.height, doc.layers.map((l) => [l.source, l.hidden, l.dx, l.dy, l.s, l.follows, l.at])]) : "";
+  // Shown at once when it was drawn before (coming back to the frame), else the last one drawn
+  // until the new one is ready.
+  const [url, setUrl] = useState<string | null>(() => rendered.get(key) ?? null);
   useEffect(() => {
     if (!doc) return;
+    const done = rendered.get(key);
+    if (done) {
+      setUrl(done);
+      return;
+    }
     let gone = false;
     renderDoc(doc, maxSide)
       .then((c) => new Promise<Blob | null>((res) => c.toBlob(res, "image/png")))
       .then((b) => {
-        if (gone || !b) return;
-        if (shown.current) URL.revokeObjectURL(shown.current);
-        shown.current = URL.createObjectURL(b);
-        setUrl(shown.current);
+        if (!b) return;
+        const u = URL.createObjectURL(b);
+        remember(key, u);
+        if (!gone) setUrl(u);
       })
       .catch(() => {});
     return () => {
       gone = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, maxSide]);
-  useEffect(() => () => void (shown.current && URL.revokeObjectURL(shown.current)), []);
+  }, [key]);
   return url;
+}
+
+/** Composites already drawn (the frame and its thumbnail per document state), the oldest let go. */
+const rendered = new Map<string, string>();
+function remember(key: string, url: string) {
+  rendered.set(key, url);
+  while (rendered.size > 24) {
+    const [k, u] = rendered.entries().next().value!;
+    rendered.delete(k);
+    URL.revokeObjectURL(u);
+  }
 }
 
 export type Lab = { store: LabStore; hidden: Map<string, string | null> };
@@ -152,16 +170,22 @@ export function LabJobs({ lab, doc, className }: { lab: Lab; doc: LayerDoc; clas
 /** The Stage while a lab version is selected: the layered image to look at; its button opens the lab. */
 export function LabFrame({ doc, lab }: { doc: LayerDoc; lab: Lab }) {
   const url = useLabImage(doc, 1600);
+  // The version strip's thumbnail (drawn already) as the placeholder, as for other versions.
+  const thumb = useLabImage(doc, 160);
+  // The lab needs a mouse and room: on a phone its layers are only looked at.
+  const narrow = useNarrow();
   return (
     <div className="stage-frame">
       <LabJobs lab={lab} doc={doc} className="on-stage" />
       <div className="lab-frame" style={{ aspectRatio: `${doc.width} / ${doc.height}` }}>
-        {url ? <img src={url} alt="The layered image" draggable={false} /> : <Loader2 className="spin" size={22} />}
+        <DevelopImg key={docId(doc)} src={url ?? undefined} placeholder={thumb ?? undefined} alt="The layered image" />
         {/* The pencil's marks sent for new objects, until the objects are there. */}
         {url && waitingMarks(doc).map((m) => <img key={m} className="lab-marks" src={urls.input(m)} alt="" draggable={false} />)}
-        <button className="lab-open" onClick={() => openLab(doc)} title="Open this image's layers in the Layers lab">
-          <Layers size={14} /> Open Layers lab
-        </button>
+        {!narrow && (
+          <button className="lab-open" onClick={() => openLab(doc)} title="Open this image's layers in the Layers lab">
+            <Layers size={14} /> Open Layers lab
+          </button>
+        )}
       </div>
     </div>
   );

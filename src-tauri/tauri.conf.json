@@ -50,7 +50,9 @@
       "binaries/kokon-mcp"
     ],
     "resources": {
-      "resources/4xNomos2_hq_mosr.pth": "bundled/4xNomos2_hq_mosr.pth"
+      "resources/4xNomos2_hq_mosr.pth": "bundled/4xNomos2_hq_mosr.pth",
+      "resources/encoder_P.onnx": "bundled/encoder_P.onnx",
+      "resources/decoder_P.onnx": "bundled/decoder_P.onnx"
     },
     "windows": {
       "nsis": {

@@ -21,6 +21,7 @@ import { Stage } from "./components/Stage";
 import { Tour } from "./components/Tour";
 import { PromptTips } from "./components/PromptTips";
 import { Shortcuts } from "./components/Shortcuts";
+import { AiCheck } from "./components/AiCheck";
 import { WhatsNew, whatsNewDue } from "./components/WhatsNew";
 import { MacEngineOffer } from "./components/MacEngineOffer";
 import { UpscalerCompare } from "./components/Upscalers";
@@ -354,6 +355,7 @@ export default function App() {
       {overlay === "mac-engine" && <MacEngineOffer />}
       {overlay === "prompt-tips" && <PromptTips />}
       {overlay === "shortcuts" && <Shortcuts />}
+      {overlay === "ai-check" && <AiCheck />}
       {compareUpscalers && <UpscalerCompare />}
     </>
   );

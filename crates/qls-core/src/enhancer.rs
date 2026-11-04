@@ -6,7 +6,7 @@
 //! Design and the A/B behind these texts: docs/engineering-notes.md, "Prompt+".
 
 use crate::config::AppConfig;
-use crate::planner::ResolvedMode;
+use crate::planner::{InpaintAction, ResolvedMode};
 use crate::sdcpp::{TextGenRequest, TextSampling};
 
 /// Built-in system prompt for text-to-image (engineering notes, "Prompt+"; decided 2026-10-18, revised
@@ -68,6 +68,63 @@ Fill in the pattern for its kind, replacing each <...> with what you see and lea
 - style, <medium>, <colour palette>, <kind of light>, <texture>
 Describe the thing alone: never its action, pose, who holds it, what it rests on, its surroundings or background (except as the place or style when that is what the request takes)."#;
 
+/// Built-in system prompt for a painted area (a brushed edit without coloured marks), added
+/// 2026-11-04. The enhancer sees the untouched region with the area outlined (the image model's own
+/// copy is blurred there for Remove and Replace) and writes the whole instruction for the action;
+/// for Remove also what is seen in the object's place (only its name made Qwen paint it again).
+/// Sent as it is in pipeline::written_inpaint_prompt.
+pub const AREA_SYSTEM_PROMPT: &str = r#"You write the instruction for an image editing model that changes one area of a picture. You see the picture with that area outlined by a bright line; what is inside the line is shown as it is. The model will get the picture with that area blurred out and must redraw it from your words alone. The user's message gives the line's colour, the action, the words your text must start with, and the user's own words, in any language, or none.
+- Start with exactly the given words and write in English, 20 to 60 words in all.
+- Remove: name everything inside the line as one thing (the main object with whatever is on it or in it), then, in a second sentence, describe what is seen there instead: the background that continues from just outside the line, with its surface, material, colours, texture or pattern and light, as if the thing had never been there, with no shadow or mark of it left.
+- Change: say what inside the line changes and what it becomes, and that the rest of it stays as it is.
+- Replace: name what is inside the line and what replaces it, then describe the new thing: what it is, its colours and materials, its size fitting the area and the scene's perspective, light matching the scene and its shadow on the surface under it.
+- Add: describe the new thing put inside the line: what it is, its colours and materials, where it stands, its size fitting the scene's perspective, light matching the scene and its shadow.
+- Keep everything the user asked for and never contradict it; base every detail on what you see. With no words from the user, choose what fits the scene best.
+- Never describe anything outside the line except as what continues into it. Never mention the line, its colour, a mask, a blur or an area.
+Output only the instruction."#;
+
+/// Built-in system prompt for Expand (outpaint), added 2026-11-04: the enhancer sees the canvas
+/// with the new borders still empty and writes what they show; the outpaint instruction
+/// (pipeline::effective_prompt) goes in front of it, as for typed words.
+pub const EXPAND_SYSTEM_PROMPT: &str = r#"You help an image model extend a picture beyond its borders. You see the picture on a larger canvas whose new border areas are still empty and flat. The user's message says which sides grow and gives the user's own wishes, in any language, or none.
+- Write one English paragraph of 30 to 90 words describing what the new areas show so that the whole picture continues naturally past each growing side: what continues there and how it ends at the new edge.
+- Keep the same medium, style, light, colours and perspective as the picture. Keep everything the user asked for and put it in the new areas.
+- Describe only what the new areas add. Never add new people, animals or main subjects unless the user asks.
+- Never mention borders, empty areas, a canvas or extending.
+Output only the description."#;
+
+/// The area and Expand texts are short (at most ~90 words).
+pub const AREA_MAX_TOKENS: u32 = 256;
+
+/// Prompt+ "Detailed" (2026-11-04, Gabriele: "give more context to the generator"): added after
+/// any system prompt, built-in or the user's, it replaces the length asked there. More context
+/// only about what is in the picture or what changes, never what is absent or untouched (a list of
+/// what stays makes Qwen redraw it; a "no X" puts X in). Not A/B-tested yet.
+pub const DETAIL_SCENE: &str = "\n\nDetailed mode: this replaces the length given above. Write 200 to 350 words, up to about 450 when there are several people or many objects. Give the image generator more context about everything that is in the picture: each subject's materials, textures, small details and expression, the setting and the objects in the background, the camera (distance, angle, lens, depth of field), the light and how it falls on each surface, and the colours. Describe only what is there; never write what is absent or what to avoid.";
+pub const DETAIL_EDIT: &str = "\n\nDetailed mode: this replaces the length given above. Write 60 to 150 words, up to about 250 for several changes. Give the image editor more context about the change only: the new things' materials, textures and colours, their exact place and size, how the light of the scene falls on them, their shadows and reflections, and how they meet what is around them. Never describe the parts that stay, and never write what must not be added.";
+pub const DETAIL_AREA: &str = "\n\nDetailed mode: this replaces the length given above. Write 50 to 120 words, with more context about what is seen inside the line after the edit: materials, textures, colours, light, shadows and how it meets what is around it. Never write what must not be added.";
+pub const DETAIL_EXPAND: &str = "\n\nDetailed mode: this replaces the length given above. Write 80 to 180 words, with more context about what the new areas show: materials, textures, colours, the light and how far things are. Never write what is absent.";
+
+/// The longest a Detailed text runs (~450 words; ~1.4 tokens a word).
+const DETAIL_MAX_TOKENS: u32 = 1024;
+
+/// A Prompt+ request made "Detailed": its system prompt ends with the length and context of the
+/// kind it is (a new image, an edit, a painted area, an expansion), and longer texts are allowed.
+pub fn detailed(mut req: TextGenRequest, mode: ResolvedMode) -> TextGenRequest {
+    let add = if req.system_prompt == AREA_SYSTEM_PROMPT {
+        DETAIL_AREA
+    } else if req.system_prompt == EXPAND_SYSTEM_PROMPT {
+        DETAIL_EXPAND
+    } else if matches!(mode, ResolvedMode::Generate | ResolvedMode::Compose) {
+        DETAIL_SCENE
+    } else {
+        DETAIL_EDIT
+    };
+    req.system_prompt.push_str(add);
+    req.max_tokens = req.max_tokens.max(DETAIL_MAX_TOKENS);
+    req
+}
+
 /// Longest label kept (a model that rambles is cut, the label is only a hint).
 pub const LABEL_MAX_TOKENS: u32 = 96;
 
@@ -88,10 +145,49 @@ pub fn applies(mode: ResolvedMode) -> bool {
     matches!(mode, ResolvedMode::Generate | ResolvedMode::Compose | ResolvedMode::Edit | ResolvedMode::MultiReference)
 }
 
-/// [`applies`], and inpaints with coloured marks: written as an edit of the marked region (the
-/// edit prompt knows marks named by colour).
-pub fn applies_to(mode: ResolvedMode, marks: bool) -> bool {
-    applies(mode) || (marks && mode == ResolvedMode::Inpaint)
+/// [`applies`], and inpaints and expansions: coloured marks written as an edit of the marked
+/// region (the edit prompt knows marks named by colour), a painted area and an expansion with
+/// their own prompts ([`area_request`], [`expand_request`]) inside Kokon's instructions.
+pub fn applies_to(mode: ResolvedMode, _marks: bool) -> bool {
+    applies(mode) || matches!(mode, ResolvedMode::Inpaint | ResolvedMode::Outpaint)
+}
+
+/// What the user's words were, for the area and Expand prompts.
+fn words(prompt: &str) -> String {
+    let p = prompt.trim();
+    if p.is_empty() { "(none)".into() } else { p.to_string() }
+}
+
+/// A painted area (no marks): `image` is the untouched region with the area outlined in `color`.
+pub fn area_request(action: InpaintAction, color: &str, prompt: &str, image: String, seed: i64) -> TextGenRequest {
+    let (act, start) = match action {
+        InpaintAction::Remove => ("remove", "Remove"),
+        InpaintAction::Edit => ("change", "Change"),
+        InpaintAction::Replace => ("replace", "Replace"),
+        InpaintAction::Add => ("add", "Add"),
+    };
+    // The app puts the action's words in front of what the user types: only the rest is theirs.
+    let typed = if action == InpaintAction::Edit { prompt.trim().strip_prefix("Change").map(str::trim).unwrap_or(prompt.trim()).to_string() } else { action.subject(prompt) };
+    TextGenRequest {
+        prompt: format!("Line colour: {color}\nAction: {act}\nStart with: {start}\nThe user's words: {}", words(&typed)),
+        system_prompt: AREA_SYSTEM_PROMPT.into(),
+        images: vec![image],
+        max_tokens: AREA_MAX_TOKENS,
+        sampling: TextSampling { seed, ..SAMPLING },
+        stream: true,
+    }
+}
+
+/// An expansion: `image` is the canvas with the new areas empty; `sides` names them ("left and top").
+pub fn expand_request(sides: &str, prompt: &str, image: String, seed: i64) -> TextGenRequest {
+    TextGenRequest {
+        prompt: format!("Growing sides: {sides}\nThe user's wishes: {}", words(prompt)),
+        system_prompt: EXPAND_SYSTEM_PROMPT.into(),
+        images: vec![image],
+        max_tokens: AREA_MAX_TOKENS,
+        sampling: TextSampling { seed, ..SAMPLING },
+        stream: true,
+    }
 }
 
 /// The system prompt for `mode`: the one saved in Settings, or the built-in one.
@@ -154,7 +250,7 @@ pub fn compose_request(cfg: &AppConfig, labels: &[String], prompt: &str, seed: i
 /// whole text. None when nothing usable is left.
 pub fn clean(text: &str) -> Option<String> {
     let mut t = text.trim();
-    for label in ["Prompt:", "Instruction:", "Editing instruction:"] {
+    for label in ["Prompt:", "Instruction:", "Editing instruction:", "Description:"] {
         if t.get(..label.len()).is_some_and(|head| head.eq_ignore_ascii_case(label)) {
             t = t[label.len()..].trim_start();
         }
@@ -174,6 +270,8 @@ mod tests {
     fn modes_and_prompts() {
         assert!(applies(ResolvedMode::Generate) && applies(ResolvedMode::Edit) && applies(ResolvedMode::MultiReference) && applies(ResolvedMode::Compose));
         assert!(!applies(ResolvedMode::Inpaint) && !applies(ResolvedMode::Outpaint) && !applies(ResolvedMode::Upscale));
+        // A painted area and Expand have prompts of their own; an upscale has no prompt.
+        assert!(applies_to(ResolvedMode::Inpaint, false) && applies_to(ResolvedMode::Outpaint, false) && !applies_to(ResolvedMode::Upscale, false));
         let mut cfg = AppConfig::default();
         assert_eq!(system_prompt(&cfg, ResolvedMode::Generate), T2I_SYSTEM_PROMPT);
         assert_eq!(system_prompt(&cfg, ResolvedMode::Edit), EDIT_SYSTEM_PROMPT);
@@ -193,7 +291,7 @@ mod tests {
     fn builtin_prompts_have_nothing_the_model_copies() {
         // Seen in real outputs (bench sysprompt-v2-20261019-155557): example colours ended up in
         // almost every prompt, and the text rule became "No text appears in the image."
-        for p in [T2I_SYSTEM_PROMPT, EDIT_SYSTEM_PROMPT, COMPOSE_SYSTEM_PROMPT, COMPOSE_LABEL_PROMPT] {
+        for p in [T2I_SYSTEM_PROMPT, EDIT_SYSTEM_PROMPT, COMPOSE_SYSTEM_PROMPT, COMPOSE_LABEL_PROMPT, AREA_SYSTEM_PROMPT, EXPAND_SYSTEM_PROMPT] {
             for leak in ["deep navy", "pale cream", "copper", "No text"] {
                 assert!(!p.contains(leak), "{leak:?} in a built-in prompt");
             }
@@ -221,6 +319,41 @@ mod tests {
         assert!(r.images.is_empty() && r.system_prompt == COMPOSE_SYSTEM_PROMPT && r.sampling.seed == 5);
         assert_eq!(r.prompt, "References:\n<image1>: person, female, dark hair; style: photo\n<image2>: cat, orange tabby; style: photo\n\nRequest: lei sul divano con il gatto");
         assert_eq!(clean_label(" cat,\n orange tabby.\n"), "cat, orange tabby");
+    }
+
+    #[test]
+    fn detailed_asks_for_more_context_of_its_kind() {
+        let cfg = AppConfig::default();
+        let t = detailed(request(&cfg, ResolvedMode::Generate, "un gatto", vec![], 1), ResolvedMode::Generate);
+        assert!(t.system_prompt.starts_with(T2I_SYSTEM_PROMPT) && t.system_prompt.ends_with(DETAIL_SCENE));
+        let e = detailed(request(&cfg, ResolvedMode::Edit, "x", vec!["P".into()], 1), ResolvedMode::Edit);
+        assert!(e.system_prompt.ends_with(DETAIL_EDIT));
+        let a = detailed(area_request(InpaintAction::Remove, "cyan", "", "P".into(), 1), ResolvedMode::Inpaint);
+        assert!(a.system_prompt.ends_with(DETAIL_AREA) && a.max_tokens == DETAIL_MAX_TOKENS);
+        let x = detailed(expand_request("left", "", "P".into(), 1), ResolvedMode::Outpaint);
+        assert!(x.system_prompt.ends_with(DETAIL_EXPAND));
+        // Only what is there: no "keep" lists, no "no X".
+        for d in [DETAIL_SCENE, DETAIL_EDIT, DETAIL_AREA, DETAIL_EXPAND] {
+            assert!(d.contains("replaces the length") && !d.contains("unchanged"));
+        }
+        assert!(450.0 * 1.4 < DETAIL_MAX_TOKENS as f64);
+    }
+
+    #[test]
+    fn area_and_expand_requests() {
+        let r = area_request(InpaintAction::Remove, "magenta", "  ", "PNG".into(), 7);
+        assert_eq!(r.prompt, "Line colour: magenta\nAction: remove\nStart with: Remove\nThe user's words: (none)");
+        // The action's words the app puts in front are not the user's.
+        assert!(area_request(InpaintAction::Remove, "magenta", "Remove ", "PNG".into(), 7).prompt.ends_with("(none)"));
+        assert!(area_request(InpaintAction::Remove, "magenta", "Remove the lamp", "PNG".into(), 7).prompt.ends_with("words: the lamp"));
+        assert_eq!((r.images.len(), r.system_prompt.as_str(), r.sampling.seed, r.max_tokens), (1, AREA_SYSTEM_PROMPT, 7, AREA_MAX_TOKENS));
+        let r = area_request(InpaintAction::Add, "cyan", " un vaso di fiori ", "PNG".into(), 1);
+        assert!(r.prompt.ends_with("Action: add\nStart with: Add\nThe user's words: un vaso di fiori"));
+        let r = expand_request("left and right", "", "PNG".into(), 3);
+        assert_eq!(r.prompt, "Growing sides: left and right\nThe user's wishes: (none)");
+        assert!(r.system_prompt == EXPAND_SYSTEM_PROMPT && r.images.len() == 1);
+        // The instruction around it is Kokon's: the text is only what goes in the area.
+        assert!(AREA_SYSTEM_PROMPT.contains("Never mention the line") && EXPAND_SYSTEM_PROMPT.contains("Never mention borders"));
     }
 
     #[test]

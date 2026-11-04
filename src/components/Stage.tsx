@@ -1,5 +1,5 @@
 import {
-  Brush, ClipboardPaste, Combine, Copy, Download, Ellipsis, Expand, FolderOpen, Heart, ImageUpscale, Info, Layers, Loader2, MousePointerClick, Palette, Pencil, RefreshCw, RotateCcw, SlidersHorizontal, Square, TextCursorInput, Trash2, Wand2, WandSparkles, X,
+  Brush, Check, ClipboardPaste, Combine, Copy, Download, Ellipsis, Expand, FolderOpen, Heart, ImageUpscale, Info, Layers, Loader2, MousePointerClick, Palette, Pencil, RefreshCw, RotateCcw, SlidersHorizontal, Square, TextCursorInput, Trash2, Wand2, WandSparkles, X,
 } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, urls } from "../lib/api";
@@ -9,7 +9,7 @@ import {
 } from "../lib/logic";
 import { canCopyImage, native } from "../lib/native";
 import {
-  addAsReference, addResult, cancelJob, focusPrompt, getState, itemSource, removeSessionItem, reusePrompt, selectedItem, selectItem, sessionLabels, sessionLinks, setState, stageImage, submitRequest, toastError, toastInfo, useStore, type SessionItem,
+  addAsReference, addResult, cancelJob, focusPrompt, getState, itemSource, removeSessionItem, removeSessionItems, reusePrompt, selectedItem, selectItem, sessionLabels, sessionLinks, setState, stageImage, submitRequest, toastError, toastInfo, useStore, type SessionItem,
 } from "../lib/store";
 import type { GenerationRecord, GenerationRequest, JobView, LutEntry, Mode, Size } from "../lib/types";
 import { Cocoon, Hatch } from "./Cocoon";
@@ -667,6 +667,48 @@ function Timeline({ labels, lab }: { labels: Record<string, string>; lab: Lab })
   const selected = useStore((s) => s.selected);
   const jobs = useStore((s) => s.jobs);
   const target = useStore((s) => s.composer.refs[0]?.source);
+  // Ctrl/⌘-click picks several versions (Shift-click a run of them), Delete removes them from the
+  // project (or the shown one, with nothing picked), after asking. A version being made can't be.
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const anchor = useRef<string | null>(null);
+  const removable = (it: SessionItem) => it.kind !== "job" || ["failed", "cancelled"].includes(jobs[it.jobId ?? ""]?.status ?? "failed");
+  const pick = (key: string, range: boolean) => {
+    const from = anchor.current ?? selected;
+    const next = new Set(picked.size ? picked : selected && session.some((i) => i.key === selected) ? [selected] : []);
+    if (range && from) {
+      const a = session.findIndex((i) => i.key === from);
+      const b = session.findIndex((i) => i.key === key);
+      if (a >= 0 && b >= 0) for (const it of session.slice(Math.min(a, b), Math.max(a, b) + 1)) next.add(it.key);
+    } else if (next.has(key)) next.delete(key);
+    else next.add(key);
+    if (!range) anchor.current = key;
+    setPicked(new Set([...next].filter((k) => session.some((i) => i.key === k && removable(i)))));
+  };
+  // Versions gone (removed here or elsewhere) are no longer picked.
+  useEffect(() => {
+    if ([...picked].some((k) => !session.some((i) => i.key === k))) setPicked(new Set([...picked].filter((k) => session.some((i) => i.key === k))));
+  }, [session, picked]);
+  useEffect(() => {
+    const down = async (e: KeyboardEvent) => {
+      if (isTyping(e.target) || getState().overlay) return;
+      if (e.key === "Escape" && picked.size) {
+        setPicked(new Set());
+        return;
+      }
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      const keys = picked.size ? [...picked] : session.filter((i) => i.key === selected && removable(i)).map((i) => i.key);
+      if (!keys.length) return;
+      e.preventDefault();
+      const n = keys.length;
+      const ok = await native.confirm(n === 1 ? "Remove this version from the project? Its image stays in All images." : `Remove ${n} versions from the project? Their images stay in All images.`, "Remove from project");
+      if (!ok) return;
+      removeSessionItems(keys);
+      setPicked(new Set());
+    };
+    window.addEventListener("keydown", down);
+    return () => window.removeEventListener("keydown", down);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [picked, session, selected, jobs]);
   const boxRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const [centers, setCenters] = useState<Record<string, number>>({});
@@ -802,12 +844,18 @@ function Timeline({ labels, lab }: { labels: Record<string, string>; lab: Lab })
               {(i > 0 || labFirst.length > 0) && <Joint kind={link?.kind ?? "next"} hot={hot} />}
               <button
                 data-key={it.key}
-                className={`frame ${selected === it.key ? "sel" : ""} ${selParents.has(it.key) ? "src" : ""}`}
+                className={`frame ${selected === it.key ? "sel" : ""} ${selParents.has(it.key) ? "src" : ""} ${picked.has(it.key) ? "picked" : ""}`}
                 title={tip}
+                aria-pressed={picked.size ? picked.has(it.key) : undefined}
                 onMouseEnter={() => setHovered(it.key)}
-                onClick={() => {
+                onClick={(e) => {
                   if (dragged.current) dragged.current = false;
-                  else selectItem(it.key);
+                  else if (e.ctrlKey || e.metaKey || e.shiftKey) pick(it.key, e.shiftKey);
+                  else {
+                    if (picked.size) setPicked(new Set());
+                    anchor.current = it.key;
+                    selectItem(it.key);
+                  }
                 }}
                 onPointerDown={(e) => {
                   // A finger scrolls the timeline; dragging onto the prompt is for a mouse.
@@ -861,6 +909,11 @@ function Timeline({ labels, lab }: { labels: Record<string, string>; lab: Lab })
                   </svg>
                 )}
                 </span>
+                {picked.has(it.key) && (
+                  <span className="frame-pick" aria-hidden>
+                    <Check size={11} strokeWidth={3} />
+                  </span>
+                )}
                 <span className="frame-label">
                   {mode && MODE_ICON[mode]}
                   {labels[it.key]}

@@ -128,6 +128,8 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
   const [spacePressed, setSpacePressed] = useState(false);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [sam, setSam] = useState<SamState>("loading");
+  // The selection model being downloaded (the first time), in %.
+  const [samPct, setSamPct] = useState<number | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const [areas, setAreas] = useState<Record<string, number>>({});
@@ -166,8 +168,9 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
     full.current = loadImage(src);
     (async () => {
       try {
-        const s = await Segmenter.load();
+        const s = await Segmenter.load(true, (pct) => !gone && setSamPct(pct));
         if (gone) return;
+        setSamPct(null);
         if (!s) return setSam("missing");
         setSam("encoding");
         await s.encode(await full.current!, mw, mh);
@@ -278,7 +281,7 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
   const select = async (x: number, y: number, remove: boolean) => {
     const s = segmenter.current;
     if (!s) {
-      toastInfo(sam === "missing" ? "The selection model is not there: paint with the brush." : "The selection model is still getting ready.");
+      toastInfo(sam === "missing" ? "The selection model could not be downloaded: paint with the brush." : "The selection model is still getting ready.");
       return;
     }
     const layer = activeRef.current;
@@ -553,10 +556,10 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
   const status =
     busy ??
     {
-      loading: "Loading the selection model…",
+      loading: samPct != null ? `Downloading the selection model (44 MB, once)… ${samPct}%` : "Loading the selection model…",
       encoding: "Reading the image…",
       ready: tool === "select" ? `Click an object to add it to “${activeName}” · again on the same spot: bigger part · right-click: take it out` : `Painting “${activeName}”`,
-      missing: "Selection model not found (lab-models/mobilesam): paint the layers with the brush",
+      missing: "The selection model could not be downloaded: paint the layers with the brush (open the lab again to retry)",
       error: "The selection model failed to start (see the console): paint the layers with the brush",
     }[sam];
   const brushCursor = tool === "brush" || tool === "eraser";

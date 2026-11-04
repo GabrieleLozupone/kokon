@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { packBits, writePsd } from "./psd";
+import { aiMarkingXmp, packBits, writePsd } from "./psd";
 
 function unpack(p: ArrayLike<number>, at: number, len: number): number[] {
   const out: number[] = [];
@@ -36,7 +36,19 @@ function readPsd(b: Uint8Array) {
   const width = u32();
   expect([u16(), u16()]).toEqual([8, 3]);
   skip();
-  skip();
+  // Image resources: 8BIM blocks (id, even-padded Pascal name, even-padded data).
+  const resources = new Map<number, Uint8Array>();
+  const resEnd = u32() + o;
+  while (o < resEnd) {
+    expect(s(4)).toBe("8BIM");
+    const id = u16();
+    const nl = u8();
+    o += nl + ((nl + 1) % 2);
+    const len = u32();
+    resources.set(id, b.slice(o, o + len));
+    o += len + (len % 2);
+  }
+  expect(o).toBe(resEnd);
   const masksLen = u32();
   const masksEnd = o + masksLen;
   const infoLen = u32();
@@ -100,7 +112,7 @@ function readPsd(b: Uint8Array) {
     o += n;
   }
   expect(o).toBe(b.length);
-  return { width, height, channels, recs, flat };
+  return { width, height, channels, recs, flat, resources };
 }
 
 describe("psd", () => {
@@ -138,5 +150,21 @@ describe("psd", () => {
     expect(out.recs[0].pixels[1].slice(0, W)).toEqual([0, 10, 20, 30, 40, 50]);
     expect(out.flat.length).toBe(3 * W * H);
     expect(out.flat.slice(0, W)).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+
+  it("carries the AI marking as XMP (resource 1060) and still reads back", () => {
+    const px = new Uint8ClampedArray([1, 2, 3, 255, 4, 5, 6, 255, 7, 8, 9, 255]);
+    const x = aiMarkingXmp("0.12.0", new Date(2026, 10, 4, 9, 5, 7));
+    expect(x).toContain('Iptc4xmpExt:DigitalSourceType="http://cv.iptc.org/newscodes/digitalsourcetype/compositeWithTrainedAlgorithmicMedia"');
+    expect(x).toContain('xmp:CreatorTool="Kokon 0.12.0"');
+    expect(x).toMatch(/xmp:CreateDate="2026-11-04T09:05:07[+-]\d\d:\d\d"/);
+    expect(aiMarkingXmp('a"<b')).toContain('Kokon a&quot;&lt;b"');
+    // Odd and even packet lengths both keep the sections aligned.
+    for (const packet of [x, x + " "]) {
+      const out = readPsd(writePsd(3, 1, [{ name: "L", hidden: false, rgba: px }], px, packet));
+      expect(new TextDecoder().decode(out.resources.get(1060))).toBe(packet);
+      expect(out.flat.slice(0, 3)).toEqual([1, 4, 7]);
+    }
+    expect(readPsd(writePsd(3, 1, [], px)).resources.size).toBe(0);
   });
 });

@@ -13,13 +13,13 @@
 import { Brush, Eraser, Eye, EyeOff, FileDown, GripVertical, Group, Hand, History, ImageDown, Link2, Loader2, Lock, MousePointer2, Paintbrush, Pencil, Redo2, RotateCcw, Scissors, Sparkles, Sun, Trash2, Undo2, Ungroup, WandSparkles, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, urls } from "../lib/api";
-import { focusPixels, foreground, modelMatte, stickerAlpha } from "../lib/matte";
+import { focusPixels, foreground, keptShare, MIN_KEPT, modelMatte, stickerAlpha } from "../lib/matte";
 import { blendPrompt, DEFAULT_READING } from "../lib/blend";
 import { dilate, erode, fileSafe } from "../lib/layers";
-import { centre, copiedShare, CROP_MAX_RATIO, cropFor, docId, extOf, unionRect, type Rect, waitingMarks, shadowAlpha, mapBox, reorder, unmapPoint, withGroup, xfOf, type Box, type DocLayer, type Effect, type Feed, type LayerDoc, type SceneEdit, type Sticker, type Xf } from "../lib/layerDoc";
+import { centre, copiedShare, CROP_MAX_RATIO, cropFor, docId, extOf, unionRect, type Rect, waitingMarks, shadowAlpha, strengthPixels, mapBox, reorder, unmapPoint, withGroup, xfOf, type Box, type DocLayer, type Effect, type Feed, type LayerDoc, type SceneEdit, type Sticker, type Xf } from "../lib/layerDoc";
 import { buildRequest, refFromInput } from "../lib/logic";
 import { native } from "../lib/native";
-import { writePsd } from "../lib/psd";
+import { aiMarkingXmp, writePsd } from "../lib/psd";
 import { MARK_COLOURS, marksPrompt, type MarkColour } from "../lib/sceneEdit";
 import { placesOf } from "./LabScene";
 import { shortcut } from "../lib/platform";
@@ -731,8 +731,12 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     for (let i = 0; i < sel.length; i++) sel[i] = own[i * 4 + 3] > 127 ? 255 : 0;
     // The object in its scene (a new object drawn by the lab is over the photo too).
     const rgba = scene(w, h, true).getContext("2d")!.getImageData(0, 0, w, h).data;
+    if (!sel.some((v) => v)) throw new Error(`${l.name} has no pixels to cut out.`);
     const matte = await modelMatte(focusPixels(rgba, sel, w, h), w, h);
     const { alpha } = stickerAlpha(matte, sel, w, h);
+    // Checked before anything changes: a cut-out that kept (almost) nothing leaves the layer as it was.
+    const kept = keptShare(alpha, sel);
+    if (kept < MIN_KEPT) throw new Error(`The quick cut-out found almost nothing of ${l.name} (${Math.round(kept * 100)} % kept): the layer is unchanged. Try Clean edges.`);
     const small = document.createElement("canvas");
     small.width = w;
     small.height = h;
@@ -784,6 +788,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     try {
       await ensureMatteModel();
       await fastSticker(l);
+      toastInfo(`${l.name}: quick cut-out done.`);
     } catch (e) {
       toastError(e);
     } finally {
@@ -794,7 +799,8 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
   // Stickers: after a split with stickers on, every object is cleaned once. Quality: each goes to
   // Clean edges on its own (a crop at object size and the sticker prompt, sent as lab steps; the
   // service runs them one after the other and each result comes back like any Clean edges). Fast:
-  // the background's fill is sent first, then each object is matted here (fastSticker).
+  // each object is matted here (fastSticker), the background's fill sent before (PC: side by side)
+  // or after them (Mac).
   const stickersStarted = useRef(false);
   const setSticker = (layer: string, p: Partial<Sticker>) => {
     const d = liveRef.current;
@@ -829,8 +835,11 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       }
     };
     if (fast) {
-      // The fill runs on the image engine meanwhile; the stickers on the CPU, one after the other.
-      await sendFill();
+      // A PC: the fill is sent first and runs on the graphics card while the stickers are made on
+      // the CPU, side by side. A Mac (unified memory): the image engine uses the CPU too and they
+      // fought (11-04: stickers waited on the fill), so the stickers first, then the fill.
+      const sideBySide = !getState().status?.gpu?.unified;
+      if (sideBySide) await sendFill();
       let ready = true;
       try {
         await ensureMatteModel();
@@ -851,8 +860,10 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
         } catch (e) {
           console.error(e);
           setSticker(l.id, { failed: true, local: undefined });
+          toastError(e);
         }
       }
+      if (!sideBySide) await sendFill();
       putBack();
       return;
     }
@@ -977,8 +988,10 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stickersLeft, stickerRows.length]);
 
-  // Shadow strength: the Automatic shadows layer redrawn from the model's version, its alpha as k of
-  // them stacked (1 - (1 - a)^k: darker stays a soft shadow, lighter fades evenly), as its next version.
+  // Strength: the Blend (or older Shadows) layer redrawn from the model's version, as its next version:
+  // the change it makes over the layers under it, times k (0: none, 1: as made, 2: twice as dark).
+  // The Blend layer is a paste, opaque where it changed, so scaling its alpha alone (stacking it,
+  // before 11-04) left it as it was: past alpha 1 its colours move on from what is under it.
   // The Blend (or older Shadows) layer shown, not the in-front piece.
   const autoShadows = live.layers.find((l) => l.auto && l.effect && l.blend !== "front" && !l.hidden) ?? live.layers.find((l) => l.auto && l.effect && l.blend !== "front");
   const [strengthShown, setStrengthShown] = useState(100);
@@ -997,7 +1010,20 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
         const ctx = c.getContext("2d")!;
         ctx.drawImage(img, 0, 0, W, H);
         const d = ctx.getImageData(0, 0, W, H);
-        for (let i = 3; i < d.data.length; i += 4) d.data[i] = Math.round(255 * (1 - Math.pow(1 - d.data[i] / 255, k)));
+        // What is under the layer, in the layer's own place (it may have been moved or scaled).
+        const at = live.layers.indexOf(l);
+        const under = await render(W, H, undefined, live.layers.slice(at + 1));
+        const info = await sourceInfo(l.source, W, H);
+        const t = xfOf(live.layers, l, (src) => (src === l.source ? info.box : infos[src]?.box), W, H);
+        const u = document.createElement("canvas");
+        u.width = W;
+        u.height = H;
+        const uctx = u.getContext("2d")!;
+        uctx.translate(t.c.x, t.c.y);
+        uctx.scale(1 / t.s, 1 / t.s);
+        uctx.translate(-t.c.x - t.dx, -t.c.y - t.dy);
+        uctx.drawImage(under, 0, 0);
+        d.data.set(strengthPixels(d.data, uctx.getImageData(0, 0, W, H).data, k));
         ctx.putImageData(d, 0, 0);
         const rec = await api.upload(await toPng(c), "Shadows.png");
         const src = `input:${rec.id}`;
@@ -1441,6 +1467,8 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     const keep = { selected: getState().selected, refs: getState().composer.refs };
     try {
       const skip = new Set(live.layers.filter((l) => l.effect && (o.shadows.includes(l.follows ?? "") || (!l.follows && o.shadows.length > 0))).map((l) => l.id));
+      // Blend: the background and the objects being blended, nothing else (Gabriele 11-03).
+      if (o.blend) for (const l of live.layers) if (!l.base && !l.effect && !o.shadows.includes(l.id)) skip.add(l.id);
       const flat = document.createElement("canvas");
       flat.width = W;
       flat.height = H;
@@ -1543,9 +1571,9 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     if (!chosen.length) return toastInfo("No visible objects to blend in.");
     setBusy(true);
     try {
-      // What the AI reads: the layers as they are, without the earlier Blend or Shadows layers, on grey
-      // (holes would make the image transparent).
-      const skip = new Set(live.layers.filter((l) => l.effect && l.auto).map((l) => l.id));
+      // What the AI reads: the background and the chosen objects (as sendScene sends them), without the
+      // earlier Blend or Shadows layers, on grey (holes would make the image transparent).
+      const skip = new Set(live.layers.filter((l) => (l.effect && l.auto) || (!l.base && !l.effect && !chosen.includes(l))).map((l) => l.id));
       const flat = document.createElement("canvas");
       flat.width = W;
       flat.height = H;
@@ -1646,7 +1674,8 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       fx.fillStyle = "#fff";
       fx.fillRect(0, 0, W, H);
       fx.drawImage(await render(W, H), 0, 0);
-      const path = await native.savePsd(writePsd(W, H, layers, fx.getImageData(0, 0, W, H).data));
+      const xmp = aiMarkingXmp(getState().status?.service.version ?? "");
+      const path = await native.savePsd(writePsd(W, H, layers, fx.getImageData(0, 0, W, H).data, xmp));
       if (path) toastInfo(`Saved ${path.split(/[\\/]/).pop()}: each layer is its own layer in Photoshop.`);
     } catch (e) {
       toastError(e);
@@ -1725,7 +1754,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
         ? "Shadow brush: select a shadow layer in the list"
         : tool === "sketch"
           ? "Pencil: draw where a new object goes, one colour per object · [ ] size · then say what it is on the right"
-          : "Click a layer to select it · Shift+click adds · drag to move · corner scales · Ctrl+A all · Ctrl+G group";
+          : "Click a layer to select it · Shift+click adds · drag to move · a corner scales · Ctrl+A all · Ctrl+G group";
 
   return (
     <div className="overlay">
@@ -1872,16 +1901,19 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
                     })}
                   {box && tool !== "sketch" && (
                     <div className="doc-sel" style={{ left: box.x0, top: box.y0, width: box.x1 - box.x0, height: box.y1 - box.y0, borderWidth: 1.5 / k }}>
-                      {canScale && (
-                        <div
-                          className="doc-handle"
-                          title="Drag to scale"
-                          style={{ width: 12 / k, height: 12 / k, right: -6 / k, bottom: -6 / k, borderWidth: 1.5 / k }}
-                          onPointerDown={(e) => startDrag(e, "scale", sels)}
-                          onPointerMove={onMove}
-                          onPointerUp={onUp}
-                        />
-                      )}
+                      {/* A handle on every corner: scaling is about the centre, so any of them works the same. */}
+                      {canScale &&
+                        (["tl", "tr", "bl", "br"] as const).map((at) => (
+                          <div
+                            key={at}
+                            className={`doc-handle ${at}`}
+                            title="Drag to scale"
+                            style={{ width: 12 / k, height: 12 / k, [at[0] === "t" ? "top" : "bottom"]: -6 / k, [at[1] === "l" ? "left" : "right"]: -6 / k, borderWidth: 1.5 / k }}
+                            onPointerDown={(e) => startDrag(e, "scale", sels)}
+                            onPointerMove={onMove}
+                            onPointerUp={onUp}
+                          />
+                        ))}
                     </div>
                   )}
                 </div>
@@ -2141,15 +2173,16 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
             title={
               blendStale
                 ? "Something moved since the blend: its shadows and reflections no longer fit. Blend again (the selected objects, else all)"
-                : "The AI reads where each object stands (you can correct it), then redraws the scene with their shadows, reflections on wet or shiny ground, grass round their feet; only that is kept, as the Blend layer (the selected objects, else all)"
+                : "Experimental: often does not work yet. The AI reads where each object stands (you can correct it), then redraws the scene with their shadows, reflections on wet or shiny ground, grass round their feet; only that is kept, as the Blend layer (the selected objects, else all)"
             }
           >
             <Sun size={15} /> {blendStale ? "Blend again" : "Blend into scene"}
+            <span className="exp-tag">Experimental</span>
           </button>
           {autoShadows && (
-            <label className="slider" title="How dark the Shadows layer is, without making it again (100 %: as the model made it)">
+            <label className="slider" title="How strong the blend's shadows and reflections are, without making them again (0 %: none, 100 %: as the model made them, 200 %: twice as strong)">
               Strength
-              <input type="range" min={50} max={200} step={10} value={strengthShown} onChange={(e) => setStrengthShown(Number(e.target.value))} />
+              <input type="range" min={0} max={200} step={10} value={strengthShown} onChange={(e) => setStrengthShown(Number(e.target.value))} />
               <span className="doc-cmd-val">{strengthShown}%</span>
             </label>
           )}

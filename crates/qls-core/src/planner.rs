@@ -285,6 +285,10 @@ pub struct GenerationRequest {
     /// `JobView::enhanced_prompt` and no image, so the user can read and change it first.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub enhance_only: bool,
+    /// Prompt+ "Detailed": a longer prompt with more context about what is in the image or what
+    /// changes (enhancer::detailed). Standard lengths otherwise.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub enhance_detail: bool,
     /// Layers lab "Blend into scene": only read the place the object with this name stands in
     /// (`scene`, the Prompt+ model). The job ends with the reading in `JobView::scene` and no image.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -921,15 +925,16 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
     let (mode, auto_mode, mode_reason) = detect_mode(req, inputs)?;
     let marks = mode == ResolvedMode::Inpaint && req.marks.is_some();
     if req.enhance_only && !(req.enhance && crate::enhancer::applies_to(mode, marks)) {
-        return Err(AppError::invalid("Prompt+ writes prompts for new images, edits and combines only."));
+        return Err(AppError::invalid("Prompt+ does not write prompts for upscales."));
     }
     // Marks: the prompt names things by colour, never an action of its own (a Remove would blur the marks away).
     let inpaint_action = (mode == ResolvedMode::Inpaint).then(|| if marks { InpaintAction::Edit } else { req.inpaint_action.resolve(&req.prompt) });
     if req.read_scene.is_some() && (mode != ResolvedMode::Edit || inputs.image_sizes.len() != 1) {
         return Err(AppError::invalid("The scene is read from one image, as an edit."));
     }
-    // Upscales and removals need no description, nor a scene reading (the object's name is its own field).
-    let prompt_optional = mode == ResolvedMode::Upscale || inpaint_action == Some(InpaintAction::Remove) || req.read_scene.is_some();
+    // Upscales and removals need no description, nor a scene reading (the object's name is its own
+    // field), nor an expansion (it continues the scene; Prompt+ can write what the new areas show).
+    let prompt_optional = mode == ResolvedMode::Upscale || mode == ResolvedMode::Outpaint || inpaint_action == Some(InpaintAction::Remove) || req.read_scene.is_some();
     if req.prompt.trim().is_empty() && !prompt_optional {
         return Err(AppError::invalid("Describe what to generate or change."));
     }

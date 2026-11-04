@@ -146,7 +146,8 @@ const XMP_NS: &[u8] = b"http://ns.adobe.com/xap/1.0/\0";
 const ISO_NS: &[u8] = b"urn:iso:std:iso:ts:21496:-1\0";
 
 /// Encodes an Ultra HDR JPEG: `sdr` as the primary image (with `icc`), `gm` as the gain map.
-pub fn encode_ultra_hdr(sdr: &RgbaImage, icc: Option<&[u8]>, gm: &GainMap, quality: u8) -> Result<Vec<u8>, String> {
+/// `provenance`: more attributes for the primary's XMP description (Kokon's AI marking, provenance.rs).
+pub fn encode_ultra_hdr(sdr: &RgbaImage, icc: Option<&[u8]>, gm: &GainMap, quality: u8, provenance: &str) -> Result<Vec<u8>, String> {
     let primary = jpeg(&DynamicImage::ImageRgba8(sdr.clone()).into_rgb8(), icc, quality)?;
     let gain = jpeg(&gm.image, None, quality.min(90))?;
 
@@ -155,7 +156,7 @@ pub fn encode_ultra_hdr(sdr: &RgbaImage, icc: Option<&[u8]>, gm: &GainMap, quali
     let gain_file = insert_after_soi(&gain, &gain_segments);
 
     // Primary: XMP directory + ISO version marker + MPF index, then the encoder's own segments.
-    let mut head = app(1, &[XMP_NS, primary_xmp(gain_file.len()).as_bytes()].concat());
+    let mut head = app(1, &[XMP_NS, primary_xmp(gain_file.len(), provenance).as_bytes()].concat());
     head.extend(app(2, &[ISO_NS, &[0, 0, 0, 0]].concat()));
     let mpf_at = 2 + head.len() + 4 + 4; // SOI + segments + APP2 marker/length + "MPF\0"
     let mpf_len = app(2, &mpf(0, 0, 0)).len();
@@ -216,9 +217,9 @@ fn mpf(primary_len: u32, gain_len: u32, gain_offset: u32) -> Vec<u8> {
     v
 }
 
-fn primary_xmp(gain_len: usize) -> String {
+fn primary_xmp(gain_len: usize, extra: &str) -> String {
     format!(
-        r#"<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Kokon"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:Container="http://ns.google.com/photos/1.0/container/" xmlns:Item="http://ns.google.com/photos/1.0/container/item/" xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/" hdrgm:Version="1.0"><Container:Directory><rdf:Seq><rdf:li rdf:parseType="Resource"><Container:Item Item:Semantic="Primary" Item:Mime="image/jpeg"/></rdf:li><rdf:li rdf:parseType="Resource"><Container:Item Item:Semantic="GainMap" Item:Mime="image/jpeg" Item:Length="{gain_len}"/></rdf:li></rdf:Seq></Container:Directory></rdf:Description></rdf:RDF></x:xmpmeta>"#
+        r#"<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Kokon"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:Container="http://ns.google.com/photos/1.0/container/" xmlns:Item="http://ns.google.com/photos/1.0/container/item/" xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/" hdrgm:Version="1.0" {extra}><Container:Directory><rdf:Seq><rdf:li rdf:parseType="Resource"><Container:Item Item:Semantic="Primary" Item:Mime="image/jpeg"/></rdf:li><rdf:li rdf:parseType="Resource"><Container:Item Item:Semantic="GainMap" Item:Mime="image/jpeg" Item:Length="{gain_len}"/></rdf:li></rdf:Seq></Container:Directory></rdf:Description></rdf:RDF></x:xmpmeta>"#
     )
 }
 
@@ -313,7 +314,7 @@ mod tests {
         let sdr = RgbaImage::from_pixel(64, 32, image::Rgba([200, 30, 30, 255]));
         let gm = GainMap { image: GrayImage::from_pixel(32, 16, Luma([128])), metadata: meta() };
         let icc = vec![7u8; 600];
-        let out = encode_ultra_hdr(&sdr, Some(&icc), &gm, 90).unwrap();
+        let out = encode_ultra_hdr(&sdr, Some(&icc), &gm, 90, "").unwrap();
 
         // Find the MPF segment and check that its second entry points at a JPEG with gain map XMP.
         let pos = out.windows(4).position(|w| w == b"MPF\0").unwrap();
@@ -351,7 +352,7 @@ mod tests {
         let base = crate::wic::decode(&bytes).unwrap().pixels;
         println!("base {:?} gain map {:?}", base.dimensions(), gm.image.dimensions());
         assert!(same_framing(base.dimensions(), gm.image.dimensions()), "gain map oriented like the base");
-        let out = encode_ultra_hdr(&base, crate::heif::primary_icc(&bytes).as_deref(), &adapt_gain_map(&gm, &base, &base).0, 92).unwrap();
+        let out = encode_ultra_hdr(&base, crate::heif::primary_icc(&bytes).as_deref(), &adapt_gain_map(&gm, &base, &base).0, 92, "").unwrap();
         if let Ok(dir) = std::env::var("QLS_TEST_OUT") {
             std::fs::write(Path::new(&dir).join("ultrahdr_test.jpg"), &out).unwrap();
         }

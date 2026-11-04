@@ -111,7 +111,6 @@ impl Engine {
                     continue;
                 }
                 let file = dir.join(format!("{}.jpg", s.name));
-                std::fs::write(&file, s.image).map_err(|e| AppError::io("store the example", &file, e))?;
                 let img = imaging::decode_image(s.image)?.pixels;
                 // The previous version as this one's reference, the way an edit records it.
                 let reference: Option<InputRecord> = match &prev {
@@ -137,7 +136,7 @@ impl Engine {
                     ..Default::default()
                 };
                 let mode = serde_json::to_value(s.mode).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default();
-                let rec = GenerationRecord {
+                let mut rec = GenerationRecord {
                     id: id.clone(),
                     // Older than anything the user makes, in project order.
                     created_at: format!("2026-10-10T09:{:02}:{:02}.000Z", pi * 5, si * 10),
@@ -177,7 +176,12 @@ impl Engine {
                     request: serde_json::to_value(&request).unwrap_or_default(),
                     pipeline: None,
                     hidden: false,
+                    source_type: None,
                 };
+                // Model-made like any result: the XMP and the invisible watermark (provenance.rs).
+                let img = self.mark(&img, &mut rec, &[]).into_owned();
+                let bytes = crate::provenance::jpeg_with_xmp(&imaging::encode_jpeg(&img, 92)?, &crate::provenance::xmp(&rec));
+                std::fs::write(&file, bytes).map_err(|e| AppError::io("store the example", &file, e))?;
                 if let Ok(j) = imaging::encode_jpeg(&imaging::thumbnail(&img, 512), 85) {
                     let _ = std::fs::write(store.thumb_path(&id), j);
                 }

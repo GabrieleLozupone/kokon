@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { copiedShare, cropFor, expandedRect, extOf, unionRect, docFor, keepLabsIn, labSources, loadLab, saveLab, waitingMarks, jobLayer, labItems, leftovers, putDoc, type LabStore, shadowAlpha, mapPoint, placed, reconcile, reorder, toLayer, xfOf, type DocLayer, type LayerDoc } from "./layerDoc";
+import { copiedShare, cropFor, expandedRect, extOf, unionRect, docFor, keepLabsIn, labSources, loadLab, saveLab, waitingMarks, jobLayer, labItems, leftovers, putDoc, type LabStore, shadowAlpha, strengthPixels, mapPoint, placed, reconcile, reorder, toLayer, xfOf, type DocLayer, type LayerDoc } from "./layerDoc";
 
 const layer = (id: string, source: string, base = false): DocLayer => ({ id, name: id, source, history: [source], hidden: false, base, dx: 0, dy: 0, s: 1 });
 const doc = (layers: DocLayer[]): LayerDoc => ({ width: 100, height: 100, layers, known: [] });
@@ -74,6 +74,18 @@ describe("layer document", () => {
     expect(mapPoint(xfOf([obj, nudged], nudged, () => box, 100, 100), 60, 50)).toEqual({ x: 83, y: 48 });
     // Without `at` (or the object gone) a layer uses its own place.
     expect(xfOf([shadow], shadow, () => box, 100, 100)).toEqual({ c: { x: 50, y: 50 }, s: 1, dx: 0, dy: 0 });
+  });
+
+  it("strengthPixels: 0 shows nothing, 1 as made, 2 doubles an opaque paste's change over what is under it", () => {
+    const made = [60, 60, 60, 255, 0, 0, 0, 128];
+    const under = [100, 100, 100, 255, 200, 200, 200, 255];
+    expect([...strengthPixels(made, under, 0)]).toEqual([60, 60, 60, 0, 0, 0, 0, 0]);
+    expect([...strengthPixels(made, under, 1)]).toEqual([60, 60, 60, 255, 0, 0, 0, 128]);
+    expect([...strengthPixels(made, under, 0.5)].slice(0, 4)).toEqual([60, 60, 60, 128]);
+    const two = [...strengthPixels(made, under, 2)];
+    expect(two.slice(0, 4)).toEqual([20, 20, 20, 255]);
+    // A half-transparent shadow at 2: fully opaque, the same darkness as the paste's own.
+    expect(two[7]).toBe(255);
   });
 
   it("shadowAlpha: how much darker, inside the painted area only; brighter pixels are left out", () => {

@@ -19,11 +19,14 @@ pub struct BackendOptions {
     pub server_vae_tile_size: u32,
     /// An inpaint's coloured marks (`GenerationRequest::marks`, any size: stretched over the image).
     pub marks: Option<RgbaImage>,
+    /// The prompt was written by Prompt+ (reviewed in the box: `enhanced_from`): for a painted
+    /// area it is a whole instruction, sent in [`written_inpaint_prompt`].
+    pub written: bool,
 }
 
 impl Default for BackendOptions {
     fn default() -> Self {
-        Self { server_vae_tile_size: 0, marks: None }
+        Self { server_vae_tile_size: 0, marks: None, written: false }
     }
 }
 
@@ -49,6 +52,52 @@ pub fn vae_tiling_params(tiling: bool, server_tile: u32, job_tile: Option<(u32, 
 pub struct PreparedJob {
     pub request: ImgGenRequest,
     pub post: PostProcess,
+    /// What Prompt+ looks at for a painted area or an expansion (other modes: the references).
+    pub enhancer: Option<EnhancerView>,
+}
+
+/// Prompt+ for a painted area or an expansion (enhancer::area_request, expand_request): the
+/// picture it sees, and how its text goes back into Kokon's instruction ([`EnhancerView::prompt`]).
+pub struct EnhancerView {
+    /// PNG, base64, as the references.
+    pub image: String,
+    pub kind: EnhancerKind,
+}
+
+pub enum EnhancerKind {
+    /// The untouched region with the area highlighted in `color` (named in the model's instruction).
+    Area { action: InpaintAction, color: String },
+    /// The canvas with the new areas empty; `sides`: "left and top".
+    Expand { sides: String },
+}
+
+impl EnhancerView {
+    /// The image model's prompt with Prompt+'s text in place of the user's words.
+    pub fn prompt(&self, plan: &Plan, text: &str) -> String {
+        match &self.kind {
+            EnhancerKind::Area { action, color } => written_inpaint_prompt(*action, text, color),
+            EnhancerKind::Expand { .. } => effective_prompt(plan, text),
+        }
+    }
+}
+
+/// The sides an expansion grows, in words ("left, right and bottom").
+pub fn growing_sides(e: &crate::geometry::Expansion) -> String {
+    let sides: Vec<&str> = [("left", e.left), ("right", e.right), ("top", e.top), ("bottom", e.bottom)].iter().filter(|(_, px)| *px > 0).map(|(n, _)| *n).collect();
+    match sides.as_slice() {
+        [] => "none".into(),
+        [one] => one.to_string(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
+/// `img` no larger than about 1 MP, for Prompt+ to look at (as the edit references are).
+fn for_enhancer(img: &RgbaImage) -> RgbaImage {
+    let k = (1_048_576.0 / (img.width() as f64 * img.height() as f64)).sqrt();
+    if k >= 1.0 {
+        return img.clone();
+    }
+    imaging::resize(img, ((img.width() as f64 * k).round() as u32).max(1), ((img.height() as f64 * k).round() as u32).max(1))
 }
 
 pub enum PostKind {
@@ -158,6 +207,22 @@ pub fn inpaint_prompt(action: InpaintAction, prompt: &str, color: &str) -> Strin
     }
 }
 
+/// Inpaint instruction around a prompt Prompt+ wrote for the area (enhancer::AREA_SYSTEM_PROMPT):
+/// its text is already the whole instruction for the action (for Remove: what goes and what is
+/// seen there instead), so it is sent as it is, in the same frame as [`inpaint_prompt`]. Putting
+/// only the object's name in "blurred out to remove …" made Qwen paint it again (2026-11-04,
+/// a basket of fruit came back on both tries).
+pub fn written_inpaint_prompt(action: InpaintAction, text: &str, color: &str) -> String {
+    let area = format!("the area marked in {color} in <image2>");
+    let keep = "Keep everything outside the marked area exactly as it is.";
+    let text = text.trim();
+    match action {
+        InpaintAction::Remove | InpaintAction::Replace => format!("In <image1>, {area} has been blurred out. {text} {keep}"),
+        InpaintAction::Edit => format!("In <image1>, change only {area}. {text} Blend the change seamlessly into the surrounding scene. {keep}"),
+        InpaintAction::Add => format!("In <image1>, inside {area}: {text} {keep}"),
+    }
+}
+
 /// `top` drawn over `base` by its alpha (the same size).
 fn draw_over(base: &RgbaImage, top: &RgbaImage) -> RgbaImage {
     let mut out = base.clone();
@@ -245,6 +310,7 @@ pub fn prepare(plan: &Plan, prompt: &str, seed: i64, images: &[LoadedImage], mas
         embed_image_metadata: false,
     };
     let mut kind = PostKind::Plain;
+    let mut enhancer = None;
     let keep_alpha = wants_transparency(prompt) || images.iter().any(|i| i.has_transparency);
     let need_images = |n: usize| -> AppResult<()> {
         if images.len() < n {
@@ -335,6 +401,10 @@ pub fn prepare(plan: &Plan, prompt: &str, seed: i64, images: &[LoadedImage], mas
                 let (color_name, color) = imaging::pick_highlight(&content, &m_content);
                 let guide_mask = imaging::resize_mask(&m_work, gc.content.width, gc.content.height);
                 let guide = imaging::highlight(&imaging::resize(&image1, gc.content.width, gc.content.height), &guide_mask, color);
+                // Prompt+ sees the region as it is, the area only outlined: image 1 is blurred there
+                // for Remove and Replace, and a tint over it was read as a thing of its own.
+                let view = imaging::outline(&imaging::resize(&content, gc.content.width, gc.content.height), &guide_mask, color);
+                enhancer = Some(EnhancerView { image: png_b64(&for_enhancer(&view))?, kind: EnhancerKind::Area { action, color: color_name.to_string() } });
                 Some((imaging::pad_edge(&guide, gc.canvas, gc.content_offset), color_name))
             };
             drop(content);
@@ -352,6 +422,7 @@ pub fn prepare(plan: &Plan, prompt: &str, seed: i64, images: &[LoadedImage], mas
                 req.ref_image_args = Some("resize_before_vae=false".into());
             }
             req.prompt = match &guide {
+                Some((_, color_name)) if opts.written => written_inpaint_prompt(action, prompt, color_name),
                 Some((_, color_name)) => inpaint_prompt(action, prompt, color_name),
                 None => effective_prompt(plan, prompt),
             };
@@ -373,6 +444,7 @@ pub fn prepare(plan: &Plan, prompt: &str, seed: i64, images: &[LoadedImage], mas
             let canvas = imaging::pad_solid(&scaled, op.working.canvas, (r.x, r.y), mean_color(src));
             let mask = imaging::outpaint_mask(op.working.canvas, r, op.overlap_working);
             req.init_image = Some(png_b64(&canvas)?);
+            enhancer = Some(EnhancerView { image: png_b64(&for_enhancer(&canvas))?, kind: EnhancerKind::Expand { sides: growing_sides(&op.expansion) } });
             req.mask_image = Some(gray_png_b64(&mask)?);
             req.ref_images.push(png_b64(&to_canvas(src, &plan.references[0].canvas))?);
             req.strength = plan.strength;
@@ -388,6 +460,7 @@ pub fn prepare(plan: &Plan, prompt: &str, seed: i64, images: &[LoadedImage], mas
     Ok(PreparedJob {
         request: req,
         post: PostProcess { kind, keep_alpha, working: plan.working, content: plan.content, output: plan.output, mode: plan.mode, outpaint: plan.outpaint },
+        enhancer,
     })
 }
 
@@ -1119,9 +1192,50 @@ mod tests {
     }
 
     #[test]
+    fn a_written_prompt_is_sent_whole() {
+        let (img, m, _) = inpaint_job("x", InpaintAction::Remove);
+        let mut r = req("Remove the white box. The bare table continues there, same grain and light.");
+        r.mask = Some("input:m".into());
+        r.inpaint_action = InpaintAction::Remove;
+        let inputs = PlanInputs {
+            image_sizes: vec![img.size()],
+            mask: Some((Size::new(900, 700), imaging::mask_bbox(&m, 127), imaging::mask_coverage(&m, 127))),
+            vram_total_mib: Some(16303),
+            ..Default::default()
+        };
+        let p = plan(&r, &inputs, &RecommendedSettings::default()).unwrap();
+        let j = prepare(&p, &r.prompt, 1, std::slice::from_ref(&img), Some(&m), &BackendOptions { written: true, ..Default::default() }).unwrap();
+        assert!(j.request.prompt.contains("blurred out. Remove the white box. The bare table continues there"), "{}", j.request.prompt);
+        assert!(!j.request.prompt.contains("to remove"), "{}", j.request.prompt);
+    }
+
+    #[test]
     fn remove_needs_no_prompt() {
         let (_, _, j) = inpaint_job("", InpaintAction::Remove);
         assert!(j.request.prompt.contains("to remove everything that was there"));
+    }
+
+    #[test]
+    fn prompt_plus_sees_the_area_unblurred_and_its_text_goes_in_kokons_instruction() {
+        let (_, _, j) = inpaint_job("", InpaintAction::Remove);
+        let v = j.enhancer.as_ref().expect("an area has a Prompt+ view");
+        let EnhancerKind::Area { action, color } = &v.kind else { panic!("not an area") };
+        assert_eq!(*action, InpaintAction::Remove);
+        assert_ne!(v.image, j.request.ref_images[0], "not the blurred image 1");
+        // Expand: Prompt+ sees the canvas, and Kokon's outpaint instruction goes in front of its text.
+        let img = photo(800, 600);
+        let mut r = req("");
+        r.outpaint = Some(OutpaintSpec { left: 0.0, right: 50.0, top: 0.0, bottom: 0.0, units: ExpansionUnits::Percent });
+        let plan = plan(&r, &PlanInputs { image_sizes: vec![img.size()], vram_total_mib: Some(16303), ..Default::default() }, &RecommendedSettings::default()).unwrap();
+        let p = v.prompt(&plan, "Remove the white box. The bare table continues there.");
+        assert!(p.contains("blurred out. Remove the white box. The bare table continues there. Keep everything") && p.contains(color.as_str()), "{p}");
+        let x = prepare(&plan, "", 1, std::slice::from_ref(&img), None, &BackendOptions::default()).unwrap();
+        let xv = x.enhancer.expect("an expansion has a Prompt+ view");
+        assert!(matches!(&xv.kind, EnhancerKind::Expand { sides } if sides == "right"));
+        assert!(xv.prompt(&plan, "More of the meadow.").starts_with("Extend the image naturally") && xv.prompt(&plan, "More of the meadow.").ends_with("More of the meadow."));
+        use crate::geometry::Expansion;
+        assert_eq!(growing_sides(&Expansion { left: 10, right: 10, top: 0, bottom: 10 }), "left, right and bottom");
+        assert_eq!(growing_sides(&Expansion { left: 0, right: 0, top: 20, bottom: 0 }), "top");
     }
 
     #[test]

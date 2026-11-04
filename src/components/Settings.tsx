@@ -2,6 +2,7 @@ import { Activity, Copy, Cpu, Download, FolderOpen, HardDrive, Heart, Layers, Mo
 import { useEffect, useRef, useState } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { api } from "../lib/api";
+import { AiMarkingCard } from "./AiCheck";
 import { native } from "../lib/native";
 import { inBrowser } from "../lib/platform";
 import { getState, openModelSetup, refreshStatus, setState, startTour, toastError, toastInfo, useStore } from "../lib/store";
@@ -273,6 +274,16 @@ export function Settings() {
   });
   useEffect(() => setState({ settingsTab: null }), []);
   const [cfg, setCfg] = useState<AppConfig | null>(null);
+  // Opened on a section (e.g. Prompt+ instructions, from the Prompt+ menu): scrolled to once it is drawn.
+  const focus = useRef(getState().settingsFocus);
+  useEffect(() => {
+    if (!focus.current || !cfg) return;
+    const el = document.getElementById(`settings-${focus.current}`);
+    if (!el) return;
+    focus.current = null;
+    setState({ settingsFocus: null });
+    window.requestAnimationFrame(() => el.scrollIntoView({ block: "start", behavior: "smooth" }));
+  }, [cfg, tab]);
   const [devices, setDevices] = useState<[string, string][]>([]);
   const [upscaler, setUpscaler] = useState<Check | null>(null);
   // The saved model setup: what is missing, whether the official files are downloaded.
@@ -429,6 +440,7 @@ export function Settings() {
             <>
               <RepoCard />
               <SupportCard />
+              <AiMarkingCard />
               <PathField label="Save images to" value={cfg.outputDir} folder open onChange={(v) => set({ outputDir: v })} />
               <div className="field">
                 <span>Appearance</span>
@@ -496,7 +508,7 @@ export function Settings() {
                 </button>
               </div>
 
-              <h4 style={{ margin: "14px 0 0", fontSize: 14, fontWeight: 600 }}>Prompt+</h4>
+              <h4 id="settings-prompt-plus" style={{ margin: "14px 0 0", fontSize: 14, fontWeight: 600, scrollMarginTop: 12 }}>Prompt+</h4>
               <span className="muted" style={{ marginTop: -8 }}>
                 With Prompt+ on (next to the prompt), the model's own language model rewrites your prompt before making the image, following these instructions. It
                 always writes in English. Its menu also lets you read and change the prompt before the image is made.

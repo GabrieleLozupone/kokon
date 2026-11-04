@@ -82,6 +82,9 @@ pub fn router(state: Arc<AppState>, lan: bool) -> Router {
         .route("/upscalers/{name}/download", post(download_upscaler))
         .route("/matte", get(matte_status).post(matte_image))
         .route("/matte/download", post(matte_download))
+        .route("/segment", get(segment_status))
+        .route("/segment/download", post(segment_download))
+        .route("/segment/models/{file}", get(segment_model))
         .route("/config", get(get_config).put(put_config))
         .route("/enhancer/defaults", get(enhancer_defaults))
         .route("/mac-engine/bench", get(mac_bench_status).post(mac_bench_start).delete(mac_bench_clear))
@@ -136,7 +139,10 @@ pub fn router(state: Arc<AppState>, lan: bool) -> Router {
         .route("/remote/password", post(remote_password).delete(remote_password_clear))
         .layer(middleware::from_fn_with_state(ctx.clone(), auth))
         .layer(DefaultBodyLimit::max(4 * 1024 * 1024));
-    let uploads = Router::new().route("/inputs", post(upload_input)).layer(DefaultBodyLimit::max(210 * 1024 * 1024));
+    let uploads = Router::new()
+        .route("/inputs", post(upload_input))
+        .route("/provenance/check", post(check_provenance))
+        .layer(DefaultBodyLimit::max(210 * 1024 * 1024));
     Router::new()
         .route("/api/v1/ping", get(ping))
         .route("/api/v1/auth/session", get(web::session))
@@ -278,7 +284,11 @@ async fn status(State(s): St) -> Json<Value> {
 
 async fn setup(State(s): St) -> ApiResult<Json<Value>> {
     let e = s.engine.clone();
-    let _ = tokio::task::spawn_blocking(move || e.place_bundled_upscaler()).await;
+    let _ = tokio::task::spawn_blocking(move || {
+        e.place_bundled_upscaler();
+        e.place_bundled_watermark();
+    })
+    .await;
     let cfg = s.engine.config();
     let srv_ok = s.engine.server.status().state == qls_core::process::ServerState::Ready;
     let e = s.engine.clone();
@@ -440,7 +450,11 @@ async fn install_start(State(s): St, Json(b): Json<InstallBody>) -> ApiResult<Js
     });
     // The bundled upscaler first, so it is not downloaded again.
     let e = s.engine.clone();
-    let _ = tokio::task::spawn_blocking(move || e.place_bundled_upscaler()).await;
+    let _ = tokio::task::spawn_blocking(move || {
+        e.place_bundled_upscaler();
+        e.place_bundled_watermark();
+    })
+    .await;
     let label = if user { format!("user:{}", preset.id) } else { preset.id.to_string() };
     s.engine.installer.start(cfg.sdcpp_dir.clone(), &label, downloads, on_finish)?;
     Ok(Json(serde_json::to_value(s.engine.installer.status()).unwrap()))
@@ -481,6 +495,27 @@ async fn matte_download(State(s): St) -> ApiResult<Json<Value>> {
     Ok(Json(serde_json::to_value(s.engine.installer.status()).unwrap()))
 }
 
+/// The layers lab's click-to-select model (MobileSAM, run in the webview): there or not, and its size.
+async fn segment_status(State(s): St) -> Json<Value> {
+    let dir = s.engine.config().sdcpp_dir;
+    let bytes: u64 = qls_core::matting::MOBILE_SAM.iter().map(|d| d.size).sum();
+    Json(json!({ "installed": qls_core::matting::sam_installed(&dir), "bytes": bytes }))
+}
+
+async fn segment_download(State(s): St) -> ApiResult<Json<Value>> {
+    let dir = s.engine.config().sdcpp_dir;
+    s.engine.installer.start(dir, "segment", qls_core::matting::MOBILE_SAM.to_vec(), Box::new(|_| {}))?;
+    Ok(Json(serde_json::to_value(s.engine.installer.status()).unwrap()))
+}
+
+/// One MobileSAM file, for onnxruntime-web in the webview (only these two names are served).
+async fn segment_model(State(s): St, AxPath(file): AxPath<String>) -> ApiResult<Response> {
+    let path = qls_core::matting::sam_file(&s.engine.config().sdcpp_dir, &file)
+        .filter(|p| p.is_file())
+        .ok_or_else(|| AppError::new(ErrorCode::NotFound, "The selection model is not downloaded."))?;
+    serve_file(&path, Some("application/octet-stream")).await
+}
+
 #[derive(Deserialize)]
 struct MatteBody {
     /// "input:<id>" / "gen:<id>".
@@ -490,8 +525,15 @@ struct MatteBody {
 /// The matte of an image (grey PNG at its size) for a fast sticker.
 async fn matte_image(State(s): St, Json(b): Json<MatteBody>) -> ApiResult<Response> {
     let engine = s.engine.clone();
-    let png = tokio::task::spawn_blocking(move || engine.matte(&b.image)).await.map_err(AppError::internal)??;
-    Ok(([(header::CONTENT_TYPE, "image/png")], png).into_response())
+    let image = b.image.clone();
+    let started = std::time::Instant::now();
+    let res = tokio::task::spawn_blocking(move || engine.matte(&b.image)).await.map_err(AppError::internal)?;
+    // Logged: a quick cut-out that fails or crawls is otherwise invisible (the lab runs it in the window).
+    match &res {
+        Ok(_) => tracing::info!("quick cut-out matte of {image} in {} ms", started.elapsed().as_millis()),
+        Err(e) => tracing::warn!("quick cut-out matte of {image} failed after {} ms: {} {:?}", started.elapsed().as_millis(), e.message, e.detail),
+    }
+    Ok(([(header::CONTENT_TYPE, "image/png")], res?).into_response())
 }
 
 /// Upscaler models of earlier versions in the app's own folder (Settings offers to delete
@@ -957,6 +999,14 @@ async fn events(State(s): St, Extension(caller): Extension<Caller>) -> Sse<impl 
 struct PrivateQ {
     #[serde(default)]
     private: bool,
+}
+
+/// "Check an image": what its AI markings say (provenance::check). The image is read in memory
+/// and never stored (the Code of Practice's zero retention for detection).
+async fn check_provenance(State(s): St, body: Bytes) -> ApiResult<Json<Value>> {
+    let dir = s.engine.config().sdcpp_dir;
+    let report = tokio::task::spawn_blocking(move || qls_core::provenance::check(&dir, &body)).await.map_err(AppError::internal)??;
+    Ok(Json(report))
 }
 
 async fn upload_input(State(s): St, Query(q): Query<PrivateQ>, headers: HeaderMap, body: Bytes) -> ApiResult<Json<Value>> {

@@ -107,9 +107,27 @@ fn source(i: &Item) -> Option<String> {
         .or_else(|| i.input_id.as_ref().map(|r| format!("input:{r}")))
 }
 
-/// The cover (the latest image) and the number of versions, as the UI computes them.
+/// The images the project's layers lab made (its `made` list, see src/lib/layerDoc.ts): steps
+/// such as one object's crop, never the project's cover.
+fn lab_made(p: &Project) -> HashSet<&str> {
+    p.extra
+        .get("lab")
+        .and_then(|l| l.get("made"))
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default()
+}
+
+/// The cover (the latest image that is not a lab step) and the number of versions, as the UI
+/// computes them.
 fn refresh_meta(p: &mut Project) {
-    p.meta.cover = p.items.iter().rev().find_map(source);
+    let lab = lab_made(p);
+    p.meta.cover = p
+        .items
+        .iter()
+        .rev()
+        .filter_map(source)
+        .find(|s| !lab.contains(s.as_str()));
     p.meta.count = p.items.iter().filter(|i| i.kind != "job").count() as u32;
 }
 
@@ -408,6 +426,15 @@ mod tests {
 
     fn known(k: &[&str]) -> HashSet<String> {
         k.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn the_cover_is_never_a_layers_lab_step() {
+        let mut p = project("p", vec![img("a"), img("b")]);
+        p.extra.insert("lab".into(), serde_json::json!({ "v": 2, "docs": [], "made": ["gen:gb"] }));
+        let (p, _) = ProjectStore::in_memory().put("p", p, &known(&[])).unwrap();
+        assert_eq!(p.meta.cover.as_deref(), Some("gen:ga"));
+        assert_eq!(p.meta.count, 2);
     }
 
     #[test]

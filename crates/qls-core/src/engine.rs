@@ -22,7 +22,7 @@ use crate::paths;
 use crate::pipeline;
 use crate::planner::{self, GenerationRequest, Mode, OutputFormat, Plan, PlanInputs, ResolutionMode, ResolvedMode};
 use crate::process::{BackendProgress, BackendStage, ProgressParser, ServerManager, ServerState};
-use crate::sdcpp::{BackendJobStatus, CancelOutcome, Capabilities, SdcppClient, UpscaleRequest};
+use crate::sdcpp::{BackendJobStatus, CancelOutcome, Capabilities, SdcppClient, TextGenRequest, UpscaleRequest};
 use crate::store::{GenerationRecord, InputRecord, PipelineRecord, ReferenceRecord, Store, new_id, now_rfc3339};
 
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -321,6 +321,7 @@ impl Engine {
         *g = new;
         drop(g);
         self.place_bundled_upscaler();
+        self.place_bundled_watermark();
         Ok(restart)
     }
 
@@ -413,6 +414,54 @@ impl Engine {
 
     /// Copies the upscaler shipped with the app into the configured folder when it is missing
     /// there (new install, another folder chosen). Failures leave it to the setup download.
+    /// The invisible AI watermark (watermark.rs) in a result's pixels when it is AI-made
+    /// (provenance::is_ai). An upscale or LUT of an import becomes AI-made when the import declared
+    /// it (XMP or C2PA: kept, the Code of Practice's Measure 1.2) or still carries Kokon's mark.
+    /// Never fails the job: without the model the file keeps its XMP and a note says so.
+    pub(crate) fn mark<'a>(&self, img: &'a image::RgbaImage, rec: &mut GenerationRecord, inputs: &[InputRecord]) -> std::borrow::Cow<'a, image::RgbaImage> {
+        use std::borrow::Cow;
+        let dir = self.config().sdcpp_dir;
+        // An upscale or LUT changes no content: it is what its parent was (a LUT of a LUT of a
+        // camera photo is no more AI-made than the photo).
+        if matches!(rec.mode.as_str(), "upscale" | "lut")
+            && rec.source_type.is_none()
+            && let Some(parent) = rec.parent_id.as_deref().and_then(|p| self.gen_store(p).get_generation(p).ok())
+        {
+            rec.source_type = Some(crate::provenance::source_type(&parent).into());
+        }
+        if !crate::provenance::is_ai(rec) {
+            let declared = inputs.iter().find_map(|i| std::fs::read(&i.path).ok().and_then(|b| crate::provenance::declared_ai_type(&b)));
+            let kokon = || crate::watermark::detect(&dir, img).ok().flatten().is_some_and(|f| f.kokon);
+            match declared {
+                Some(t) => rec.source_type = Some(t.into()),
+                None if kokon() => rec.source_type = Some(crate::provenance::AI_TYPES[1].into()),
+                None => return Cow::Borrowed(img),
+            }
+        }
+        match crate::watermark::embed(&dir, img) {
+            Ok(Some(m)) => Cow::Owned(m),
+            Ok(None) => Cow::Borrowed(img),
+            Err(e) => {
+                tracing::warn!("no AI watermark on {}: {} {:?}", rec.id, e.message, e.detail);
+                rec.notes.push("The invisible AI watermark could not be added (its model is missing or failed); the file's metadata still marks it as made with AI.".into());
+                Cow::Borrowed(img)
+            }
+        }
+    }
+
+    /// Copies the AI watermark's models (TrustMark P) from the app's bundle when they are missing.
+    pub fn place_bundled_watermark(&self) {
+        let Some(bundle) = crate::installer::bundle_dir() else { return };
+        let dir = self.config().sdcpp_dir;
+        for d in crate::watermark::TRUSTMARK_P {
+            match crate::installer::install_bundled(&d, &dir, &bundle) {
+                Ok(true) => tracing::info!("bundled {} copied into {}", d.file_name(), dir.display()),
+                Ok(false) => {}
+                Err(e) => tracing::warn!("could not copy the bundled {} into {}: {e}", d.file_name(), dir.display()),
+            }
+        }
+    }
+
     pub fn place_bundled_upscaler(&self) {
         let Some(bundle) = crate::installer::bundle_dir() else { return };
         let dir = self.config().sdcpp_dir;
@@ -694,9 +743,10 @@ impl Engine {
     pub fn submit(&self, mut request: GenerationRequest, workspace: Option<PathBuf>) -> AppResult<JobView> {
         self.touch();
         let upscale = request.mode == Mode::Upscale;
-        // Removing a painted area needs no description (the planner writes the prompt).
+        // Removing a painted area needs no description (the planner writes the prompt), nor does
+        // Expand (it continues the scene).
         let removal = request.mask.is_some() && request.inpaint_action == planner::InpaintAction::Remove;
-        if request.prompt.trim().is_empty() && !upscale && !removal && request.read_scene.is_none() {
+        if request.prompt.trim().is_empty() && !upscale && !removal && request.outpaint.is_none() && request.read_scene.is_none() {
             return Err(AppError::invalid("Describe what to generate or change."));
         }
         if upscale && request.images.is_empty() {
@@ -1004,10 +1054,13 @@ impl Engine {
             }),
             pipeline: None,
             hidden: false,
+            source_type: None,
         };
+        let marked = self.mark(&out, &mut rec, std::slice::from_ref(&input));
+        let out: &image::RgbaImage = &marked;
         rec.duration_ms = started.elapsed().as_millis() as u64;
-        write_atomic(&file, &encode_output(&out, format, &rec, img.icc_profile.as_deref())?)?;
-        if let Ok(j) = imaging::encode_jpeg(&imaging::thumbnail(&out, 512), 85) {
+        write_atomic(&file, &encode_output(out, format, &rec, img.icc_profile.as_deref())?)?;
+        if let Ok(j) = imaging::encode_jpeg(&imaging::thumbnail(out, 512), 85) {
             let _ = std::fs::write(store.thumb_path(&id), j);
         }
         store.insert_generation(&rec)?;
@@ -1026,7 +1079,9 @@ impl Engine {
             None => None,
         };
         let private = private || parent.as_ref().is_some_and(|p| Arc::ptr_eq(self.gen_store(&p.id), &self.private_store));
-        let (img, input) = self.resolve_source(image, None, private)?;
+        let (img, flat) = self.resolve_source(image, None, private)?;
+        // Compare's "before" is the photo the lab was opened on, not the saved image itself.
+        let input = from.and_then(|f| self.resolve_source(f, None, private).ok()).map(|(_, r)| r).unwrap_or(flat);
         let cfg = self.config();
         let id = new_id();
         let now = chrono::Local::now();
@@ -1035,7 +1090,7 @@ impl Engine {
         std::fs::create_dir_all(&dir).map_err(|e| AppError::io("create the output folder", &dir, e))?;
         let file = paths::unique_path(dir.join(format!("{}-layers.png", now.format("%H%M%S"))), &[]);
         let out = img.pixels;
-        let rec = GenerationRecord {
+        let mut rec = GenerationRecord {
             id: id.clone(),
             created_at: now_rfc3339(),
             mode: "layers".into(),
@@ -1072,9 +1127,12 @@ impl Engine {
             request: serde_json::json!({ "mode": "layers", "images": [from.unwrap_or(image)], "layers_image": image, "parent_id": parent.as_ref().map(|p| p.id.clone()), "private": private }),
             pipeline: None,
             hidden: false,
+            source_type: None,
         };
-        write_atomic(&file, &encode_output(&out, OutputFormat::Png, &rec, img.icc_profile.as_deref())?)?;
-        if let Ok(j) = imaging::encode_jpeg(&imaging::thumbnail(&out, 512), 85) {
+        let marked = self.mark(&out, &mut rec, std::slice::from_ref(&input));
+        let out: &image::RgbaImage = &marked;
+        write_atomic(&file, &encode_output(out, OutputFormat::Png, &rec, img.icc_profile.as_deref())?)?;
+        if let Ok(j) = imaging::encode_jpeg(&imaging::thumbnail(out, 512), 85) {
             let _ = std::fs::write(store.thumb_path(&id), j);
         }
         store.insert_generation(&rec)?;
@@ -1236,11 +1294,13 @@ impl Engine {
             let plan2 = plan.clone();
             let prompt = request.prompt.clone();
             let mask_img: Option<GrayImage> = mask.as_ref().map(|(m, _)| m.clone());
-            let opts = pipeline::BackendOptions { server_vae_tile_size: cfg.server_vae_tile_size(), marks };
+            // A prompt Prompt+ wrote and the user kept (reviewed in the box) is a whole instruction.
+            let written = request.enhanced_from.is_some();
+            let opts = pipeline::BackendOptions { server_vae_tile_size: cfg.server_vae_tile_size(), marks, written };
             let prepared = tokio::task::spawn_blocking(move || pipeline::prepare(&plan2, &prompt, seed, &images, mask_img.as_ref(), &opts))
                 .await
                 .map_err(AppError::internal)??;
-            let pipeline::PreparedJob { request: mut sd_req, mut post } = prepared;
+            let pipeline::PreparedJob { request: mut sd_req, mut post, enhancer: view } = prepared;
             if let Some(what) = caps.mac_engine_unsupported(&sd_req) {
                 return Err(AppError::new(ErrorCode::Unsupported, format!("Kokon's Mac engine (experimental) does not do {what} yet."))
                     .suggest("Turn it off in Settings → Performance to use the standard engine for this."));
@@ -1261,15 +1321,29 @@ impl Engine {
             // 4b. Prompt enhancer: rewrites the user's prompt, looking at the references
             // exactly as the image model gets them.
             if request.enhance && enhancer::applies_to(plan.mode, plan.marks) {
-                // Marks: an edit of the marked region (its one reference).
-                let as_mode = if plan.marks { ResolvedMode::Edit } else { plan.mode };
-                enhanced = self.enhance_prompt(id, &client, &caps, &cfg, as_mode, &request.prompt, &sd_req.ref_images, seed).await?;
-                if let Some(text) = &enhanced {
-                    sd_req.prompt = pipeline::enhanced_prompt(&request.prompt, text);
-                    // The rewrite understood a transparency request the keywords missed: keep the alpha.
-                    post.keep_alpha |= pipeline::rewrite_wants_transparency(text);
+                // A painted area or an expansion: Prompt+ writes what goes there, from its own view,
+                // and Kokon's instruction is kept round it.
+                if let Some(v) = &view {
+                    let req = match &v.kind {
+                        pipeline::EnhancerKind::Area { action, color } => enhancer::area_request(*action, color, &request.prompt, v.image.clone(), seed),
+                        pipeline::EnhancerKind::Expand { sides } => enhancer::expand_request(sides, &request.prompt, v.image.clone(), seed),
+                    };
+                    enhanced = self.enhance_prompt(id, &client, &caps, &cfg, plan.mode, &request.prompt, &[], seed, Some(req), request.enhance_detail).await?;
+                    if let Some(text) = &enhanced {
+                        sd_req.prompt = v.prompt(&plan, text);
+                    }
+                } else {
+                    // Marks: an edit of the marked region (its one reference).
+                    let as_mode = if plan.marks { ResolvedMode::Edit } else { plan.mode };
+                    enhanced = self.enhance_prompt(id, &client, &caps, &cfg, as_mode, &request.prompt, &sd_req.ref_images, seed, None, request.enhance_detail).await?;
+                    if let Some(text) = &enhanced {
+                        sd_req.prompt = pipeline::enhanced_prompt(&request.prompt, text);
+                        // The rewrite understood a transparency request the keywords missed: keep the alpha.
+                        post.keep_alpha |= pipeline::rewrite_wants_transparency(text);
+                    }
                 }
             }
+            drop(view);
             // Prompt+ review: the prompt is the result; the user's next job makes the image.
             if request.enhance_only {
                 if enhanced.is_none() {
@@ -1510,7 +1584,7 @@ impl Engine {
     /// new prompt, or None when the job keeps the user's prompt: the engine cannot write text,
     /// or the enhancer failed (both noted on the job). Errors only for a cancel or a crash.
     #[allow(clippy::too_many_arguments)]
-    async fn enhance_prompt(&self, id: &str, client: &SdcppClient, caps: &Capabilities, cfg: &AppConfig, mode: ResolvedMode, prompt: &str, images: &[String], seed: i64) -> AppResult<Option<String>> {
+    async fn enhance_prompt(&self, id: &str, client: &SdcppClient, caps: &Capabilities, cfg: &AppConfig, mode: ResolvedMode, prompt: &str, images: &[String], seed: i64, own: Option<TextGenRequest>, detail: bool) -> AppResult<Option<String>> {
         // A retry after running out of memory keeps the first prompt.
         if let Some(done) = self.jobs.lock().unwrap().get(id).and_then(|j| j.enhanced.clone()) {
             return Ok(Some(done));
@@ -1527,7 +1601,10 @@ impl Engine {
         let started = Instant::now();
         // A new image from references: each reference is labelled alone first, then the scene is
         // written from the labels without the images (see `enhancer::COMPOSE_SYSTEM_PROMPT`).
-        let req = if mode == ResolvedMode::Compose {
+        let req = if let Some(r) = own {
+            // A painted area or an expansion: its request is made with its own view.
+            r
+        } else if mode == ResolvedMode::Compose {
             let mut labels = Vec::with_capacity(images.len());
             for img in images {
                 let r = client.text_gen(&enhancer::label_request(img.clone(), prompt, seed), Duration::from_secs(120), |_| {}, || self.is_cancelled(id)).await;
@@ -1546,6 +1623,7 @@ impl Engine {
         } else {
             enhancer::request(cfg, mode, prompt, images.to_vec(), seed)
         };
+        let req = if detail { enhancer::detailed(req, mode) } else { req };
         let mut text = String::new();
         let mut last_emit = Instant::now();
         let on_delta = |d: &str| {
@@ -1845,10 +1923,15 @@ impl Engine {
             request: serde_json::to_value(req).unwrap_or_default(),
             pipeline,
             hidden: req.hidden,
+            source_type: None,
         };
         rec.notes.extend(hdr_note);
+        // The invisible AI watermark goes into the pixels every copy is made from (the file, the
+        // MCP copy, the thumbnail).
+        let marked = self.mark(img, &mut rec, inputs);
+        let img: &image::RgbaImage = &marked;
         let bytes = match &hdr {
-            Some(gm) => crate::hdr::encode_ultra_hdr(img, icc, gm, 95).map_err(|e| AppError::new(ErrorCode::Internal, "Failed to encode the HDR JPEG.").detail(e))?,
+            Some(gm) => crate::hdr::encode_ultra_hdr(img, icc, gm, 95, &crate::provenance::attributes(&rec)).map_err(|e| AppError::new(ErrorCode::Internal, "Failed to encode the HDR JPEG.").detail(e))?,
             None => encode_output(img, format, &rec, icc)?,
         };
         write_atomic(&file, &bytes)?;
@@ -1934,13 +2017,19 @@ fn numbered(path: &str, i: usize) -> String {
 
 pub fn encode_output(img: &image::RgbaImage, format: OutputFormat, rec: &GenerationRecord, icc: Option<&[u8]>) -> AppResult<Vec<u8>> {
     match format {
+        // Each format carries the AI marking (provenance.rs).
         OutputFormat::Png => {
             let text = rec.png_text();
-            let pairs: Vec<(&str, &str)> = text.iter().map(|(k, v)| (*k, v.as_str())).collect();
+            let xmp = crate::provenance::xmp(rec);
+            let mut pairs: Vec<(&str, &str)> = text.iter().map(|(k, v)| (*k, v.as_str())).collect();
+            pairs.push(("XML:com.adobe.xmp", &xmp));
             imaging::encode_png(img, &pairs, icc, false)
         }
-        OutputFormat::Jpeg => imaging::encode_jpeg(img, 95),
-        OutputFormat::Webp => imaging::encode_webp_lossless(img),
+        OutputFormat::Jpeg => Ok(crate::provenance::jpeg_with_xmp(&imaging::encode_jpeg(img, 95)?, &crate::provenance::xmp(rec))),
+        OutputFormat::Webp => {
+            let alpha = img.pixels().any(|p| p[3] < 255);
+            Ok(crate::provenance::webp_with_xmp(&imaging::encode_webp_lossless(img)?, &crate::provenance::xmp(rec), img.width(), img.height(), alpha))
+        }
     }
 }
 
@@ -2000,7 +2089,7 @@ mod tests {
         let share: f64 = note.split("kept on ").nth(1).unwrap().split('%').next().unwrap().parse().unwrap();
         assert!((35.0..65.0).contains(&share), "{note}");
         let icc = crate::heif::primary_icc(&bytes);
-        let out = crate::hdr::encode_ultra_hdr(&edited, icc.as_deref(), &gm, 95).unwrap();
+        let out = crate::hdr::encode_ultra_hdr(&edited, icc.as_deref(), &gm, 95, "").unwrap();
         if let Ok(d) = std::env::var("QLS_TEST_OUT") {
             std::fs::write(Path::new(&d).join("edit_ultrahdr.jpg"), &out).unwrap();
         }
@@ -2204,7 +2293,7 @@ mod tests {
         let id = submit();
         let mut events = e.events.subscribe();
         let (port, body) = fake_server(200, "text/event-stream", sse_answer(&["Change the cat's", " fur to black."], "stop"), Duration::from_millis(150)).await;
-        let out = e.enhance_prompt(&id, &SdcppClient::new(port), &caps, &cfg, ResolvedMode::Edit, "rendi il gatto nero", &images, 42).await.unwrap();
+        let out = e.enhance_prompt(&id, &SdcppClient::new(port), &caps, &cfg, ResolvedMode::Edit, "rendi il gatto nero", &images, 42, None, false).await.unwrap();
         assert_eq!(out.as_deref(), Some("Change the cat's fur to black."));
         let mut partial = false;
         while let Ok(ev) = events.try_recv() {
@@ -2219,31 +2308,31 @@ mod tests {
         assert_eq!((sent["images"][0].as_str(), sent["sampling"]["seed"].as_i64()), (Some("PNG1"), Some(42)), "the references and the job's seed");
         assert_eq!(sent["system_prompt"], enhancer::EDIT_SYSTEM_PROMPT);
         // A retry (out of memory) keeps that prompt without asking the server again.
-        let again = e.enhance_prompt(&id, &SdcppClient::new(1), &caps, &cfg, ResolvedMode::Edit, "rendi il gatto nero", &images, 43).await.unwrap();
+        let again = e.enhance_prompt(&id, &SdcppClient::new(1), &caps, &cfg, ResolvedMode::Edit, "rendi il gatto nero", &images, 43, None, false).await.unwrap();
         assert_eq!(again, out);
 
         // A failure keeps the user's prompt, with a note.
         let id = submit();
         let chunks = vec!["event: delta\ndata: {\"text\":\"Chan\"}\n\n".into(), "event: error\ndata: {\"error\":\"out of memory\"}\n\n".into()];
         let (port, _) = fake_server(200, "text/event-stream", chunks, Duration::from_millis(1)).await;
-        assert_eq!(e.enhance_prompt(&id, &SdcppClient::new(port), &caps, &cfg, ResolvedMode::Generate, "un gatto", &[], 1).await.unwrap(), None);
+        assert_eq!(e.enhance_prompt(&id, &SdcppClient::new(port), &caps, &cfg, ResolvedMode::Generate, "un gatto", &[], 1, None, false).await.unwrap(), None);
         let v = e.job(&id).unwrap();
         assert_eq!(v.enhanced_prompt, None);
         assert!(v.notes.last().is_some_and(|n| n.contains("prompt enhancer failed") && n.contains("out of memory") && n.ends_with("used as written.")), "{:?}", v.notes);
         // An empty answer too.
         let id = submit();
         let (port, _) = fake_server(200, "text/event-stream", sse_answer(&["  "], "stop"), Duration::ZERO).await;
-        assert_eq!(e.enhance_prompt(&id, &SdcppClient::new(port), &caps, &cfg, ResolvedMode::Generate, "un gatto", &[], 1).await.unwrap(), None);
+        assert_eq!(e.enhance_prompt(&id, &SdcppClient::new(port), &caps, &cfg, ResolvedMode::Generate, "un gatto", &[], 1, None, false).await.unwrap(), None);
         assert!(e.job(&id).unwrap().notes.last().unwrap().contains("wrote nothing"));
         // A cut-off answer is used, with a note.
         let id = submit();
         let (port, _) = fake_server(200, "text/event-stream", sse_answer(&["A cat on a"], "length"), Duration::ZERO).await;
-        assert_eq!(e.enhance_prompt(&id, &SdcppClient::new(port), &caps, &cfg, ResolvedMode::Generate, "un gatto", &[], 1).await.unwrap().as_deref(), Some("A cat on a"));
+        assert_eq!(e.enhance_prompt(&id, &SdcppClient::new(port), &caps, &cfg, ResolvedMode::Generate, "un gatto", &[], 1, None, false).await.unwrap().as_deref(), Some("A cat on a"));
         assert!(e.job(&id).unwrap().notes.last().unwrap().contains("length limit"));
 
         // An engine without text generation (official builds): note, no request.
         let id = submit();
-        assert_eq!(e.enhance_prompt(&id, &SdcppClient::new(1), &Capabilities::default(), &cfg, ResolvedMode::Generate, "un gatto", &[], 1).await.unwrap(), None);
+        assert_eq!(e.enhance_prompt(&id, &SdcppClient::new(1), &Capabilities::default(), &cfg, ResolvedMode::Generate, "un gatto", &[], 1, None, false).await.unwrap(), None);
         assert!(e.job(&id).unwrap().notes.last().unwrap().contains("no prompt enhancer"));
         assert_eq!(e.job(&id).unwrap().status, JobStatus::Queued, "status untouched");
 
@@ -2255,7 +2344,7 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(300)).await;
             e2.cancel(&id2).unwrap();
         });
-        let err = e.enhance_prompt(&id, &SdcppClient::new(port), &caps, &cfg, ResolvedMode::Generate, "un gatto", &[], 1).await.unwrap_err();
+        let err = e.enhance_prompt(&id, &SdcppClient::new(port), &caps, &cfg, ResolvedMode::Generate, "un gatto", &[], 1, None, false).await.unwrap_err();
         assert_eq!(err.code, ErrorCode::Cancelled);
     }
 
@@ -2312,7 +2401,7 @@ mod tests {
         let id = e.submit(GenerationRequest { prompt: "lei sul divano con il gatto".into(), enhance: true, ..Default::default() }, None).unwrap().id;
         let (port, seen) = fake_text_server(vec!["person, female, long brown hair.\n", "cat, orange tabby", "A photograph of the woman from <image1> on a sofa."]).await;
         let images = vec!["PNG1".to_string(), "PNG2".to_string()];
-        let out = e.enhance_prompt(&id, &SdcppClient::new(port), &caps, &cfg, ResolvedMode::Compose, "lei sul divano con il gatto", &images, 9).await.unwrap();
+        let out = e.enhance_prompt(&id, &SdcppClient::new(port), &caps, &cfg, ResolvedMode::Compose, "lei sul divano con il gatto", &images, 9, None, false).await.unwrap();
         assert_eq!(out.as_deref(), Some("A photograph of the woman from <image1> on a sofa."));
         let seen = seen.lock().unwrap();
         assert_eq!(seen.len(), 3);
@@ -2417,6 +2506,25 @@ mod tests {
     }
 
     #[test]
+    fn saved_results_carry_both_ai_marks() {
+        // Needs the TrustMark models: KOKON_TEST_MODELS is a folder holding models/watermark/.
+        let Ok(models) = std::env::var("KOKON_TEST_MODELS") else { return };
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = AppConfig { output_dir: dir.path().join("out"), sdcpp_dir: PathBuf::from(models), ..Default::default() };
+        let e = Engine::new(cfg, dir.path()).unwrap();
+        let img = image::RgbaImage::from_fn(400, 300, |x, y| image::Rgba([(x / 2) as u8, (y / 2) as u8, 90, 255]));
+        let input = e.store.put_input(&imaging::encode_png(&img, &[], None, false).unwrap(), Some("lab.png"), None).unwrap();
+        let rec = e.save_layers(&format!("input:{}", input.id), None, false).unwrap();
+        let bytes = std::fs::read(&rec.file_path).unwrap();
+        assert_eq!(crate::provenance::declared_ai_type(&bytes), Some("compositeWithTrainedAlgorithmicMedia"));
+        let saved = imaging::decode_image(&bytes).unwrap().pixels;
+        assert!(crate::watermark::detect(&e.config().sdcpp_dir, &saved).unwrap().unwrap().kokon);
+        assert!(rec.notes.iter().all(|n| !n.contains("watermark")), "{:?}", rec.notes);
+        let report = crate::provenance::check(&e.config().sdcpp_dir, &bytes).unwrap();
+        assert_eq!((report["ai"].as_bool(), report["watermark"]["kokon"].as_bool()), (Some(true), Some(true)));
+    }
+
+    #[test]
     fn lut_results_are_new_versions_of_their_source() {
         let dir = tempfile::tempdir().unwrap();
         let cfg = AppConfig { output_dir: dir.path().join("out"), ..Default::default() };
@@ -2442,6 +2550,18 @@ mod tests {
 
         let rec = e.apply_lut(&src, &lut.name, 0.5, false).unwrap();
         assert_eq!((rec.mode.as_str(), rec.width, rec.height), ("lut", 16, 8));
+        // A LUT of a camera photo is not AI-made (XMP "enhanced", no watermark), nor is a LUT of that.
+        assert!(!crate::provenance::is_ai(&rec) && rec.source_type.is_none());
+        assert_eq!(crate::provenance::declared_ai_type(&std::fs::read(&rec.file_path).unwrap()), None);
+        let twice = e.apply_lut(&format!("gen:{}", rec.id), &lut.name, 0.5, false).unwrap();
+        assert_eq!((twice.source_type.as_deref(), crate::provenance::is_ai(&twice)), (Some("algorithmicallyEnhanced"), false));
+        // An imported image that says it was AI-made stays marked so (the Code's Measure 1.2).
+        let ai_rec = test_record("ai", 1, "ai.jpg");
+        let ai = crate::provenance::jpeg_with_xmp(&imaging::encode_jpeg(&image::RgbaImage::from_pixel(16, 8, image::Rgba([9, 9, 9, 255])), 90).unwrap(), &crate::provenance::xmp(&GenerationRecord { mode: "generate".into(), ..ai_rec }));
+        let ai_input = e.store.put_input(&ai, Some("from-another-app.jpg"), None).unwrap();
+        let kept = e.apply_lut(&format!("input:{}", ai_input.id), &lut.name, 0.5, false).unwrap();
+        assert_eq!(kept.source_type.as_deref(), Some("trainedAlgorithmicMedia"));
+        assert_eq!(crate::provenance::declared_ai_type(&std::fs::read(&kept.file_path).unwrap()), Some("trainedAlgorithmicMedia"));
         assert_eq!(rec.request["images"][0], src.as_str(), "made from the source (timeline link)");
         assert_eq!(rec.request["lut"]["intensity"], 0.5);
         assert!(Path::new(&rec.file_path).starts_with(dir.path().join("out")) && rec.file_path.ends_with(".png"));
@@ -2601,9 +2721,14 @@ mod tests {
         let rec = test_record("x", 1, "f");
         let png = encode_output(&img, OutputFormat::Png, &rec, None).unwrap();
         assert!(imaging::read_png_text(&png).iter().any(|(k, _)| k == "qls:generation"));
+        // The AI marking (provenance.rs) in every format.
+        assert!(imaging::read_png_text(&png).iter().any(|(k, v)| k == "XML:com.adobe.xmp" && v.contains("Iptc4xmpExt:DigitalSourceType")));
         let jpg = encode_output(&img, OutputFormat::Jpeg, &rec, None).unwrap();
         assert_eq!(&jpg[..2], &[0xFF, 0xD8]);
         let webp = encode_output(&img, OutputFormat::Webp, &rec, None).unwrap();
         assert_eq!(&webp[..4], b"RIFF");
+        for f in [&jpg, &webp] {
+            assert!(f.windows(17).any(|w| w == b"DigitalSourceType"));
+        }
     }
 }

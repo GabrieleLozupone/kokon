@@ -30,11 +30,13 @@ export interface Composer {
   customHeight: number;
   seed: number | null;
   advanced: Advanced;
-  /** Prompt enhancer on (remembered; used only where `enhancerApplies`). */
+  /** Prompt enhancer on (remembered). */
   enhance: boolean;
   /** Prompt+ writes its prompt into the box first, to read and change before making the image
    * (remembered); otherwise it writes and the image follows. */
   enhanceReview: boolean;
+  /** Prompt+ "Detailed": longer prompts with more context (remembered). */
+  enhanceDetail: boolean;
   /** The user's own words when the prompt in the box was written by Prompt+ (a review, or a
    * reused enhanced prompt): sent as is, without rewriting it again. */
   enhancedFrom: string | null;
@@ -57,7 +59,8 @@ export const emptyComposer = (prefs?: Partial<Composer>): Composer => ({
   prompt: "",
   refs: [],
   mask: null,
-  inpaintAction: "edit",
+  // Remove first: the most common brushed edit, and the one that needs no words.
+  inpaintAction: "remove",
   outpaint: null,
   mode: "auto",
   aspect: prefs?.aspect ?? "auto",
@@ -69,6 +72,7 @@ export const emptyComposer = (prefs?: Partial<Composer>): Composer => ({
   advanced: newChatAdvanced(prefs?.advanced),
   enhance: prefs?.enhance === true,
   enhanceReview: prefs?.enhanceReview === true,
+  enhanceDetail: prefs?.enhanceDetail === true,
   enhancedFrom: null,
   create: false,
   loras: null,
@@ -142,7 +146,8 @@ export function buildRequest(c: Composer, parentId?: string | null): GenerationR
   const custom = c.resolution === "custom";
   // Inpaint and expand keep the source's shape; create, edit and combine take the chosen ratio.
   const shaped = !maskValid && !outpaintInUse(c);
-  const reviewed = !!c.enhancedFrom && !!c.prompt.trim();
+  // Written by Prompt+ already (from the user's words, or from none: "" for a removal or Expand).
+  const reviewed = c.enhancedFrom != null && !!c.prompt.trim();
   return {
     prompt: c.prompt.trim(),
     mode: composing(c) ? "compose" : c.mode,
@@ -162,13 +167,19 @@ export function buildRequest(c: Composer, parentId?: string | null): GenerationR
     client: "ui",
     parent_id: parentId ?? null,
     // A prompt Prompt+ wrote already is sent as it is, with the user's words kept beside it.
-    ...(reviewed ? { enhanced_from: c.enhancedFrom } : c.enhance && enhancerApplies(c) ? { enhance: true } : {}),
+    ...(reviewed ? { enhanced_from: c.enhancedFrom } : c.enhance ? { enhance: true, ...(c.enhanceDetail ? { enhance_detail: true } : {}) } : {}),
   };
 }
 
-/** Prompt+ in review mode: Enter first has the prompt written into the box (no image yet). */
+/** Prompt+ in review mode: Enter first has the prompt written into the box (no image yet). A
+ * removal or an expansion with nothing typed is always written into the box first: Prompt+ names
+ * what is removed, or what the new areas show, for the user to approve or change. Prompt+ works on
+ * everything the prompt box makes: new images, edits, combines, coloured marks, a painted area
+ * (crates/qls-core/src/enhancer.rs AREA_SYSTEM_PROMPT) and Expand (EXPAND_SYSTEM_PROMPT). */
 export function wantsPromptReview(c: Composer): boolean {
-  return c.enhance && c.enhanceReview && enhancerApplies(c) && !c.enhancedFrom && !!c.prompt.trim();
+  if (!c.enhance || c.enhancedFrom != null) return false;
+  if (!typedWords(c)) return !needsPrompt(c) && (maskInUse(c) || outpaintInUse(c));
+  return c.enhanceReview;
 }
 
 /** The request that only writes the prompt (Prompt+ review). */
@@ -176,18 +187,28 @@ export function reviewRequest(c: Composer): GenerationRequest {
   return { ...buildRequest(c), enhance: true, enhance_only: true };
 }
 
-/** The prompt enhancer works on new images, edits, combines and coloured marks; a painted area
- * or an expansion wraps the prompt in its own instruction. */
-export function enhancerApplies(c: Composer): boolean {
-  return (!maskInUse(c) || marksInUse(c)) && !outpaintInUse(c);
-}
-
 /** The painted area in use is coloured marks (the prompt names them by colour). */
 export const marksInUse = (c: Composer) => maskInUse(c) && !!c.mask!.marks;
 
-/** False only for a removal in a painted area, which needs no description. */
+/** The words each action of a painted area puts at the start of the prompt (the service takes
+ * them off again: planner.rs InpaintAction::subject). */
+export const ACTION_VERB: Record<InpaintAction, string> = { remove: "Remove", edit: "Change", replace: "Replace with", add: "Add" };
+const VERB_RE = /^\s*(?:remove|change|replace with|replace|add)\b[ \t]*/i;
+
+/** The prompt with `action`'s words in front, in place of another action's. */
+export function withActionVerb(prompt: string, action: InpaintAction): string {
+  return `${ACTION_VERB[action]} ${prompt.replace(VERB_RE, "")}`;
+}
+
+/** What the user typed: for a painted area, without the action's own words ("Remove " alone is nothing). */
+export function typedWords(c: Composer): string {
+  return maskInUse(c) && !c.mask!.marks ? c.prompt.replace(VERB_RE, "").trim() : c.prompt.trim();
+}
+
+/** False for a removal in a painted area, which needs no description, and for Expand, which
+ * continues the scene (Prompt+ can write what the new areas show). */
 export function needsPrompt(c: Composer): boolean {
-  return !(maskInUse(c) && !c.mask!.marks && c.inpaintAction === "remove");
+  return !((maskInUse(c) && !c.mask!.marks && c.inpaintAction === "remove") || outpaintInUse(c));
 }
 
 /** Advanced fields that change how the model samples. They last for the session only: a value
@@ -384,6 +405,37 @@ export function timeAgo(ms: number, now = Date.now()): string {
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   if (s < 86400 * 7) return `${Math.floor(s / 86400)}d ago`;
   return new Date(ms).toLocaleDateString();
+}
+
+/** A project's title as the list shows it: an image file's name without its extension. */
+export function projectTitle(title: string): string {
+  return title.replace(/\.(png|jpe?g|webp|heic|heif|avif|gif|bmp|tiff?)$/i, "").trim() || title;
+}
+
+/** A file name that says nothing about the picture ("image.png", "4.png", "IMG_1234.JPG",
+ * "Screenshot 2026-10-01 at 10.00.00"): a project named after it takes its first prompt instead. */
+export function isGenericName(name: string): boolean {
+  // "Screenshot 2026-10-01 at 10.00.00": the "at" of a date says nothing either.
+  const n = projectTitle(name).toLowerCase().replace(/ (at|alle) /g, " ");
+  return (
+    /^[\d\s_.()-]*$/.test(n) ||
+    /^(image|img|photo|pic|picture|untitled|unnamed|download|file|imported image|whatsapp image|screenshot|screen shot|schermata|immagine|foto)[\s\d_.()\-:,]*$/.test(n) ||
+    /^(img|dsc|dscn|pxl|mvimg)[_-]?\d[\d_.-]*$/.test(n)
+  );
+}
+
+/** The heading a project goes under in the list, by when it was last changed. */
+export function dayGroup(ms: number, now = Date.now()): string {
+  const day = (t: number) => {
+    const d = new Date(t);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  };
+  const days = Math.round((day(now) - day(ms)) / 86400000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return "Previous 7 days";
+  if (days < 30) return "Previous 30 days";
+  return "Older";
 }
 
 /** Short truthful status text for a job. */
@@ -819,6 +871,17 @@ export function expandToSize(w: number, h: number, W: number, H: number): Outpai
   const ex = Math.max(0, Math.round(W) - w);
   const ey = Math.max(0, Math.round(H) - h);
   return { left: Math.floor(ex / 2), right: ex - Math.floor(ex / 2), top: Math.floor(ey / 2), bottom: ey - Math.floor(ey / 2), units: "pixels" };
+}
+
+/** The image moved to `left`, `top` (source px) inside the same expanded canvas: the extra space
+ * shifts between opposite sides, the final size stays. Snapped to 8 px; within 4 px of an edge, on it. */
+export function placeInCanvas(p: { left: number; right: number; top: number; bottom: number }, left: number, top: number): OutpaintSpec {
+  const snap = (v: number, max: number) => (v >= max - 4 ? max : Math.min(max, Math.max(0, Math.round(v / 8) * 8)));
+  const ex = p.left + p.right;
+  const ey = p.top + p.bottom;
+  const l = snap(left, ex);
+  const t = snap(top, ey);
+  return { left: l, right: ex - l, top: t, bottom: ey - t, units: "pixels" };
 }
 
 /** Expansion presets in source pixels. */
