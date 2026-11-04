@@ -10,7 +10,6 @@ use std::sync::Mutex;
 
 use image::{GrayImage, RgbaImage, imageops::FilterType};
 use ort::session::Session;
-use ort::session::builder::GraphOptimizationLevel;
 use ort::value::Tensor;
 
 use crate::catalog::{Download, FileKind, join_rel};
@@ -124,14 +123,7 @@ pub fn matte(sdcpp_dir: &Path, img: &RgbaImage) -> AppResult<GrayImage> {
     if guard.as_ref().is_none_or(|(p, _, _)| p != &path) {
         let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
         let env = crate::onnx::environment().map_err(ort_err)?;
-        let s = Session::builder(&env)
-            .map_err(ort_err)?
-            .with_optimization_level(GraphOptimizationLevel::Level3)
-            .map_err(ort_err)?
-            .with_intra_threads(threads)
-            .map_err(ort_err)?
-            .commit_from_file(&path)
-            .map_err(ort_err)?;
+        let s = crate::onnx::cpu_session(&env, &path, threads).map_err(ort_err)?;
         *guard = Some((path.clone(), env, s));
     }
     let (_, _, session) = guard.as_mut().unwrap();
@@ -224,7 +216,11 @@ mod shared_runtime_tests {
         let dir = std::path::PathBuf::from(dir);
         let img = image::RgbaImage::from_fn(400, 300, |x, y| image::Rgba([(x / 2) as u8, (y / 2) as u8, if (150..250).contains(&x) { 230 } else { 40 }, 255]));
         let marked = crate::watermark::embed(&dir, &img).unwrap().unwrap();
+        // On the CPU the first matte (session included) takes ~8 s on an M2 Pro; on the Neural
+        // Engine (ort's default device policy, crate::onnx::cpu_session) it never came back.
+        let started = std::time::Instant::now();
         let m = super::matte(&dir, &marked).unwrap();
+        assert!(started.elapsed().as_secs() < 90, "first matte took {:?}", started.elapsed());
         assert_eq!(m.dimensions(), (400, 300));
         assert!(crate::watermark::detect(&dir, &marked).unwrap().unwrap().kokon);
     }

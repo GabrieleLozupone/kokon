@@ -19,7 +19,6 @@ use std::sync::Mutex;
 
 use image::{RgbaImage, imageops::FilterType};
 use ort::session::Session;
-use ort::session::builder::GraphOptimizationLevel;
 use ort::value::Tensor;
 
 use crate::catalog::{Download, join_rel};
@@ -114,14 +113,7 @@ fn with_session<T>(
             .map(|n| n.get())
             .unwrap_or(4)
             .min(8);
-        let session = Session::builder(&s._env)
-            .map_err(ort_err)?
-            .with_optimization_level(GraphOptimizationLevel::Level3)
-            .map_err(ort_err)?
-            .with_intra_threads(threads)
-            .map_err(ort_err)?
-            .commit_from_file(&path)
-            .map_err(ort_err)?;
+        let session = crate::onnx::cpu_session(&s._env, &path, threads).map_err(ort_err)?;
         *slot = Some(session);
     }
     f(slot.as_mut().unwrap())
