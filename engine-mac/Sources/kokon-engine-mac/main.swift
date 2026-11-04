@@ -36,7 +36,8 @@ kokon-engine-mac: Kokon's Apple Silicon engine (in development)
                                            a few minutes: this Mac's paths, speed at 1024², accuracy against the fp32 path;
                                            prints a report to paste in a GitHub issue (Kokon's model files by default)
   check-ane8                               the M3/M4 path (int8 Neural Engine program) against the fp16 one
-  check-na                                 the M5 path (Metal 4 tensor operations) against MPS on one product
+  check-na [m k n]                         the M5 path (Metal 4 tensor operations) against MPS on one product
+                                           (default 1536 4096 4096), both tile variants
   probe                                    this Mac's matrix throughput: GPU, AMX, Neural Engine, together
   probe-attention                          the target's attention at 1024² on the GPU, the Neural Engine, the CPU
 """
@@ -204,7 +205,12 @@ do {
     case "check-ane8":
         try Checks.aneInt8()
     case "check-na":
-        try Checks.neuralAccelerators()
+        let shape = arguments.dropFirst().compactMap { Int($0) }
+        if shape.count == 3 {
+            try Checks.neuralAccelerators(m: shape[0], k: shape[1], n: shape[2])
+        } else {
+            try Checks.neuralAccelerators()
+        }
     case "probe":
         try Probe.run()
     case "probe-attention":
