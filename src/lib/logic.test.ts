@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  cutoutText,
+  downloadIsFor,
+  jobStepText,
   macEngineOfferDue,
   modelChoiceUi,
   modelOfferDue,
@@ -774,5 +777,28 @@ describe("expand: placing the image", () => {
     expect(placeInCanvas(centred, 197, 103)).toEqual({ left: 200, right: 0, top: 100, bottom: 0, units: "pixels" });
     expect(placeInCanvas(centred, -40, 999)).toEqual({ left: 0, right: 200, top: 100, bottom: 0, units: "pixels" });
     expect(placeInCanvas({ left: 0, right: 0, top: 30, bottom: 30 }, 20, 0).left).toBe(0);
+  });
+});
+
+describe("Layers lab status lines", () => {
+  it("names the object and the cut-out's step", () => {
+    expect(cutoutText("Vase", "model", 0, 42)).toBe("Vase · getting the sticker model (once, 224 MB) · 42%");
+    expect(cutoutText("Vase", "model", 0, null)).toBe("Vase · getting the sticker model (once, 224 MB)");
+    expect(cutoutText("Vase", "sending", 3, null)).toBe("Vase · sending to the model");
+    expect(cutoutText("Vase", "matting", 0.4, null)).toBe("Vase · model at work");
+    expect(cutoutText("Vase", "matting", 6.7, null)).toBe("Vase · model at work · 6 s");
+    expect(cutoutText("Vase", "edges", 9, null)).toBe("Vase · refining the edge");
+  });
+  it("shows a job's step only while it runs and the engine has said how many", () => {
+    expect(jobStepText({ status: "running", step: [3, 8] })).toBe("step 3 of 8");
+    expect(jobStepText({ status: "running", step: [9, 8] })).toBe("step 8 of 8");
+    expect(jobStepText({ status: "running", step: [0, 0] })).toBe("");
+    expect(jobStepText({ status: "queued", step: null })).toBe("");
+  });
+  it("cancels a download only when it is the lab's own", () => {
+    expect(downloadIsFor({ running: true, preset: "matting" }, "matting")).toBe(true);
+    expect(downloadIsFor({ running: true, preset: "segment" }, "matting")).toBe(false);
+    expect(downloadIsFor({ running: false, preset: "matting" }, "matting")).toBe(false);
+    expect(downloadIsFor(null, "segment")).toBe(false);
   });
 });

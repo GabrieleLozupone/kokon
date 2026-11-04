@@ -17,6 +17,18 @@ export class ApiError extends Error {
   }
 }
 
+/** Work the user stopped (Stop, Skip, Cancel): not an error to show. */
+export class Stopped extends Error {
+  constructor() {
+    super("Stopped.");
+    this.name = "Stopped";
+  }
+}
+
+/** True for a Stop: ours, the browser's AbortError, or the service's "cancelled" answer. */
+export const isStopped = (e: unknown) =>
+  e instanceof Stopped || (e instanceof DOMException && e.name === "AbortError") || (e instanceof ApiError && e.body.code === "cancelled");
+
 let base = "";
 let token = "";
 /** Private mode: uploads and imports go to the service's temporary store. */
@@ -54,6 +66,7 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
       headers: { ...authHeaders(init.method), ...(init.body && typeof init.body === "string" ? { "Content-Type": "application/json" } : {}), ...(init.headers || {}) },
     });
   } catch (e) {
+    if (init.signal?.aborted) throw new Stopped();
     throw new ApiError({ code: "server_unavailable", message: inBrowser ? "Kokon is not reachable." : "The local service is not reachable.", detail: String(e) }, 0);
   }
   const text = await res.text();
@@ -133,12 +146,14 @@ export const api = {
   matteStatus: () => call<{ installed: boolean; bytes: number }>("/matte"),
   /** Progress in `installStatus` (preset "matting"). */
   downloadMatte: () => call<InstallStatus>("/matte/download", { method: "POST" }),
-  /** The fast-sticker matte of an image in Kokon ("input:"/"gen:"): a grey PNG at its size. */
-  matte: async (image: string): Promise<Blob> => {
+  /** The fast-sticker matte of an image in Kokon ("input:"/"gen:"): a grey PNG at its size. `run`:
+   * the id `cancelMatte` stops; aborting `signal` drops the request (the service stops the model too). */
+  matte: async (image: string, run?: string, signal?: AbortSignal): Promise<Blob> => {
     let res: Response;
     try {
-      res = await fetch(base + "/matte", { method: "POST", headers: { ...authHeaders("POST"), "Content-Type": "application/json" }, body: json({ image }) });
+      res = await fetch(base + "/matte", { method: "POST", headers: { ...authHeaders("POST"), "Content-Type": "application/json" }, body: json({ image, run }), signal });
     } catch (e) {
+      if (signal?.aborted) throw new Stopped();
       throw new ApiError({ code: "server_unavailable", message: inBrowser ? "Kokon is not reachable." : "The local service is not reachable.", detail: String(e) }, 0);
     }
     if (!res.ok) {
@@ -147,6 +162,8 @@ export const api = {
     }
     return res.blob();
   },
+  /** Stops the quick cut-out `run` in the service (running, or as soon as it starts). */
+  cancelMatte: (run: string) => call<{ stopped: boolean }>("/matte/cancel", { method: "POST", body: json({ run }) }),
   /** ESRGAN models of earlier versions in the app's own folder. */
   legacyUpscalers: (keep: string) => call<{ files: string[]; bytes: number }>(`/setup/legacy-upscalers?keep=${encodeURIComponent(keep)}`),
   /** `keep`: the model chosen in Settings, even if not saved yet. */
@@ -172,8 +189,8 @@ export const api = {
   job: (id: string) => call<JobView>(`/jobs/${id}`),
   jobs: () => call<JobView[]>("/jobs"),
   cancel: (id: string) => call<JobView>(`/jobs/${id}/cancel`, { method: "POST" }),
-  upload: (bytes: Blob | ArrayBuffer | Uint8Array, name?: string) =>
-    call<InputRecord>(`/inputs${privateQuery()}`, { method: "POST", body: bytes as BodyInit, headers: { "Content-Type": "application/octet-stream", ...(name ? { "x-filename": encodeURIComponent(name) } : {}) } }),
+  upload: (bytes: Blob | ArrayBuffer | Uint8Array, name?: string, signal?: AbortSignal) =>
+    call<InputRecord>(`/inputs${privateQuery()}`, { method: "POST", body: bytes as BodyInit, signal, headers: { "Content-Type": "application/octet-stream", ...(name ? { "x-filename": encodeURIComponent(name) } : {}) } }),
   /** What an image's AI markings say (metadata and Kokon's invisible watermark); nothing is kept. */
   checkImage: (bytes: Blob | ArrayBuffer | Uint8Array) =>
     call<AiCheckReport>("/provenance/check", { method: "POST", body: bytes as BodyInit, headers: { "Content-Type": "application/octet-stream" } }),

@@ -82,6 +82,7 @@ pub fn router(state: Arc<AppState>, lan: bool) -> Router {
         .route("/upscalers/{name}/download", post(download_upscaler))
         .route("/matte", get(matte_status).post(matte_image))
         .route("/matte/download", post(matte_download))
+        .route("/matte/cancel", post(matte_cancel))
         .route("/segment", get(segment_status))
         .route("/segment/download", post(segment_download))
         .route("/segment/models/{file}", get(segment_model))
@@ -520,20 +521,48 @@ async fn segment_model(State(s): St, AxPath(file): AxPath<String>) -> ApiResult<
 struct MatteBody {
     /// "input:<id>" / "gen:<id>".
     image: String,
+    /// The app's id for this cut-out, for Stop (`/matte/cancel`).
+    run: Option<String>,
 }
 
 /// The matte of an image (grey PNG at its size) for a fast sticker.
 async fn matte_image(State(s): St, Json(b): Json<MatteBody>) -> ApiResult<Response> {
     let engine = s.engine.clone();
     let image = b.image.clone();
+    // Every run has an id: when the app drops the request (Stop, the lab closed), the guard below
+    // stops the model too instead of letting it finish for no one.
+    let run = b.run.clone().unwrap_or_else(|| format!("auto-{}", uuid::Uuid::new_v4()));
+    struct StopIfDropped(String, bool);
+    impl Drop for StopIfDropped {
+        fn drop(&mut self) {
+            if !self.1 {
+                qls_core::matting::cancel(&self.0);
+            }
+        }
+    }
+    let mut guard = StopIfDropped(run.clone(), false);
     let started = std::time::Instant::now();
-    let res = tokio::task::spawn_blocking(move || engine.matte(&b.image)).await.map_err(AppError::internal)?;
+    let res = tokio::task::spawn_blocking(move || engine.matte(&b.image, Some(&run))).await.map_err(AppError::internal)?;
+    guard.1 = true;
     // Logged: a quick cut-out that fails or crawls is otherwise invisible (the lab runs it in the window).
     match &res {
         Ok(_) => tracing::info!("quick cut-out matte of {image} in {} ms", started.elapsed().as_millis()),
+        Err(e) if e.code == ErrorCode::Cancelled => tracing::info!("quick cut-out matte of {image} stopped after {} ms", started.elapsed().as_millis()),
         Err(e) => tracing::warn!("quick cut-out matte of {image} failed after {} ms: {} {:?}", started.elapsed().as_millis(), e.message, e.detail),
     }
     Ok(([(header::CONTENT_TYPE, "image/png")], res?).into_response())
+}
+
+#[derive(Deserialize)]
+struct MatteCancelBody {
+    run: String,
+}
+
+/// Stop for a quick cut-out: its model run ends at once (or as soon as it starts).
+async fn matte_cancel(Json(b): Json<MatteCancelBody>) -> Json<Value> {
+    let running = qls_core::matting::cancel(&b.run);
+    tracing::info!("quick cut-out {} stopped ({})", b.run, if running { "while running" } else { "before it ran" });
+    Json(json!({ "stopped": running }))
 }
 
 /// Upscaler models of earlier versions in the app's own folder (Settings offers to delete

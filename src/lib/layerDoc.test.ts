@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { copiedShare, cropFor, expandedRect, extOf, unionRect, docFor, keepLabsIn, labSources, loadLab, saveLab, waitingMarks, jobLayer, labItems, leftovers, putDoc, type LabStore, shadowAlpha, strengthPixels, mapPoint, placed, reconcile, reorder, toLayer, xfOf, type DocLayer, type LayerDoc } from "./layerDoc";
+import { copiedShare, stoppedScenes, cropFor, expandedRect, extOf, unionRect, docFor, keepLabsIn, labSources, loadLab, saveLab, waitingMarks, jobLayer, labItems, leftovers, putDoc, type LabStore, shadowAlpha, strengthPixels, mapPoint, placed, reconcile, reorder, toLayer, xfOf, type DocLayer, type LayerDoc } from "./layerDoc";
 
 const layer = (id: string, source: string, base = false): DocLayer => ({ id, name: id, source, history: [source], hidden: false, base, dx: 0, dy: 0, s: 1 });
 const doc = (layers: DocLayer[]): LayerDoc => ({ width: 100, height: 100, layers, known: [] });
@@ -256,5 +256,25 @@ describe("expanded objects", () => {
     expect(extOf(doc, "input:a")).toEqual({ x: 0, y: 0, w: 800, h: 600 });
     expect(extOf(doc, "input:b")).toEqual({ x: -40, y: 0, w: 900, h: 600 });
     expect(unionRect({ x: 0, y: 0, w: 800, h: 600 }, { x: 700, y: -50, w: 300, h: 100 })).toEqual({ x: 0, y: -50, w: 1000, h: 650 });
+  });
+});
+
+describe("stoppedScenes", () => {
+  const scene = (source: string, made?: Record<string, string>) => ({ source, before: "b", shadows: [], look: [], places: {}, reach: 10, ...(made ? { made } : {}) });
+  const doc = (scenes: ReturnType<typeof scene>[]): LayerDoc => ({ width: 10, height: 10, layers: [], known: [], scenes });
+  it("lets go of an edit whose jobs were all stopped, and only that one", () => {
+    const d = doc([scene("input:a"), scene("input:b"), scene("input:c"), scene("input:d", { red: "l1" })]);
+    const edits = [
+      { image: "input:a", status: "cancelled" },
+      { image: "input:b", status: "cancelled" },
+      { image: "input:b", status: "running" },
+      { image: "input:c", status: "failed" },
+      { image: "input:d", status: "cancelled" },
+      { image: undefined, status: "cancelled" },
+    ];
+    expect(stoppedScenes(d, edits).map((e) => e.source)).toEqual(["input:a"]);
+  });
+  it("keeps edits not sent yet (in the prompt box)", () => {
+    expect(stoppedScenes(doc([scene("input:a")]), [])).toEqual([]);
   });
 });

@@ -9,19 +9,58 @@
 // piece of the selection the selection's own edge band is used instead (`stickerAlpha`). The edge
 // colours are then freed of the background bleeding into them (`foreground`, Germer et al. 2020).
 
-import { api } from "./api";
+import { api, Stopped } from "./api";
 import { dilate, erode, type Mask } from "./layers";
+import type { CutStep } from "./logic";
+
+/** Where a quick cut-out is, for the lab to show (cutoutText in logic.ts). */
+export type CutPhase = CutStep;
+
+/** A quick cut-out's Stop and progress: `signal` aborts it, `phase` is told each step. */
+export interface CutControl {
+  signal: AbortSignal;
+  /** The id the service knows the model's run by (Stop ends it there too). */
+  run: string;
+  phase: (p: CutPhase) => void;
+}
+
+/** Throws Stopped once the user stopped the cut-out. */
+export function checkStop(c?: CutControl) {
+  if (c?.signal.aborted) throw new Stopped();
+}
+
+/** A new cut-out's control (`abort` stops it, here and in the service). */
+export function cutControl(phase: (p: CutPhase) => void): CutControl & { abort: () => void } {
+  const ac = new AbortController();
+  const run = `cut-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  return {
+    signal: ac.signal,
+    run,
+    phase,
+    abort: () => {
+      if (ac.signal.aborted) return;
+      ac.abort();
+      // The dropped request stops the model as well; this also covers a Stop before it was sent.
+      api.cancelMatte(run).catch(() => {});
+    },
+  };
+}
 
 /** The model's matte (0-1) of RGBA pixels `w`×`h`, at that size (uploaded, matted by the service). */
-export async function modelMatte(rgba: Uint8ClampedArray, w: number, h: number): Promise<Float32Array> {
+export async function modelMatte(rgba: Uint8ClampedArray, w: number, h: number, ctl?: CutControl): Promise<Float32Array> {
   const c = document.createElement("canvas");
   c.width = w;
   c.height = h;
   const ctx = c.getContext("2d")!;
   ctx.putImageData(new ImageData(rgba as Uint8ClampedArray<ArrayBuffer>, w, h), 0, 0);
   const png = await new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error("export failed"))), "image/png"));
-  const rec = await api.upload(png, "sticker input.png");
-  const m = await createImageBitmap(await api.matte(`input:${rec.id}`));
+  checkStop(ctl);
+  ctl?.phase("sending");
+  const rec = await api.upload(png, "sticker input.png", ctl?.signal);
+  checkStop(ctl);
+  ctl?.phase("matting");
+  const m = await createImageBitmap(await api.matte(`input:${rec.id}`, ctl?.run, ctl?.signal));
+  checkStop(ctl);
   ctx.clearRect(0, 0, w, h);
   ctx.drawImage(m, 0, 0, w, h);
   const px = ctx.getImageData(0, 0, w, h).data;

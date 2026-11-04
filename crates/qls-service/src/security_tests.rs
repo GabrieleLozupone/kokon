@@ -368,4 +368,10 @@ async fn fast_stickers_take_only_images_already_in_kokon() {
         let r = send(&a, "POST", "/api/v1/matte", &[c, CSRF], Some(json!({ "image": image }))).await;
         assert_eq!((r.status, r.code()), (StatusCode::BAD_REQUEST, "invalid_input"), "{image}");
     }
+    // Stop: signed in with the CSRF header only.
+    let stop = json!({ "run": "r1" });
+    let r = send(&a, "POST", "/api/v1/matte/cancel", &[c, CSRF], Some(stop.clone())).await;
+    assert_eq!((r.status, r.body["stopped"].clone()), (StatusCode::OK, json!(false)));
+    assert_ne!(send(&a, "POST", "/api/v1/matte/cancel", &[c], Some(stop.clone())).await.status, StatusCode::OK);
+    assert_eq!(send(&a, "POST", "/api/v1/matte/cancel", &[CSRF], Some(stop)).await.status, StatusCode::UNAUTHORIZED);
 }

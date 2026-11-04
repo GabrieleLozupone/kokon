@@ -2,10 +2,11 @@
 // (one frame per split image in the version strip, the composite on the Stage) instead of the lab's
 // own versions; clicking it opens that image's layers.
 
-import { Layers, Loader2, X } from "lucide-react";
+import { Layers, Loader2, Square, X } from "lucide-react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { docId, docsVersion, jobLayer, waitingMarks, labItems, leftovers, loadLab, saveLab, subscribeDocs, type LabStore, type LayerDoc } from "../lib/layerDoc";
-import { editSource, itemOrigin, itemSource, removeSessionItem, setState, useStore, type SessionItem } from "../lib/store";
+import { cancelJob, editSource, itemOrigin, itemSource, removeSessionItem, setState, useStore, type SessionItem } from "../lib/store";
+import { jobStepText } from "../lib/logic";
 import type { JobView } from "../lib/types";
 import { urls } from "../lib/api";
 import { useJobPercent } from "./jobMotion";
@@ -149,7 +150,12 @@ function JobPill({ j }: { j: LabJob }) {
   return (
     <span className="lab-progress">
       <Loader2 className="spin" size={13} />
-      {PHASE[j.job.status] ? `${PHASE[j.job.status]}${what ? ` · ${what}` : ""}` : `Generating${what ? ` ${what}` : ""}`} · <JobPct job={j.job} item={j.item} />
+      {PHASE[j.job.status] ? `${PHASE[j.job.status]}${what ? ` · ${what}` : ""}` : `Generating${what ? ` ${what}` : ""}`}
+      {jobStepText(j.job) ? ` · ${jobStepText(j.job)}` : ""} · <JobPct job={j.job} item={j.item} />
+      {/* Stop: a queued edit leaves the queue, a running one stops in the engine; the layers stay as they are. */}
+      <button className="lab-dismiss" title="Stop this edit (the layers stay as they are)" aria-label="Stop" onClick={() => cancelJob(j.job.id)}>
+        <Square size={11} />
+      </button>
     </span>
   );
 }

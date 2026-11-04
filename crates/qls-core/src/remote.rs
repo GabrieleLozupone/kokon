@@ -270,7 +270,7 @@ pub fn browser_allowed(method: &str, path: &str) -> bool {
         ("GET", ["gallery", _] | ["gallery", _, "image" | "thumb" | "preview" | "original"]) => true,
         ("GET", ["projects", _, "records"]) => true,
         ("GET", ["luts", _, "preview"]) => true,
-        ("GET" | "POST", ["matte"]) | ("POST", ["matte", "download"]) => true,
+        ("GET" | "POST", ["matte"]) | ("POST", ["matte", "download" | "cancel"]) => true,
         ("GET" | "PUT" | "DELETE", ["projects", _]) => true,
         ("PUT", ["config"]) => true,
         ("POST", ["setup", "install" | "gpu"] | ["setup", "install", "cancel"]) => true,

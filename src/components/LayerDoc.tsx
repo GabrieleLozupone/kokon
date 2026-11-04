@@ -10,14 +10,14 @@
 // the flattened layers: "New objects" adds what the user drew with the coloured pencil as new
 // layers, "Edit together" gives the selected objects the edit's look. "Save as image" flattens the layers into a new version; "Export PSD" saves them for Photoshop (lib/psd.ts).
 
-import { Brush, Eraser, Eye, EyeOff, FileDown, GripVertical, Group, Hand, History, ImageDown, Link2, Loader2, Lock, MousePointer2, Paintbrush, Pencil, Redo2, RotateCcw, Scissors, Sparkles, Sun, Trash2, Undo2, Ungroup, WandSparkles, X } from "lucide-react";
+import { Brush, Eraser, Eye, EyeOff, FileDown, GripVertical, Group, Hand, History, ImageDown, Link2, Loader2, Lock, MousePointer2, Paintbrush, Pencil, Redo2, RotateCcw, Scissors, Sparkles, Square, Sun, Trash2, Undo2, Ungroup, WandSparkles, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, urls } from "../lib/api";
-import { focusPixels, foreground, keptShare, MIN_KEPT, modelMatte, stickerAlpha } from "../lib/matte";
+import { api, isStopped, Stopped, urls } from "../lib/api";
+import { checkStop, cutControl, focusPixels, foreground, keptShare, MIN_KEPT, modelMatte, stickerAlpha, type CutControl } from "../lib/matte";
 import { blendPrompt, DEFAULT_READING } from "../lib/blend";
 import { dilate, erode, fileSafe } from "../lib/layers";
-import { centre, copiedShare, CROP_MAX_RATIO, cropFor, docId, extOf, unionRect, type Rect, waitingMarks, shadowAlpha, strengthPixels, mapBox, reorder, unmapPoint, withGroup, xfOf, type Box, type DocLayer, type Effect, type Feed, type LayerDoc, type SceneEdit, type Sticker, type Xf } from "../lib/layerDoc";
-import { buildRequest, refFromInput } from "../lib/logic";
+import { centre, copiedShare, stoppedScenes, CROP_MAX_RATIO, cropFor, docId, extOf, unionRect, type Rect, waitingMarks, shadowAlpha, strengthPixels, mapBox, reorder, unmapPoint, withGroup, xfOf, type Box, type DocLayer, type Effect, type Feed, type LayerDoc, type SceneEdit, type Sticker, type Xf } from "../lib/layerDoc";
+import { buildRequest, cutoutText, downloadIsFor, jobStepText, refFromInput, type CutStep } from "../lib/logic";
 import { native } from "../lib/native";
 import { aiMarkingXmp, writePsd } from "../lib/psd";
 import { MARK_COLOURS, marksPrompt, type MarkColour } from "../lib/sceneEdit";
@@ -65,7 +65,37 @@ function ShadowPhase({ job, item }: { job: JobView; item: SessionItem }) {
   if (job.status === "queued") return <>Waiting for the edits before it</>;
   if (job.status === "starting_backend") return <>Starting the engine</>;
   if (job.status === "done") return <>Reading what the AI added</>;
-  return <>Blending into the scene · {Math.floor(pct)}%</>;
+  const step = jobStepText(job);
+  return (
+    <>
+      Blending into the scene{step ? ` · ${step}` : ""} · {Math.floor(pct)}%
+    </>
+  );
+}
+
+/** "waiting", "starting the engine", "step 3 of 8 · 38%": where a lab job is. */
+function JobProgressText({ job, item }: { job: JobView; item?: SessionItem }) {
+  const { pct } = useJobPercent(job, item?.request);
+  if (job.status === "queued") return <>waiting for the edits before it</>;
+  if (job.status === "starting_backend") return <>starting the engine</>;
+  if (job.status === "enhancing_prompt") return <>writing the prompt</>;
+  const step = jobStepText(job);
+  return (
+    <>
+      {step ? `${step} · ` : ""}
+      {Math.floor(pct)}%
+    </>
+  );
+}
+
+/** Re-renders every half second while `on` (seconds counting up in a status line). */
+function useTick(on: boolean) {
+  const [, setT] = useState(0);
+  useEffect(() => {
+    if (!on) return;
+    const id = window.setInterval(() => setT((t) => t + 1), 500);
+    return () => window.clearInterval(id);
+  }, [on]);
 }
 
 /** What the canvas needs of a layer's version: its alpha (for clicks), where its content is, a thumbnail. */
@@ -420,6 +450,8 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
   const zoomK = useRef(1);
   const [spacePressed, setSpacePressed] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** What a save or export is doing, for the header (null when nothing). */
+  const [working, setWorking] = useState<string | null>(null);
   const [rowDrag, setRowDrag] = useState<{ from: number; over: number } | null>(null);
   // The layer being renamed (double-click), so a click on a row leaves the arrows to nudging.
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -699,7 +731,8 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
   /** A fast sticker, as the layer's next version: the object over the photo around it, matted by the
    * service (lib/matte.ts: the selection decides what, the matte only the edge; edge colours freed of
    * the background). Deterministic, a few seconds; Clean edges is the AI redraw. */
-  const fastSticker = async (l: DocLayer) => {
+  const fastSticker = async (l: DocLayer, ctl?: CutControl) => {
+    ctl?.phase("preparing");
     const e = extOf(liveRef.current, l.source);
     if (e.x < 0 || e.y < 0 || e.w > W || e.h > H) throw new Error(`${l.name} reaches past the photo: use Clean edges.`);
     const info = await sourceInfo(l.source, W, H);
@@ -732,7 +765,11 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     // The object in its scene (a new object drawn by the lab is over the photo too).
     const rgba = scene(w, h, true).getContext("2d")!.getImageData(0, 0, w, h).data;
     if (!sel.some((v) => v)) throw new Error(`${l.name} has no pixels to cut out.`);
-    const matte = await modelMatte(focusPixels(rgba, sel, w, h), w, h);
+    checkStop(ctl);
+    const matte = await modelMatte(focusPixels(rgba, sel, w, h), w, h, ctl);
+    ctl?.phase("edges");
+    // Lets the status line show the step before the edge work holds the page.
+    await new Promise((r) => window.setTimeout(r, 0));
     const { alpha } = stickerAlpha(matte, sel, w, h);
     // Checked before anything changes: a cut-out that kept (almost) nothing leaves the layer as it was.
     const kept = keptShare(alpha, sel);
@@ -753,25 +790,39 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       for (let i = 0; i < cw * ch; i++) if (d.data[i * 4 + 3] > 250) for (let c = 0; c < 3; c++) d.data[i * 4 + c] = full[i * 4 + c];
       octx.putImageData(d, x0, y0);
     }
-    const rec = await api.upload(await toPng(out), `${fileSafe(l.name)} (sticker).png`);
+    checkStop(ctl);
+    ctl?.phase("saving");
+    const rec = await api.upload(await toPng(out), `${fileSafe(l.name)} (sticker).png`, ctl?.signal);
+    // Stopped up to here: the layer is as it was (the uploaded file stays out of sight).
+    checkStop(ctl);
     addVersions([rec], 0);
     const src = `input:${rec.id}`;
     const now = liveRef.current;
     commitRef.current({ ...now, layers: now.layers.map((x) => (x.id === l.id ? { ...x, source: src, history: [...x.history, src] } : x)), known: [...now.known, src] });
   };
 
-  /** The fast sticker model is downloaded once (224 MB), the first time Fast is used; the % shows. */
+  /** The fast sticker model is downloaded once (224 MB), the first time Fast is used; the % shows.
+   * Aborting `signal` cancels the download (when it is this one) and throws Stopped. */
   const [matteDl, setMatteDl] = useState<number | null>(null);
-  const ensureMatteModel = async () => {
+  const ensureMatteModel = async (signal?: AbortSignal) => {
     if ((await api.matteStatus()).installed) return;
     setMatteDl(0);
+    const stop = () => {
+      api
+        .installStatus()
+        .then((st) => (downloadIsFor(st, "matting") ? api.cancelInstall() : null))
+        .catch(() => {});
+    };
+    signal?.addEventListener("abort", stop);
     try {
       await api.downloadMatte();
       for (;;) {
         await new Promise((r) => window.setTimeout(r, 1000));
+        if (signal?.aborted) throw new Stopped();
         const st = await api.installStatus();
         const it = st.items.find((i) => i.id === "birefnet_lite");
-        if (it?.state === "failed" || it?.state === "cancelled") throw new Error(it.error ?? "The sticker model could not be downloaded.");
+        if (it?.state === "cancelled") throw new Stopped();
+        if (it?.state === "failed") throw new Error(it.error ?? "The sticker model could not be downloaded.");
         if (it?.state === "done" || it?.state === "present") return;
         if (!st.running) {
           if ((await api.matteStatus()).installed) return;
@@ -780,18 +831,50 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
         if (it?.size) setMatteDl(Math.floor((100 * it.received) / it.size));
       }
     } finally {
+      signal?.removeEventListener("abort", stop);
       setMatteDl(null);
     }
   };
+
+  /** The quick cut-out being made (one at a time): which layer ("" while the model is fetched for
+   * the automatic stickers), its step and since when. Stop ends it, in the service too. */
+  const [cut, setCut] = useState<{ layer: string; name: string; step: CutStep; at: number } | null>(null);
+  const cutRef = useRef<(CutControl & { abort: () => void; layer: string }) | null>(null);
+  const startCut = (layer: string, name: string) => {
+    const ctl: CutControl & { abort: () => void; layer: string } = Object.assign(
+      cutControl((step) => {
+        if (cutRef.current === ctl) setCut({ layer, name, step, at: Date.now() });
+      }),
+      { layer },
+    );
+    cutRef.current = ctl;
+    setCut({ layer, name, step: "preparing", at: Date.now() });
+    return ctl;
+  };
+  const endCut = (ctl: CutControl) => {
+    if (cutRef.current !== ctl) return;
+    cutRef.current = null;
+    setCut(null);
+  };
+  const stopCut = () => cutRef.current?.abort();
+  // Leaving the lab stops a cut-out still being made (its result would land nowhere).
+  useEffect(() => () => cutRef.current?.abort(), []);
+  useTick(!!cut);
+  const cutLine = cut ? cutoutText(cut.name, cut.step, (Date.now() - cut.at) / 1000, matteDl) : "";
+
   const quickClean = async (l: DocLayer) => {
+    const ctl = startCut(l.id, l.name);
     setBusy(true);
     try {
-      await ensureMatteModel();
-      await fastSticker(l);
+      ctl.phase("model");
+      await ensureMatteModel(ctl.signal);
+      await fastSticker(l, ctl);
       toastInfo(`${l.name}: quick cut-out done.`);
     } catch (e) {
-      toastError(e);
+      if (isStopped(e)) toastInfo(`Quick cut-out stopped: ${l.name} is as it was.`);
+      else toastError(e);
     } finally {
+      endCut(ctl);
       setBusy(false);
     }
   };
@@ -841,11 +924,15 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       const sideBySide = !getState().status?.gpu?.unified;
       if (sideBySide) await sendFill();
       let ready = true;
+      const dl = startCut("", "Stickers");
       try {
-        await ensureMatteModel();
+        dl.phase("model");
+        await ensureMatteModel(dl.signal);
       } catch (e) {
-        toastError(e);
+        if (!isStopped(e)) toastError(e);
         ready = false;
+      } finally {
+        endCut(dl);
       }
       for (const l of objects) {
         if (liveRef.current.stickers?.find((s) => s.layer === l.id && !s.kind)?.skipped) continue;
@@ -854,13 +941,20 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
           continue;
         }
         setSticker(l.id, { local: "making" });
+        const ctl = startCut(l.id, l.name);
         try {
-          await fastSticker(liveRef.current.layers.find((x) => x.id === l.id) ?? l);
+          await fastSticker(liveRef.current.layers.find((x) => x.id === l.id) ?? l, ctl);
           setSticker(l.id, { local: "done" });
         } catch (e) {
-          console.error(e);
-          setSticker(l.id, { failed: true, local: undefined });
-          toastError(e);
+          // Skip (or Stop all) ended it: the object keeps its rough cut-out, nothing to report.
+          if (isStopped(e)) setSticker(l.id, { skipped: true, local: undefined });
+          else {
+            console.error(e);
+            setSticker(l.id, { failed: true, local: undefined });
+            toastError(e);
+          }
+        } finally {
+          endCut(ctl);
         }
       }
       if (!sideBySide) await sendFill();
@@ -941,6 +1035,23 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobs, session, live.stickers]);
 
+  // A scene edit stopped before any result (Stop on its pill or on the Blend card): its entry goes,
+  // so nothing waits for it, and what sending it took away comes back (the marks to the pencil).
+  useEffect(() => {
+    const edits = session.filter((i) => i.kind === "job" && i.jobId && jobs[i.jobId]).map((i) => ({ image: i.request?.images?.[0], status: jobs[i.jobId!].status }));
+    const gone = stoppedScenes(liveRef.current, edits);
+    if (!gone.length) return;
+    const d = liveRef.current;
+    const back = gone.map((e) => sentScene.current.get(e.source));
+    const unhide = new Set(back.flatMap((b) => b?.hid ?? []));
+    const marks = back.find((b) => b?.sketch)?.sketch;
+    if (marks && !sketch.marks.length) setSketch(marks);
+    for (const e of gone) sentScene.current.delete(e.source);
+    commit({ ...d, layers: d.layers.map((l) => (unhide.has(l.id) ? { ...l, hidden: false } : l)), scenes: (d.scenes ?? []).filter((e) => !gone.includes(e)) });
+    toastInfo("Stopped: the layers are as they were before that edit.");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobs, session]);
+
   // Blend into scene (or an older Automatic shadows edit) being made (sent, generated, or read back):
   // the layers stay where they are meanwhile (the result is made for this layout), and the stage says
   // how far it is. A failed edit does not hold them.
@@ -964,6 +1075,8 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
 
   const skipSticker = (s: Sticker) => {
     if (s.job) void cancelJob(s.job);
+    // Its quick cut-out stops, in the service too (the model's download is Stop all's to stop).
+    if (cutRef.current?.layer === s.layer) cutRef.current.abort();
     setSticker(s.layer, { skipped: true });
   };
   const stickerRows = (live.stickers ?? []).filter((s) => live.layers.some((l) => l.id === s.layer));
@@ -1461,6 +1574,9 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
    * what is sent, so Qwen makes them again); `look`: objects that take the edit's look. */
   /** `send`: made right away (a lab step, no Prompt+) instead of set up in the prompt; `one`: one
    * shadow layer for all the objects. */
+  /** What sending a scene edit took away (its pencil marks, the old shadows a Blend hid), by the
+   * edit's image: given back if the edit is stopped before a result (stoppedScenes). */
+  const sentScene = useRef(new Map<string, { sketch?: typeof sketch; hid: string[] }>());
   const sendScene = async (o: { shadows: string[]; look: string[]; prompt: string; marks: boolean; hint: string; send?: boolean; one?: boolean; blend?: boolean }) => {
     setBusy(true);
     // Sent right away: the flattened layers become a version on the way; the prompt's image is put back.
@@ -1510,6 +1626,10 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       // would read this one's result first (11-01: per-object shadows instead of the one layer asked for).
       // Blend: the old Automatic shadows layer would double the shadows: hidden (its eye brings it back).
       const layers = o.blend ? live.layers.map((l) => (l.auto && l.effect && !l.blend ? { ...l, hidden: true } : l)) : live.layers;
+      sentScene.current.set(target, {
+        ...(marksId ? { sketch: { marks: sketch.marks, wants: sketch.wants } } : {}),
+        hid: o.blend ? live.layers.filter((l) => l.auto && l.effect && !l.blend && !l.hidden).map((l) => l.id) : [],
+      });
       commit({ ...live, layers, scenes: [...(live.scenes ?? []).filter((x) => x.source !== target), scene] });
       if (marksId) setSketch({ marks: [], wants: sketch.wants });
       setSels([]);
@@ -1645,6 +1765,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
 
   const flatten = async () => {
     setBusy(true);
+    setWorking("Saving the image…");
     try {
       // The one image of the lab that goes to the gallery (its steps are kept out of it).
       const rec = await api.upload(await toPng(await render(W, H)), "Layers flattened.png");
@@ -1654,6 +1775,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     } catch (e) {
       toastError(e);
     } finally {
+      setWorking(null);
       setBusy(false);
     }
   };
@@ -1663,7 +1785,10 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     setBusy(true);
     try {
       const layers = [];
-      for (const l of live.layers) {
+      for (const [k, l] of live.layers.entries()) {
+        setWorking(`Writing the PSD · layer ${k + 1} of ${live.layers.length}`);
+        // Lets the status show before the layer is drawn.
+        await new Promise((r) => window.setTimeout(r, 0));
         const c = await render(W, H, undefined, [{ ...l, hidden: false }]);
         layers.push({ name: l.name, hidden: l.hidden, rgba: c.getContext("2d")!.getImageData(0, 0, W, H).data });
       }
@@ -1675,11 +1800,13 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       fx.fillRect(0, 0, W, H);
       fx.drawImage(await render(W, H), 0, 0);
       const xmp = aiMarkingXmp(getState().status?.service.version ?? "");
+      setWorking("Writing the PSD · choose where to save it");
       const path = await native.savePsd(writePsd(W, H, layers, fx.getImageData(0, 0, W, H).data, xmp));
       if (path) toastInfo(`Saved ${path.split(/[\\/]/).pop()}: each layer is its own layer in Photoshop.`);
     } catch (e) {
       toastError(e);
     } finally {
+      setWorking(null);
       setBusy(false);
     }
   };
@@ -1760,7 +1887,15 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     <div className="overlay">
       <div className="overlay-head">
         <h2>Layers (lab)</h2>
-        {labJobs.length && !stickering ? <LabJobs lab={lab} doc={doc} /> : <span className="layers-status">{stickering ? "Making stickers: each object is redrawn on its own; the background comes back when they are in" : status}</span>}
+        {working ? (
+          <span className="layers-status">
+            <Loader2 size={13} className="spin" /> {working}
+          </span>
+        ) : labJobs.length && !stickering ? (
+          <LabJobs lab={lab} doc={doc} />
+        ) : (
+          <span className="layers-status">{stickering ? "Making stickers: each object is redrawn on its own; the background comes back when they are in" : status}</span>
+        )}
         <span className="spacer" />
         <button className="btn" onClick={onNewSplit} title="Split this image again (replaces these layers; other images keep theirs)">
           <Scissors size={14} /> New split
@@ -1776,22 +1911,52 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
             <div className="sticker-strip">
               <Loader2 size={14} className="spin" />
               <span>
-                {matteDl !== null ? (
-                  <>Getting the sticker model (once, 224 MB) · {matteDl}%</>
+                {cut?.layer === "" ? (
+                  <>Getting the sticker model (once, 224 MB){matteDl !== null ? ` · ${matteDl}%` : ""}</>
                 ) : (
                   <>
                     Making stickers · {stickerRows.length - stickersLeft} of {stickerRows.length}
-                    {stickerNow ? ` · ${stickerNow.kind ? "filling the background" : (live.layers.find((l) => l.id === stickerNow.layer)?.name ?? "")}` : ""}
+                    {cut && cut.layer === stickerNow?.layer ? (
+                      ` · ${cutLine}`
+                    ) : stickerNow ? (
+                      <>
+                        {` · ${stickerNow.kind ? "filling the background" : (live.layers.find((l) => l.id === stickerNow.layer)?.name ?? "")}`}
+                        {stickerNow.job && jobs[stickerNow.job] && (
+                          <>
+                            {" · "}
+                            <JobProgressText job={jobs[stickerNow.job]} item={session.find((i) => i.jobId === stickerNow.job)} />
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      ""
+                    )}
                   </>
                 )}
               </span>
-              {stickerNow && (
-                <button className="btn" onClick={() => skipSticker(stickerNow)} title="Keep this object's rough cut-out">
+              {stickerNow && cut?.layer !== "" && (
+                <button className="btn" onClick={() => skipSticker(stickerNow)} title={stickerNow.kind ? "Stop the fill: the background keeps its holes" : "Stop this one: the object keeps its rough cut-out"}>
                   Skip
                 </button>
               )}
-              <button className="btn" onClick={() => stickerRows.forEach((s, i) => (stickerStates[i] === "waiting" || stickerStates[i] === "making") && skipSticker(s))} title="Keep the rough cut-outs of the objects not done yet">
-                Skip all
+              <button
+                className="btn"
+                onClick={() => {
+                  if (cutRef.current?.layer === "") stopCut();
+                  stickerRows.forEach((s, i) => (stickerStates[i] === "waiting" || stickerStates[i] === "making") && skipSticker(s));
+                }}
+                title="Stop everything still to do: the objects keep their rough cut-outs, the background is not filled"
+              >
+                <Square size={12} /> Stop all
+              </button>
+            </div>
+          )}
+          {cut && !stickering && (
+            <div className="sticker-strip">
+              <Loader2 size={14} className="spin" />
+              <span>Quick cut-out · {cutLine}</span>
+              <button className="btn" onClick={stopCut} title="Stop the cut-out: the layer stays as it was">
+                <Square size={12} /> Stop
               </button>
             </div>
           )}
@@ -1803,6 +1968,11 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
                   {shadowJob ? <ShadowPhase job={shadowJob.job} item={shadowJob.item} /> : blendSending ? "Sending the scene" : "Reading what the AI added"}
                   <small>The layers stay where they are until it is in</small>
                 </span>
+                {shadowJob && !["done", "failed", "cancelled"].includes(shadowJob.job.status) && (
+                  <button className="btn" onClick={() => cancelJob(shadowJob.job.id)} title="Stop the blend: the layers stay as they are">
+                    <Square size={12} /> Stop
+                  </button>
+                )}
               </div>
             </div>
           )}

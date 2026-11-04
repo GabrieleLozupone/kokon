@@ -1,6 +1,6 @@
 // Pure UI logic (unit-tested in logic.test.ts).
 
-import type { Advanced, GenerationRecord, GenerationRequest, InpaintAction, InputRecord, InstallItem, JobView, LoraItem, LutInfo, MacBenchState, Mode, ModelsStatus, StatusResponse, OutpaintSpec, Plan, Quality, ResolutionMode, Size } from "./types";
+import type { Advanced, GenerationRecord, GenerationRequest, InpaintAction, InputRecord, InstallItem, InstallStatus, JobView, LoraItem, LutInfo, MacBenchState, Mode, ModelsStatus, StatusResponse, OutpaintSpec, Plan, Quality, ResolutionMode, Size } from "./types";
 
 export interface Ref {
   key: string;
@@ -1031,4 +1031,39 @@ export function starPromptDue(made: number, busy: boolean): boolean {
  * in a cache) does not reload again and again. */
 export function pageOutdated(pageVersion: string, serviceVersion: string | undefined, reloadedFor: string | null): boolean {
   return !!pageVersion && !!serviceVersion && pageVersion !== serviceVersion && reloadedFor !== serviceVersion;
+}
+
+// ---- Layers lab: what is being done, for the status lines and their Stop buttons ----
+
+/** A quick cut-out's step, for "Vase · model at work · 4 s". */
+export type CutStep = "model" | "preparing" | "sending" | "matting" | "edges" | "saving";
+
+/** The status line of a quick cut-out of `name`: its step, the download's % (`pct`) while the model
+ * is fetched, and the seconds the model has worked so far (a run is ~4-8 s, 11-04). */
+export function cutoutText(name: string, step: CutStep, seconds: number, pct: number | null): string {
+  const what =
+    step === "model"
+      ? `getting the sticker model (once, 224 MB)${pct != null ? ` · ${pct}%` : ""}`
+      : step === "preparing"
+        ? "preparing"
+        : step === "sending"
+          ? "sending to the model"
+          : step === "matting"
+            ? `model at work${seconds >= 1 ? ` · ${Math.floor(seconds)} s` : ""}`
+            : step === "edges"
+              ? "refining the edge"
+              : "saving";
+  return `${name} · ${what}`;
+}
+
+/** "step 3 of 8" once the engine reports steps, else "". */
+export function jobStepText(j: Pick<JobView, "status" | "step">): string {
+  if (j.status !== "running" || !j.step || !j.step[1]) return "";
+  return `step ${Math.min(j.step[0], j.step[1])} of ${j.step[1]}`;
+}
+
+/** The download running in the service is the one for `preset` (Cancel stops only that one: the
+ * installer is shared with Settings and the first setup). */
+export function downloadIsFor(st: Pick<InstallStatus, "running" | "preset"> | null | undefined, preset: string): boolean {
+  return !!st?.running && st.preset === preset;
 }

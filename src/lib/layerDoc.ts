@@ -542,3 +542,15 @@ export function copiedShare(rgba: ArrayLike<number>, mask: ArrayLike<number>, n:
   }
   return inside ? bad / inside : 0;
 }
+
+/** The scene edits (Edit together, new objects, Blend) whose every job was stopped before a result
+ * came: nothing will ever be made from them, so the lab lets them go (their marks come back to the
+ * pencil). `edits`: the lab's jobs, by the image each was sent with. An edit with a job still
+ * waiting, running, failed or done is kept. */
+export function stoppedScenes(doc: LayerDoc, edits: { image: string | undefined; status: string }[]): SceneEdit[] {
+  return (doc.scenes ?? []).filter((e) => {
+    if (e.made) return false;
+    const mine = edits.filter((j) => j.image === e.source);
+    return mine.length > 0 && mine.every((j) => j.status === "cancelled");
+  });
+}

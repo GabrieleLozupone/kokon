@@ -9,6 +9,7 @@
 
 import type * as Ort from "onnxruntime-web";
 import { api, urls } from "./api";
+import { downloadIsFor } from "./logic";
 
 const DEV_DIR = "/lab-models/mobilesam/";
 const ENCODER = "mobile_sam_image_encoder.onnx";
@@ -41,6 +42,12 @@ async function download() {
     }
     if (!i.running) break;
   }
+}
+
+/** Cancel for the selection model's download (only when the running install is that one). The
+ * waiting `load` then returns null, as for a failed download. */
+export async function cancelSamDownload() {
+  if (downloadIsFor(await api.installStatus().catch(() => null), "segment")) await api.cancelInstall();
 }
 
 /** Where the model files are: kokon-service's copy (downloaded now if it isn't there, `onProgress`

@@ -5,12 +5,12 @@
 // (LayerDoc.tsx). Filling the holes or completing a cut object is done by hand with the usual
 // edits, to see what works before building the real feature.
 
-import { Brush, ChevronDown, ChevronUp, Eraser, Eye, EyeOff, Hand, Layers, MousePointerClick, Plus, Redo2, Trash2, Undo2, X } from "lucide-react";
+import { Brush, ChevronDown, ChevronUp, Eraser, Eye, EyeOff, Hand, Layers, Loader2, MousePointerClick, Plus, Redo2, Trash2, Undo2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, urls } from "../lib/api";
 import { addTo, area, dilate, fileSafe, fromLogits, maskOrder, refineEdges, removeFrom, samSelection, union, type Mask } from "../lib/layers";
 import { shortcut } from "../lib/platform";
-import { Segmenter, type SamResult } from "../lib/sam";
+import { cancelSamDownload, Segmenter, type SamResult } from "../lib/sam";
 import type { DocLayer, LayerDoc } from "../lib/layerDoc";
 import { addVersions, setState, toastError, toastInfo, useStore } from "../lib/store";
 import type { InputRecord } from "../lib/types";
@@ -130,6 +130,8 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
   const [sam, setSam] = useState<SamState>("loading");
   // The selection model being downloaded (the first time), in %.
   const [samPct, setSamPct] = useState<number | null>(null);
+  /** The selection model's download was cancelled here (the brush still works). */
+  const [samStopped, setSamStopped] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const [areas, setAreas] = useState<Record<string, number>>({});
@@ -444,7 +446,7 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
     setStickers(mode);
     const used = layers.filter((l) => area(maskOf(l.id)) > 0);
     if (!used.length) return;
-    setBusy("Splitting…");
+    setBusy(`Splitting · the background (1 of ${used.length + 1})`);
     try {
       const img = await full.current!;
       const W = img.naturalWidth;
@@ -483,7 +485,8 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
       const base = made[0];
       const docLayers: DocLayer[] = [];
 
-      for (const l of used) {
+      for (const [k, l] of used.entries()) {
+        setBusy(`Splitting · ${l.name} (${k + 2} of ${used.length + 1})`);
         cut(refined.get(l.id)!, "destination-in");
         const name = fileSafe(l.name);
         await save(out, `${name}.png`);
@@ -559,7 +562,9 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
       loading: samPct != null ? `Downloading the selection model (44 MB, once)… ${samPct}%` : "Loading the selection model…",
       encoding: "Reading the image…",
       ready: tool === "select" ? `Click an object to add it to “${activeName}” · again on the same spot: bigger part · right-click: take it out` : `Painting “${activeName}”`,
-      missing: "The selection model could not be downloaded: paint the layers with the brush (open the lab again to retry)",
+      missing: samStopped
+        ? "Download stopped: paint the layers with the brush (open the lab again to download the selection model)"
+        : "The selection model could not be downloaded: paint the layers with the brush (open the lab again to retry)",
       error: "The selection model failed to start (see the console): paint the layers with the brush",
     }[sam];
   const brushCursor = tool === "brush" || tool === "eraser";
@@ -568,7 +573,21 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
     <div className="overlay">
       <div className="overlay-head">
         <h2>Split into layers (lab)</h2>
-        <span className="layers-status">{status}</span>
+        <span className="layers-status">
+          {(busy || sam === "loading" || sam === "encoding") && <Loader2 size={13} className="spin" />} {status}
+        </span>
+        {samPct != null && (
+          <button
+            className="btn"
+            onClick={() => {
+              setSamStopped(true);
+              cancelSamDownload().catch(toastError);
+            }}
+            title="Stop the download: the layers can still be painted with the brush"
+          >
+            Cancel download
+          </button>
+        )}
         <span className="spacer" />
         {onBack && (
           <button className="btn" onClick={onBack}>
