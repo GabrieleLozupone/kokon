@@ -1,2 +1,11 @@
 out/
 node_modules/
+
+# Kokon 0.12 video: the screen recordings converted from Gabriele's HDR captures (hundreds of MB,
+# made again from the originals with the commands in private/wiki/marketing.md "0.12 video"), and
+# the two voice rounds the video no longer uses (it plays voice-0.12-v3).
+public/rec-0.12/
+public/voice-0.12/
+public/voice-0.12-v2/
+src/app/voice-0.12.json
+src/app/voice-0.12-v2.json

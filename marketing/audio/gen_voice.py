@@ -65,6 +65,8 @@ TAKES = {
     "playful": ("turbo", 0.0, 0.0, 0.8),
     "tender": ("base", 0.3, 0.45, 0.65),
     "intimate": ("base", 0.25, 0.5, 0.55),
+    # The 0.12 end line, slower (Gabriele: the first takes too fast): low exaggeration and cfg read slowest.
+    "slow": ("base", 0.3, 0.2, 0.7),
 }
 # A clean line of the launch take (12.8 s), the voice Turbo copies.
 TURBO_REF = HERE.parent / "video" / "public" / "voice" / "03.wav"
@@ -289,7 +291,14 @@ USECASES_TONES = {n: r[3] for n, r in enumerate(script_rows(USECASES["script"]),
 # (seeds k of the second tone are offset by 5, so every take keeps its own file name).
 V011 = {"script": "voiceover-0.11.md", "dir": OUT / "update-0.11", "public": "voice-0.11", "json": "voice-0.11.json"}
 V011_TONES = {n: ["calmer", "expressive"] for n in range(1, len(script_rows(V011["script"])) + 1)}
-PROJECTS = {"update": (UPDATE, UPDATE_TAKES), "usecases": (USECASES, USECASES_TONES), "011": (V011, V011_TONES)}
+# The "Kokon 0.12" video (voiceover-0.12.md): the same voice and tones as 0.11. Round 2 (line 20
+# added) and round 3 (Gabriele's picks) go to their own folders; earlier files in public/ stay as they were.
+V012 = {"script": "voiceover-0.12.md", "dir": OUT / "update-0.12", "public": "voice-0.12-v3", "json": "voice-0.12-v3.json"}
+V012_TONES = {n: ["calmer", "expressive"] for n in range(1, len(script_rows(V012["script"])) + 1)}
+V012_TONES[20] = ["slow", "calmer", "calm"]
+# build-012: seconds between the end line's sentences (the default 0.4 made it sound rushed).
+V012_PAUSES = {20: 0.8}
+PROJECTS = {"update": (UPDATE, UPDATE_TAKES), "usecases": (USECASES, USECASES_TONES), "011": (V011, V011_TONES), "012": (V012, V012_TONES)}
 # build-011: sentences cut into parts that the video places one by one ("LINE.SENTENCE": about
 # where, in seconds into the take; each cut moves to the quietest 10 ms within 0.15 s). "Scan the
 # code, / sign in once, / and add Kokon to your home screen." goes with three shots; "Pick a photo, /
@@ -335,7 +344,7 @@ def build(src: Path, pick: dict[str, int], project: str = "update") -> None:
     between sentences (UPDATE_PAUSES, UPDATE_SPLITS), mastered like the launch take (-16 LUFS over all lines). Each build goes to
     a new folder; the video gets the files and their sentence spans."""
     proj = PROJECTS[project][0]
-    pauses = UPDATE_PAUSES if project == "update" else {}
+    pauses = UPDATE_PAUSES if project == "update" else V012_PAUSES if project == "012" else {}
     splits = UPDATE_SPLITS if project == "update" else {}
     lines = script_lines(proj["script"])
     missing = [f"{n}.{i}" for n, l in enumerate(lines, 1) for i in range(len(sentences(l))) if f"{n}.{i}" not in pick]
