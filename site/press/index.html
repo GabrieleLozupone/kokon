@@ -22,7 +22,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/style.css?v=13">
+<link rel="stylesheet" href="../assets/style.css?v=14">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -89,7 +89,8 @@
           <div class="dd-panel" id="dd-product"><ul>
             <li><a href="/#examples"><b>Examples</b><span>Real edits, before and after</span></a></li>
             <li><a href="/#features"><b>Features</b><span>Edit, paint, combine, expand, upscale</span></a></li>
-            <li><a href="/#devices"><b>On your phone <span class="new">New</span></b><span>Use your GPU from any device</span></a></li>
+            <li><a href="/#layers"><b>Layers lab <span class="new">New</span></b><span>Split an image, move the pieces</span></a></li>
+            <li><a href="/#devices"><b>On your phone</b><span>Use your GPU from any device</span></a></li>
             <li><a href="/mcp-image-generation/"><b>For AI agents</b><span>MCP server and HTTP API</span></a></li>
             <li><a href="/#requirements"><b>Requirements</b><span>GPUs, Macs and disk space</span></a></li>
           </ul></div></li>
@@ -99,6 +100,7 @@
             <li><a href="/self-hosted/"><b>Phone and server</b><span>Other devices, Linux, Docker, Tailscale</span></a></li>
             <li><a href="/prompt-guide/"><b>Prompt guide</b><span>Write prompts that work</span></a></li>
             <li><a href="/remove-objects-from-photos-offline/"><b>Remove objects</b><span>Step by step, offline</span></a></li>
+            <li><a href="/image-to-layers/"><b>Image to layers <span class="new">New</span></b><span>Split a photo, export a PSD</span></a></li>
           </ul></div></li>
         <li class="dd"><button type="button" aria-expanded="false" aria-controls="dd-compare">Compare<svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"/></svg></button>
           <div class="dd-panel" id="dd-compare"><ul>
@@ -138,7 +140,7 @@
       <li><strong>Platforms:</strong> Windows 10/11, macOS 15+ on Apple Silicon (beta), Linux x86-64 .deb and .rpm (beta).</li>
       <li><strong>Hardware:</strong> NVIDIA with 12 GB of VRAM (8 GB in beta); AMD and Intel Arc with 12 GB through Vulkan (beta); Apple Silicon with 16 GB or more (32 GB recommended).</li>
       <li><strong>Model:</strong> Qwen-Image 2.1 Turbo (8 steps), run through Kokon's own build of stable-diffusion.cpp. About 12 GB, downloaded once.</li>
-      <li><strong>Speed:</strong> about 24 s per edit at 1.5K and 36 s per new image at native 2K on an RTX 5070 Ti; from first launch to the first edit in under 4 minutes there, including the 12 GB download on a fast connection (see the demo). Macs are slower: about 4 minutes for 1 MP on an M2 Pro 16 GB, or about 65 s for a new 1 MP image (about 106 s for an edit) with Kokon's experimental Mac engine (Settings → Performance).</li>
+      <li><strong>Speed:</strong> about 24 s per edit at 1.5K and 36 s per new image at native 2K on an RTX 5070 Ti; from first launch to the first edit in under 4 minutes there, including the 12 GB download on a fast connection (see the demo). On an M2 Pro 16 GB Mac, Kokon's own Mac engine (the default since 0.12) makes a new 1 MP image in about 65 s (about 106 s for an edit).</li>
       <li><strong>Features:</strong> edit with a sentence; paint an area and Change, Remove, Replace or Add; combine photos; expand beyond the borders; create from text; Prompt+ (writes the detailed prompt from a few words); your own LoRAs (beta); 2× and 4K upscaling; versions with before/after; private mode; use from your phone or another device in the browser; a server mode for Linux and Docker; MCP server and local API.</li>
       <li><strong>Made by:</strong> Gabriele Lozupone, an AI researcher in Italy, with the help of Claude Code. Independent project.</li>
       <li><strong>Released:</strong> October 2026. Current version on the <a href="https://github.com/GabrieleLozupone/kokon/releases/latest" rel="noopener">releases page</a>.</li>
@@ -147,6 +149,9 @@
     <h2>Videos</h2>
     <ul>
       <li><a href="https://youtu.be/5wqd9jus8C0" rel="noopener"><strong>Demo: from setup to the first edit</strong></a> (58 s, real time on screen, RTX 5070 Ti)</li>
+      <li><a href="https://youtu.be/WDbHxkbpU4s" rel="noopener"><strong>What you can do with Kokon</strong></a> (85 s, 4K: remove people, restore and colorize, try-ons, home, text)</li>
+      <li><a href="https://youtu.be/eGr9yYe7NVc" rel="noopener">What's new in 0.12</a> (2:21, 4K: Layers lab, PSD, paint with colours, Mac engine)</li>
+      <li><a href="https://youtu.be/XnC_7P2_cww" rel="noopener">What's new in 0.11</a> (77 s: Kokon on your phone)</li>
       <li><a href="https://youtu.be/y2NAJkZ4vH0" rel="noopener">Kokon 0.10 film</a> (85 s, 4K)</li>
       <li><a href="https://youtu.be/qGiGXasJJNI" rel="noopener">What's new in 0.10</a> (42 s, 4K)</li>
       <li><a href="../assets/kokon.mp4">Download the film as MP4</a></li>
@@ -194,6 +199,7 @@
       <a href="../offline-alternative-to-nano-banana/">Offline Nano Banana alternative</a>
       <a href="../comfyui-alternative/">Simple ComfyUI alternative</a>
       <a href="../remove-objects-from-photos-offline/">Remove objects offline</a>
+      <a href="../image-to-layers/">Image to layers</a>
       <a href="../qwen-image-2-1-local/">Run Qwen-Image locally</a>
       <a href="../press/">Press kit</a>
       <a href="../support/">Support Kokon</a>

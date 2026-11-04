@@ -22,7 +22,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/style.css?v=13">
+<link rel="stylesheet" href="../assets/style.css?v=14">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -51,7 +51,7 @@
         { "@type": "Question", "name": "How much VRAM does Qwen-Image 2.1 need?", "acceptedAnswer": { "@type": "Answer", "text": "With Kokon, 12 GB of VRAM is enough (tested on an RTX 5070 12 GB), and NVIDIA cards with 8 GB work in beta at about 1 megapixel. 16 GB or more is more comfortable. Apple Silicon Macs work with 16 GB of unified memory, slowly; 32 GB is recommended." } },
         { "@type": "Question", "name": "Can I run Qwen-Image 2.1 without ComfyUI or Python?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Kokon runs it through stable-diffusion.cpp, a native C++ engine, and ships as one installer. It downloads and checks the model on first run." } },
         { "@type": "Question", "name": "Does Qwen-Image 2.1 run on AMD or Intel GPUs?", "acceptedAnswer": { "@type": "Answer", "text": "Yes, through Vulkan on Windows (beta in Kokon), with 12 GB of VRAM or more." } },
-        { "@type": "Question", "name": "How fast is Qwen-Image 2.1 locally?", "acceptedAnswer": { "@type": "Answer", "text": "With the official 8-step Turbo model on an RTX 5070 Ti: about 24 s for an edit at 1.5K and about 36 s for a new image at native 2K. An M2 Pro Mac takes about 4 minutes for a 1-megapixel image." } }
+        { "@type": "Question", "name": "How fast is Qwen-Image 2.1 locally?", "acceptedAnswer": { "@type": "Answer", "text": "With the official 8-step Turbo model on an RTX 5070 Ti: about 24 s for an edit at 1.5K and about 36 s for a new image at native 2K. An M2 Pro Mac takes about 65 seconds for a new 1-megapixel image with Kokon's own Mac engine (about 106 s for an edit)." } }
       ]
     }
   ]
@@ -74,7 +74,8 @@
           <div class="dd-panel" id="dd-product"><ul>
             <li><a href="/#examples"><b>Examples</b><span>Real edits, before and after</span></a></li>
             <li><a href="/#features"><b>Features</b><span>Edit, paint, combine, expand, upscale</span></a></li>
-            <li><a href="/#devices"><b>On your phone <span class="new">New</span></b><span>Use your GPU from any device</span></a></li>
+            <li><a href="/#layers"><b>Layers lab <span class="new">New</span></b><span>Split an image, move the pieces</span></a></li>
+            <li><a href="/#devices"><b>On your phone</b><span>Use your GPU from any device</span></a></li>
             <li><a href="/mcp-image-generation/"><b>For AI agents</b><span>MCP server and HTTP API</span></a></li>
             <li><a href="/#requirements"><b>Requirements</b><span>GPUs, Macs and disk space</span></a></li>
           </ul></div></li>
@@ -84,6 +85,7 @@
             <li><a href="/self-hosted/"><b>Phone and server</b><span>Other devices, Linux, Docker, Tailscale</span></a></li>
             <li><a href="/prompt-guide/"><b>Prompt guide</b><span>Write prompts that work</span></a></li>
             <li><a href="/remove-objects-from-photos-offline/"><b>Remove objects</b><span>Step by step, offline</span></a></li>
+            <li><a href="/image-to-layers/"><b>Image to layers <span class="new">New</span></b><span>Split a photo, export a PSD</span></a></li>
           </ul></div></li>
         <li class="dd"><button type="button" aria-expanded="false" aria-controls="dd-compare">Compare<svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"/></svg></button>
           <div class="dd-panel" id="dd-compare"><ul>
@@ -138,7 +140,7 @@
     <h2>Step 1: Install Kokon</h2>
     <p>Download the latest release from <a href="https://github.com/GabrieleLozupone/kokon/releases/latest" rel="noopener">GitHub</a>:</p>
     <ul>
-      <li><strong>Windows:</strong> <code>Kokon_&lt;version&gt;_x64-setup.exe</code> (about 55 MB). It installs for your user only, no administrator rights. The beta is not code-signed yet, so if SmartScreen warns, click <em>More info → Run anyway</em>.</li>
+      <li><strong>Windows:</strong> <code>Kokon_&lt;version&gt;_x64-setup.exe</code> (about 136 MB). It installs for your user only, no administrator rights. The beta is not code-signed yet, so if SmartScreen warns, click <em>More info → Run anyway</em>.</li>
       <li><strong>Linux (x86-64, beta):</strong> <code>Kokon_&lt;version&gt;_amd64.deb</code> (Ubuntu, Debian, Mint: <code>sudo apt install ./Kokon_&lt;version&gt;_amd64.deb</code>) or <code>Kokon-&lt;version&gt;-1.x86_64.rpm</code> (Fedora: <code>sudo dnf install ./Kokon-&lt;version&gt;-1.x86_64.rpm</code>). NVIDIA cards need the proprietary driver.</li>
       <li><strong>Mac (Apple Silicon, beta):</strong> <code>Kokon_&lt;version&gt;_aarch64.dmg</code>. Drag Kokon to Applications. The beta is not notarized by Apple yet, so macOS blocks it the first time:</li>
     </ul>
@@ -183,7 +185,7 @@
     <ul>
       <li><strong>RTX 5070 Ti (16 GB):</strong> about 24 s for an edit at 1.5K, about 36 s for a new image at native 2K, about 11 s to upscale a 1-megapixel image 4×.</li>
       <li><strong>RTX 5070 (12 GB):</strong> works with the 12 GB preset, a little slower than the 5070 Ti.</li>
-      <li><strong>M2 Pro, 16 GB:</strong> about 4 minutes for a 1-megapixel image.</li>
+      <li><strong>M2 Pro, 16 GB:</strong> about 65 seconds for a new 1-megapixel image with Kokon's own Mac engine (about 106 s for an edit).</li>
     </ul>
     <p>Kokon measures your machine with the first image and shows realistic time estimates from then on.</p>
 
