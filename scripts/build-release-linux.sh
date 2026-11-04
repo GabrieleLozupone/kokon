@@ -20,6 +20,13 @@ if [ "${1:-}" = "--setup" ]; then
   sudo apt-get update
   sudo apt-get install -y build-essential curl wget file pkg-config libssl-dev libgtk-3-dev \
     libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf
+  # g++-13: ONNX Runtime (AI watermark, stickers) needs GCC 13's libstdc++, linked into kokon-service
+  # statically (crates/qls-core/build.rs); Ubuntu 22.04 has GCC 11.
+  if ! command -v g++-13 >/dev/null; then
+    sudo apt-get install -y software-properties-common
+    sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+    sudo apt-get install -y g++-13
+  fi
   # Not Ubuntu's cargo package (too old for this workspace): rustup's current stable.
   command -v rustup >/dev/null || [ -x "$HOME/.cargo/bin/rustup" ] || curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
   if ! node --version 2>/dev/null | grep -q '^v2[2-9]'; then
@@ -34,6 +41,7 @@ fi
 cargo --version | grep -qE "^cargo 1.(8[4-9]|9[0-9]|[1-9][0-9]{2})" || { echo "✗ $(cargo --version) is too old (Ubuntu's package?): sudo apt remove cargo rustc, then run with --setup."; exit 1; }
 for c in cargo node npm pkg-config; do command -v "$c" >/dev/null || { echo "✗ $c not found: run with --setup first."; exit 1; }; done
 pkg-config --exists webkit2gtk-4.1 || { echo "✗ webkit2gtk-4.1 not found: run with --setup first."; exit 1; }
+command -v g++-13 >/dev/null || { echo "✗ g++-13 not found (ONNX Runtime needs its libstdc++): run with --setup first."; exit 1; }
 
 echo "1/5 Packages"
 npm ci --no-audit --no-fund

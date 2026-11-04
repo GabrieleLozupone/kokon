@@ -9,8 +9,12 @@
 
 FROM ubuntu:22.04 AS build
 ARG DEBIAN_FRONTEND=noninteractive
+# g++-13: ONNX Runtime (AI watermark, stickers) needs GCC 13's libstdc++, linked into kokon-service
+# statically (crates/qls-core/build.rs), so the runtime image below needs nothing new.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends build-essential ca-certificates curl pkg-config libssl-dev \
+ && apt-get install -y --no-install-recommends build-essential ca-certificates curl pkg-config libssl-dev software-properties-common gpg-agent \
+ && add-apt-repository -y ppa:ubuntu-toolchain-r/test \
+ && apt-get install -y --no-install-recommends g++-13 \
  && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
  && apt-get install -y --no-install-recommends nodejs \
  && rm -rf /var/lib/apt/lists/*
