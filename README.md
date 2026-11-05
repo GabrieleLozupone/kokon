@@ -281,9 +281,7 @@ from then on.
 > of the same engine, tested so far on an RTX 5070 Ti under WSL. Details in
 > [docs/platforms.md](docs/platforms.md) and [docs/linux.md](docs/linux.md).
 
-<details>
-<summary><b>Model presets: what gets downloaded</b></summary>
-<br>
+#### Model presets: what gets downloaded
 
 The setup screen picks a preset from your VRAM. On a Mac the presets are named by unified
 memory (16–24 GB Mac, 32–36 GB Mac, 48 GB Mac, 64 GB+ Mac), because the graphics part can use
@@ -318,8 +316,6 @@ the setup screen and pick the folder (such as `ComfyUI\models`): Kokon finds the
 text encoder and vision projector by their contents, as GGUF or safetensors in any quantization,
 and downloads only the engine and any piece you don't have. Files stay where they are. Your own
 files are not tested by Kokon; you can switch to the official files at any time in Settings → Models.
-
-</details>
 
 ## What you can do
 
