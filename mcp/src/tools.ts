@@ -100,6 +100,18 @@ export const schemas = {
     output_path: outputPath.optional(),
     include_preview: preview.optional(),
   },
+  generate_video: {
+    prompt: prompt.describe("What the video should show, camera motion, action, or motion for the image"),
+    image_path: z.string().optional().describe("Optional starting frame for image-to-video (absolute or relative to project). Omit for text-to-video."),
+    frames: z.number().int().min(17).max(161).optional().describe("Number of frames (e.g. 49 for ~3s, 65 for ~4s, 81 for ~5s). Default follows VRAM preset."),
+    fps: z.number().int().min(8).max(60).optional().describe("Frame rate in fps (default 16)"),
+    width: dim.optional().describe("Video width in pixels (multiple of 16)."),
+    height: dim.optional().describe("Video height in pixels (multiple of 16)."),
+    aspect_ratio: aspect.optional(),
+    seed: seed.optional(),
+    output_path: outputPath.optional(),
+    include_preview: preview.optional(),
+  },
   get_image_info: {
     image_path: z.string().min(1),
   },
@@ -365,6 +377,31 @@ export const handlers = {
         mode: "upscale",
         images: [img],
         upscale: { method: "quick", scale: a.scale, width: a.width, height: a.height },
+        output_path: out,
+        advanced: {},
+      },
+      !!a.include_preview,
+    );
+  },
+
+  async generate_video(a: Args<"generate_video">, ctx: ToolContext) {
+    validateDims(a.width, a.height);
+    const r = await roots(ctx);
+    const img = a.image_path ? checkInput(a.image_path, ctx.cwd, r) : undefined;
+    const out = a.output_path ? checkOutput(a.output_path, ctx.cwd, r) : undefined;
+    return runJob(
+      ctx,
+      {
+        prompt: a.prompt,
+        mode: "video",
+        images: img ? [img] : [],
+        width: a.width,
+        height: a.height,
+        resolution: a.width ? "custom" : "auto",
+        aspect_ratio: a.aspect_ratio,
+        video_frames: a.frames,
+        fps: a.fps,
+        seed: a.seed,
         output_path: out,
         advanced: {},
       },

@@ -23,6 +23,7 @@ pub fn build_server_args(cfg: &AppConfig, profile: &ModelProfile) -> Vec<String>
         return build_mac_engine_args(cfg, profile);
     }
     let p = |p: &Path| p.to_string_lossy().into_owned();
+    let is_wan = profile.model == crate::config::WAN_2_2;
     let mut a: Vec<String> = vec![
         "--listen-ip".into(),
         "127.0.0.1".into(),
@@ -32,12 +33,18 @@ pub fn build_server_args(cfg: &AppConfig, profile: &ModelProfile) -> Vec<String>
         p(&profile.diffusion_model),
         "--vae".into(),
         p(&profile.vae),
-        "--llm".into(),
-        p(&profile.text_encoder),
     ];
-    if let Some(v) = &profile.vision_projector {
-        a.push("--llm_vision".into());
-        a.push(p(v));
+    if is_wan {
+        a.push("--t5xxl".into());
+        a.push(p(&profile.text_encoder));
+        a.extend(["--vae-format".into(), "wan".into()]);
+    } else {
+        a.push("--llm".into());
+        a.push(p(&profile.text_encoder));
+        if let Some(v) = &profile.vision_projector {
+            a.push("--llm_vision".into());
+            a.push(p(v));
+        }
     }
     let dev = cfg.effective_device();
     let metal = cfg.gpu_backend == crate::config::GpuBackend::Metal;
@@ -50,19 +57,42 @@ pub fn build_server_args(cfg: &AppConfig, profile: &ModelProfile) -> Vec<String>
         // Weights stay on the Metal device as zero-copy mappings of the model files (needs
         // the params on their compute device). Without `--auto-fit off` auto-fit may put the
         // text encoder in "RAM": on a Mac a second, staged copy in the same memory.
-        a.extend(["--backend".into(), dev.clone(), "--auto-fit".into(), "off".into()]);
+        a.extend([
+            "--backend".into(),
+            dev.clone(),
+            "--auto-fit".into(),
+            "off".into(),
+        ]);
     }
     match placement {
         TextEncoderPlacement::Ram => {
             // Weights in RAM, compute on the GPU. Explicit --params-backend disables
             // auto-fit, so DiT/VAE weights live on their compute device.
-            a.extend(["--backend".into(), dev.clone(), "--params-backend".into(), "te=cpu".into()]);
+            a.extend([
+                "--backend".into(),
+                dev.clone(),
+                "--params-backend".into(),
+                "te=cpu".into(),
+            ]);
         }
         TextEncoderPlacement::Gpu if metal => {}
         TextEncoderPlacement::Gpu => a.extend(["--backend".into(), dev.clone()]),
-        TextEncoderPlacement::Cpu => a.extend(["--backend".into(), format!("diffusion={dev},vae={dev},te=cpu")]),
-        TextEncoderPlacement::Auto => a.extend(["--backend".into(), format!("diffusion={dev},vae={dev}"), "--auto-fit".into(), "on".into()]),
-        TextEncoderPlacement::Disk => a.extend(["--backend".into(), dev.clone(), "--params-backend".into(), "disk".into()]),
+        TextEncoderPlacement::Cpu => a.extend([
+            "--backend".into(),
+            format!("diffusion={dev},vae={dev},te=cpu"),
+        ]),
+        TextEncoderPlacement::Auto => a.extend([
+            "--backend".into(),
+            format!("diffusion={dev},vae={dev}"),
+            "--auto-fit".into(),
+            "on".into(),
+        ]),
+        TextEncoderPlacement::Disk => a.extend([
+            "--backend".into(),
+            dev.clone(),
+            "--params-backend".into(),
+            "disk".into(),
+        ]),
     }
     if metal {
         // Weights mapped from the files instead of copied (Metal support upstream in #2037,
@@ -87,10 +117,21 @@ pub fn build_server_args(cfg: &AppConfig, profile: &ModelProfile) -> Vec<String>
             "0.125".into(),
         ]);
     }
-    match cfg.prefix_cache_type.as_str() {
-        "auto" => {}
-        "off" => a.extend(["--model-args".into(), "qwen_image_2_1_prefix_cache=false".into()]),
-        t => a.extend(["--model-args".into(), format!("qwen_image_2_1_prefix_cache_type={t}")]),
+    if is_wan {
+        a.push("--temporal-tiling".into());
+    }
+    if !is_wan {
+        match cfg.prefix_cache_type.as_str() {
+            "auto" => {}
+            "off" => a.extend([
+                "--model-args".into(),
+                "qwen_image_2_1_prefix_cache=false".into(),
+            ]),
+            t => a.extend([
+                "--model-args".into(),
+                format!("qwen_image_2_1_prefix_cache_type={t}"),
+            ]),
+        }
     }
     if cfg.eager_load && placement != TextEncoderPlacement::Disk {
         a.push("--eager-load".into());
@@ -217,7 +258,12 @@ impl ProgressParser {
         }
         let set = |s: &mut Self, stage: BackendStage| -> Option<BackendProgress> {
             let image = s.current.and_then(|c| c.image);
-            let p = BackendProgress { stage, step: None, image, seconds_per_step: None };
+            let p = BackendProgress {
+                stage,
+                step: None,
+                image,
+                seconds_per_step: None,
+            };
             s.current = Some(p);
             Some(p)
         };
@@ -243,7 +289,12 @@ impl ProgressParser {
             // "generating image: 1/1 - seed 7"
             let frac = rest.trim().split_whitespace().next().unwrap_or("");
             let image = parse_fraction(frac);
-            let p = BackendProgress { stage: BackendStage::Generating, step: None, image, seconds_per_step: None };
+            let p = BackendProgress {
+                stage: BackendStage::Generating,
+                step: None,
+                image,
+                seconds_per_step: None,
+            };
             self.current = Some(p);
             return Some(p);
         }
@@ -255,7 +306,9 @@ impl ProgressParser {
         // model builds its graph or EasyCache announces itself.
         if stage == BackendStage::Upscaling
             && (line.contains("EasyCache enabled")
-                || (line.contains("build cached graph cut plan") && !line.contains("vae") && !line.contains("esrgan")))
+                || (line.contains("build cached graph cut plan")
+                    && !line.contains("vae")
+                    && !line.contains("esrgan")))
         {
             return set(self, BackendStage::Refining);
         }
@@ -291,7 +344,11 @@ pub fn parse_step_bar(line: &str) -> Option<(u32, u32, Option<f32>)> {
     let spi = if let Some(v) = rate.strip_suffix("s/it") {
         v.trim().parse::<f32>().ok()
     } else if let Some(v) = rate.strip_suffix("it/s") {
-        v.trim().parse::<f32>().ok().filter(|x| *x > 0.0).map(|x| 1.0 / x)
+        v.trim()
+            .parse::<f32>()
+            .ok()
+            .filter(|x| *x > 0.0)
+            .map(|x| 1.0 / x)
     } else {
         return None;
     };
@@ -340,7 +397,10 @@ pub struct LogBuffer {
 
 impl LogBuffer {
     fn new(cap: usize) -> Self {
-        Self { lines: Mutex::new(VecDeque::with_capacity(cap)), cap }
+        Self {
+            lines: Mutex::new(VecDeque::with_capacity(cap)),
+            cap,
+        }
     }
     fn push(&self, l: String) {
         let mut g = self.lines.lock().unwrap();
@@ -468,7 +528,8 @@ impl ServerManager {
     pub async fn ensure_ready(&self, cfg: &AppConfig) -> Result<Capabilities, AppError> {
         let _guard = self.start_lock.lock().await;
         if let Some(why) = self.held.lock().unwrap().clone() {
-            return Err(AppError::new(ErrorCode::ServerUnavailable, why).suggest("Wait for it to finish, or cancel it in Settings → Performance."));
+            return Err(AppError::new(ErrorCode::ServerUnavailable, why)
+                .suggest("Wait for it to finish, or cancel it in Settings → Performance."));
         }
         let profile = cfg.profile().clone();
         // Our server may run on a fallback port (see `launch_port`); otherwise the configured one.
@@ -477,9 +538,16 @@ impl ServerManager {
         let client = SdcppClient::new(port);
 
         if let Ok(caps) = client.capabilities(Duration::from_secs(3)).await {
-            let rec = rec.filter(|r| r.port == port);
             // The right kind of server too: switching Kokon's Mac engine on or off restarts ours.
-            if caps.model_matches(&profile.diffusion_model) && caps.supports_img_gen() && caps.is_mac_engine() == cfg.uses_mac_engine() {
+            let mode_supported = if profile.model == crate::config::WAN_2_2 {
+                caps.supports_vid_gen()
+            } else {
+                caps.supports_img_gen()
+            };
+            if caps.model_matches(&profile.diffusion_model)
+                && mode_supported
+                && caps.is_mac_engine() == cfg.uses_mac_engine()
+            {
                 let owned = rec.is_some();
                 if let Some(r) = &rec
                     && self.inner.lock().unwrap().tail_stop.is_none()
@@ -504,20 +572,30 @@ impl ServerManager {
                 return Ok(caps);
             }
             if let Some(r) = rec {
-                tracing::info!("restarting owned sd-server (pid {}) for a different model", r.pid);
+                tracing::info!(
+                    "restarting owned sd-server (pid {}) for a different model",
+                    r.pid
+                );
                 kill_pid(r.pid);
                 let _ = std::fs::remove_file(self.record_path());
                 wait_port_free(&client, Duration::from_secs(15)).await;
             } else {
                 // Someone else's server with another model: ours starts on a free port.
-                tracing::info!("port {port} is used by another stable-diffusion.cpp server ({}); starting ours on another port", caps.model.name);
+                tracing::info!(
+                    "port {port} is used by another stable-diffusion.cpp server ({}); starting ours on another port",
+                    caps.model.name
+                );
             }
         }
 
         self.spawn_and_wait(cfg, &profile).await
     }
 
-    async fn spawn_and_wait(&self, cfg: &AppConfig, profile: &ModelProfile) -> Result<Capabilities, AppError> {
+    async fn spawn_and_wait(
+        &self,
+        cfg: &AppConfig,
+        profile: &ModelProfile,
+    ) -> Result<Capabilities, AppError> {
         let fail = |e: AppError| {
             self.set_state(|g| {
                 g.state = ServerState::Error;
@@ -532,9 +610,11 @@ impl ServerManager {
         }
         let log_path = self.log_path();
         if let Some(d) = log_path.parent() {
-            std::fs::create_dir_all(d).map_err(|e| fail(AppError::io("create the log folder", d, e)))?;
+            std::fs::create_dir_all(d)
+                .map_err(|e| fail(AppError::io("create the log folder", d, e)))?;
         }
-        let mut port = launch_port(cfg.server_port).ok_or_else(|| fail(port_unavailable_error(cfg.server_port)))?;
+        let mut port = launch_port(cfg.server_port)
+            .ok_or_else(|| fail(port_unavailable_error(cfg.server_port)))?;
         // sd-server exits with code 0 and no log line when it cannot listen (a port reserved
         // between our check and its bind): one more try on another free port.
         for attempt in 0..2 {
@@ -542,7 +622,9 @@ impl ServerManager {
                 Ok(caps) => return Ok(caps),
                 Err(Launch::Failed(e)) => return Err(fail(e)),
                 Err(Launch::NotListening) if attempt == 0 => {
-                    tracing::warn!("sd-server exited without listening on port {port}; retrying on another port");
+                    tracing::warn!(
+                        "sd-server exited without listening on port {port}; retrying on another port"
+                    );
                     port = free_port().ok_or_else(|| fail(port_unavailable_error(port)))?;
                 }
                 Err(Launch::NotListening) => break,
@@ -551,13 +633,24 @@ impl ServerManager {
         Err(fail(port_unavailable_error(port)))
     }
 
-    async fn launch(&self, cfg: &AppConfig, profile: &ModelProfile, exe: &Path, log_path: &Path, port: u16) -> Result<Capabilities, Launch> {
+    async fn launch(
+        &self,
+        cfg: &AppConfig,
+        profile: &ModelProfile,
+        exe: &Path,
+        log_path: &Path,
+        port: u16,
+    ) -> Result<Capabilities, Launch> {
         let fail = Launch::Failed;
         if log_path.exists() {
             let _ = std::fs::rename(log_path, log_path.with_extension("prev.log"));
         }
-        let file = std::fs::File::create(log_path).map_err(|e| fail(AppError::io("create the server log", log_path, e)))?;
-        let run_cfg = AppConfig { server_port: port, ..cfg.clone() };
+        let file = std::fs::File::create(log_path)
+            .map_err(|e| fail(AppError::io("create the server log", log_path, e)))?;
+        let run_cfg = AppConfig {
+            server_port: port,
+            ..cfg.clone()
+        };
         let args = build_server_args(&run_cfg, profile);
         tracing::info!("starting {} {}", exe.display(), args.join(" "));
 
@@ -573,11 +666,25 @@ impl ServerManager {
             cmd.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
         }
         let mut child = cmd.spawn().map_err(|e| {
-            fail(AppError::new(ErrorCode::ServerStartFailed, "Could not launch sd-server.exe.").detail(e.to_string()))
+            fail(
+                AppError::new(
+                    ErrorCode::ServerStartFailed,
+                    "Could not launch sd-server.exe.",
+                )
+                .detail(e.to_string()),
+            )
         })?;
         let pid = child.id();
-        let rec = OwnedRecord { pid, port, model: profile.model_name(), log: log_path.to_path_buf() };
-        let _ = std::fs::write(self.record_path(), serde_json::to_string(&rec).unwrap_or_default());
+        let rec = OwnedRecord {
+            pid,
+            port,
+            model: profile.model_name(),
+            log: log_path.to_path_buf(),
+        };
+        let _ = std::fs::write(
+            self.record_path(),
+            serde_json::to_string(&rec).unwrap_or_default(),
+        );
         self.set_state(|g| {
             g.state = ServerState::Starting;
             g.owned = true;
@@ -603,7 +710,9 @@ impl ServerManager {
                 if status.success() {
                     return Err(Launch::NotListening);
                 }
-                return Err(fail(translate_startup_failure(&format!("{tail}\n(exit status {status})"))));
+                return Err(fail(translate_startup_failure(&format!(
+                    "{tail}\n(exit status {status})"
+                ))));
             }
             if let Ok(caps) = client.capabilities(Duration::from_secs(2)).await {
                 self.set_state(|g| {
@@ -617,7 +726,11 @@ impl ServerManager {
             if started.elapsed() > Duration::from_secs(900) {
                 kill_pid(pid);
                 return Err(fail(
-                    AppError::new(ErrorCode::ServerStartFailed, "The inference server took too long to start.").detail(self.log.tail(40).join("\n")),
+                    AppError::new(
+                        ErrorCode::ServerStartFailed,
+                        "The inference server took too long to start.",
+                    )
+                    .detail(self.log.tail(40).join("\n")),
                 ));
             }
             tokio::time::sleep(Duration::from_millis(750)).await;
@@ -636,7 +749,11 @@ impl ServerManager {
             let g = self.inner.lock().unwrap();
             (g.owned, g.pid.or_else(|| self.read_record().map(|r| r.pid)))
         };
-        let pid = if owned { pid } else { self.read_record().map(|r| r.pid) };
+        let pid = if owned {
+            pid
+        } else {
+            self.read_record().map(|r| r.pid)
+        };
         let stopped = match pid {
             Some(pid) if process_alive(pid) => {
                 kill_pid(pid);
@@ -685,16 +802,23 @@ impl ServerManager {
         let tx = self.lines_tx.clone();
         std::thread::Builder::new()
             .name("sd-server-log".into())
-            .spawn(move || tail_file(&path, from_end, &stop, |line| {
-                log.push(line.clone());
-                let _ = tx.send(line);
-            }))
+            .spawn(move || {
+                tail_file(&path, from_end, &stop, |line| {
+                    log.push(line.clone());
+                    let _ = tx.send(line);
+                })
+            })
             .ok();
     }
 }
 
 /// Follows a growing file, splitting on \n and \r (progress bars use carriage returns).
-fn tail_file(path: &Path, from_end: bool, stop: &std::sync::atomic::AtomicBool, mut on_line: impl FnMut(String)) {
+fn tail_file(
+    path: &Path,
+    from_end: bool,
+    stop: &std::sync::atomic::AtomicBool,
+    mut on_line: impl FnMut(String),
+) {
     let mut pos: u64 = 0;
     let mut opened = false;
     let mut partial = Vec::<u8>::new();
@@ -734,7 +858,12 @@ fn tail_file(path: &Path, from_end: bool, stop: &std::sync::atomic::AtomicBool, 
 
 async fn wait_port_free(client: &SdcppClient, timeout: Duration) {
     let t = Instant::now();
-    while t.elapsed() < timeout && client.capabilities(Duration::from_millis(500)).await.is_ok() {
+    while t.elapsed() < timeout
+        && client
+            .capabilities(Duration::from_millis(500))
+            .await
+            .is_ok()
+    {
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
 }
@@ -761,7 +890,10 @@ fn launch_port(configured: u16) -> Option<u16> {
 
 /// A port the system reports free right now.
 pub fn free_port() -> Option<u16> {
-    std::net::TcpListener::bind(("127.0.0.1", 0)).and_then(|l| l.local_addr()).map(|a| a.port()).ok()
+    std::net::TcpListener::bind(("127.0.0.1", 0))
+        .and_then(|l| l.local_addr())
+        .map(|a| a.port())
+        .ok()
 }
 
 fn port_unavailable_error(port: u16) -> AppError {
@@ -773,8 +905,14 @@ pub fn process_alive(pid: u32) -> bool {
     use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
     let mut sys = System::new();
     let pid = Pid::from_u32(pid);
-    sys.refresh_processes_specifics(ProcessesToUpdate::Some(&[pid]), true, ProcessRefreshKind::nothing());
-    sys.process(pid).map(|p| is_server_process(&p.name().to_string_lossy())).unwrap_or(false)
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        true,
+        ProcessRefreshKind::nothing(),
+    );
+    sys.process(pid)
+        .map(|p| is_server_process(&p.name().to_string_lossy()))
+        .unwrap_or(false)
 }
 
 /// Whether any process with this pid exists (used for client liveness, not sd-server).
@@ -782,7 +920,11 @@ pub fn pid_alive(pid: u32) -> bool {
     use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
     let mut sys = System::new();
     let pid = Pid::from_u32(pid);
-    sys.refresh_processes_specifics(ProcessesToUpdate::Some(&[pid]), true, ProcessRefreshKind::nothing());
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        true,
+        ProcessRefreshKind::nothing(),
+    );
     sys.process(pid).is_some()
 }
 
@@ -790,7 +932,11 @@ fn kill_pid(pid: u32) {
     use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
     let mut sys = System::new();
     let p = Pid::from_u32(pid);
-    sys.refresh_processes_specifics(ProcessesToUpdate::Some(&[p]), true, ProcessRefreshKind::nothing());
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[p]),
+        true,
+        ProcessRefreshKind::nothing(),
+    );
     if let Some(proc_) = sys.process(p)
         && is_server_process(&proc_.name().to_string_lossy())
     {
@@ -802,7 +948,10 @@ fn kill_pid(pid: u32) {
 /// Runs a short-lived sd-server command (e.g. `--help`, `--list-devices`) and returns output.
 pub fn run_server_probe(exe: &Path, args: &[&str], timeout: Duration) -> Option<String> {
     let mut cmd = std::process::Command::new(exe);
-    cmd.args(args).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
+    cmd.args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
     if let Some(d) = exe.parent() {
         cmd.current_dir(d);
     }
@@ -829,7 +978,8 @@ pub fn parse_device_list(text: &str) -> Vec<(String, String)> {
         .filter_map(|l| {
             let (n, d) = l.split_once('\t')?;
             let n = n.trim();
-            (!n.is_empty() && !n.contains(' ') && n.chars().all(|c| c.is_ascii_alphanumeric())).then(|| (n.to_string(), d.trim().to_string()))
+            (!n.is_empty() && !n.contains(' ') && n.chars().all(|c| c.is_ascii_alphanumeric()))
+                .then(|| (n.to_string(), d.trim().to_string()))
         })
         .collect()
 }
@@ -844,7 +994,13 @@ mod tests {
         let m = ServerManager::new(dir.path().to_path_buf());
         m.hold(Some("The Mac is running the benchmark.".into()));
         let e = m.ensure_ready(&AppConfig::default()).await.unwrap_err();
-        assert_eq!((e.code, e.message.as_str()), (ErrorCode::ServerUnavailable, "The Mac is running the benchmark."));
+        assert_eq!(
+            (e.code, e.message.as_str()),
+            (
+                ErrorCode::ServerUnavailable,
+                "The Mac is running the benchmark."
+            )
+        );
     }
 
     #[test]
@@ -856,19 +1012,40 @@ mod tests {
         cfg.apply_preset(crate::catalog::preset("16gb").unwrap());
         let a = build_server_args(&cfg, cfg.profile());
         let s = a.join(" ");
-        let m = |f: &str| crate::catalog::join_rel(&cfg.sdcpp_dir, &format!("models/qwen21/{f}")).display().to_string();
+        let m = |f: &str| {
+            crate::catalog::join_rel(&cfg.sdcpp_dir, &format!("models/qwen21/{f}"))
+                .display()
+                .to_string()
+        };
         assert!(s.starts_with("--listen-ip 127.0.0.1 --listen-port 39150"));
-        assert!(s.contains(&format!("--diffusion-model {}", m("qwen-image-2.1-turbo-Q4_K_M.gguf"))));
-        assert!(s.contains(&format!("--vae {}", m("texture_fix_vae_for_qwen_image_2.1_bf16.safetensors"))));
+        assert!(s.contains(&format!(
+            "--diffusion-model {}",
+            m("qwen-image-2.1-turbo-Q4_K_M.gguf")
+        )));
+        assert!(s.contains(&format!(
+            "--vae {}",
+            m("texture_fix_vae_for_qwen_image_2.1_bf16.safetensors")
+        )));
         assert!(s.contains(&format!("--llm {}", m("Qwen3VL-8B-Instruct-Q4_K_M.gguf"))));
-        assert!(s.contains(&format!("--llm_vision {}", m("mmproj-Qwen3VL-8B-Instruct-F16.gguf"))));
+        assert!(s.contains(&format!(
+            "--llm_vision {}",
+            m("mmproj-Qwen3VL-8B-Instruct-F16.gguf")
+        )));
         assert!(s.contains("--backend cuda0 --params-backend te=cpu"));
-        assert!(s.contains("--fa --sage-attn --vae-tiling --vae-tile-size 768 --vae-tile-overlap 0.125"));
+        assert!(s.contains(
+            "--fa --sage-attn --vae-tiling --vae-tile-size 768 --vae-tile-overlap 0.125"
+        ));
         assert!(s.contains("--model-args qwen_image_2_1_prefix_cache_type=q8_0 --eager-load"));
         assert!(s.ends_with("--diffusion-conv-direct --max-vram -1"));
         assert!(!s.contains("0.0.0.0"));
-        assert!(!s.contains("--hires-upscalers-dir"), "missing folder is not passed");
-        assert!(!s.contains("upscale-tile-size"), "the tile size is sent with each request");
+        assert!(
+            !s.contains("--hires-upscalers-dir"),
+            "missing folder is not passed"
+        );
+        assert!(
+            !s.contains("upscale-tile-size"),
+            "the tile size is sent with each request"
+        );
         assert!(!s.contains("--vae-conv-direct"), "slower for Qwen's VAE");
     }
 
@@ -879,12 +1056,20 @@ mod tests {
         cfg.sdcpp_dir = dir.path().to_path_buf();
         std::fs::create_dir_all(cfg.upscalers_dir()).unwrap();
         cfg.upscale_tile_size = 256;
-        for (backend, direct) in [(crate::config::GpuBackend::Cuda, true), (crate::config::GpuBackend::Vulkan, true), (crate::config::GpuBackend::Metal, false)] {
+        for (backend, direct) in [
+            (crate::config::GpuBackend::Cuda, true),
+            (crate::config::GpuBackend::Vulkan, true),
+            (crate::config::GpuBackend::Metal, false),
+        ] {
             cfg.gpu_backend = backend;
             let a = build_server_args(&cfg, cfg.profile());
             let i = a.iter().position(|x| x == "--hires-upscalers-dir").unwrap();
             assert_eq!(a[i + 1], cfg.upscalers_dir().to_string_lossy());
-            assert_eq!(a.iter().any(|x| x == "--diffusion-conv-direct"), direct, "{backend:?}: direct convolutions are ~4x slower on Metal");
+            assert_eq!(
+                a.iter().any(|x| x == "--diffusion-conv-direct"),
+                direct,
+                "{backend:?}: direct convolutions are ~4x slower on Metal"
+            );
             assert!(!a.join(" ").contains("upscale-tile-size"));
         }
     }
@@ -927,20 +1112,47 @@ mod tests {
     #[test]
     fn progress_through_hires_refine() {
         let mut p = ProgressParser::default();
-        let updates: Vec<BackendProgress> = HIRES_LOG.split(['\n', '\r']).filter_map(|l| p.feed(l)).collect();
+        let updates: Vec<BackendProgress> = HIRES_LOG
+            .split(['\n', '\r'])
+            .filter_map(|l| p.feed(l))
+            .collect();
         let stages: Vec<BackendStage> = updates.iter().map(|u| u.stage).collect();
-        let pos = |s: BackendStage| stages.iter().position(|x| *x == s).unwrap_or_else(|| panic!("missing {s:?} in {stages:?}"));
+        let pos = |s: BackendStage| {
+            stages
+                .iter()
+                .position(|x| *x == s)
+                .unwrap_or_else(|| panic!("missing {s:?} in {stages:?}"))
+        };
         assert!(pos(BackendStage::Generating) < pos(BackendStage::Upscaling));
         assert!(pos(BackendStage::Upscaling) < pos(BackendStage::Refining));
         assert!(pos(BackendStage::Refining) < pos(BackendStage::Decoding));
-        let base: Vec<(u32, u32)> = updates.iter().filter(|u| u.stage == BackendStage::Generating).filter_map(|u| u.step).collect();
+        let base: Vec<(u32, u32)> = updates
+            .iter()
+            .filter(|u| u.stage == BackendStage::Generating)
+            .filter_map(|u| u.step)
+            .collect();
         assert_eq!(base, vec![(1, 20), (20, 20)]);
         // VAE/ESRGAN tile bars (2, 112 and the 6-tile encode) never count as refine steps.
-        let refine: Vec<(u32, u32, Option<f32>)> =
-            updates.iter().filter(|u| u.stage == BackendStage::Refining).filter_map(|u| u.step.map(|s| (s.0, s.1, u.seconds_per_step))).collect();
-        assert_eq!(refine.iter().map(|r| (r.0, r.1)).collect::<Vec<_>>(), vec![(1, 6), (2, 6), (6, 6)]);
-        assert_eq!(refine[0].2, Some(4.02), "the 1.86it/s VAE tile bar was not taken");
-        assert!(updates.iter().filter(|u| u.stage == BackendStage::Upscaling).all(|u| u.step.is_none()));
+        let refine: Vec<(u32, u32, Option<f32>)> = updates
+            .iter()
+            .filter(|u| u.stage == BackendStage::Refining)
+            .filter_map(|u| u.step.map(|s| (s.0, s.1, u.seconds_per_step)))
+            .collect();
+        assert_eq!(
+            refine.iter().map(|r| (r.0, r.1)).collect::<Vec<_>>(),
+            vec![(1, 6), (2, 6), (6, 6)]
+        );
+        assert_eq!(
+            refine[0].2,
+            Some(4.02),
+            "the 1.86it/s VAE tile bar was not taken"
+        );
+        assert!(
+            updates
+                .iter()
+                .filter(|u| u.stage == BackendStage::Upscaling)
+                .all(|u| u.step.is_none())
+        );
         assert_eq!(stages.last(), Some(&BackendStage::Finishing));
     }
 
@@ -979,15 +1191,31 @@ mod tests {
         let mut cfg = AppConfig::default();
         cfg.gpu_backend = crate::config::GpuBackend::Vulkan;
         let s = build_server_args(&cfg, cfg.profile()).join(" ");
-        assert!(s.contains("--backend vulkan0 --params-backend te=cpu"), "{s}");
+        assert!(
+            s.contains("--backend vulkan0 --params-backend te=cpu"),
+            "{s}"
+        );
         assert!(s.contains("--fa"));
         assert!(!s.contains("--sage-attn"), "SageAttention is CUDA only");
         assert!(s.contains("qwen_image_2_1_prefix_cache_type=q8_0"));
-        assert!(s.contains("--vae-tiling --vae-tile-size 512 "), "the default 768 is capped: {s}");
+        assert!(
+            s.contains("--vae-tiling --vae-tile-size 512 "),
+            "the default 768 is capped: {s}"
+        );
         cfg.vae_tile_size = 256;
-        assert!(build_server_args(&cfg, cfg.profile()).join(" ").contains("--vae-tile-size 256 "), "smaller tiles are kept");
+        assert!(
+            build_server_args(&cfg, cfg.profile())
+                .join(" ")
+                .contains("--vae-tile-size 256 "),
+            "smaller tiles are kept"
+        );
         cfg.vae_tile_size = 0;
-        assert!(!build_server_args(&cfg, cfg.profile()).join(" ").contains("--vae-tiling"), "off stays off");
+        assert!(
+            !build_server_args(&cfg, cfg.profile())
+                .join(" ")
+                .contains("--vae-tiling"),
+            "off stays off"
+        );
     }
 
     #[test]
@@ -995,13 +1223,19 @@ mod tests {
         let mut cfg = AppConfig::default();
         cfg.gpu_backend = crate::config::GpuBackend::Metal;
         let s = build_server_args(&cfg, cfg.profile()).join(" ");
-        assert!(s.contains("--backend mtl0 --auto-fit off --mmap --fa"), "RAM placement runs everything on the GPU: {s}");
+        assert!(
+            s.contains("--backend mtl0 --auto-fit off --mmap --fa"),
+            "RAM placement runs everything on the GPU: {s}"
+        );
         assert!(!s.contains("--params-backend") && !s.contains("--sage-attn"));
         assert!(s.contains("--mmap") && s.contains("--eager-load"));
         cfg.text_encoder_placement = TextEncoderPlacement::Disk;
         let s = build_server_args(&cfg, cfg.profile()).join(" ");
         assert!(s.contains("--backend mtl0 --params-backend disk"), "{s}");
-        assert!(!s.contains("--eager-load"), "nothing to preload when weights stream from disk");
+        assert!(
+            !s.contains("--eager-load"),
+            "nothing to preload when weights stream from disk"
+        );
     }
 
     #[test]
@@ -1012,29 +1246,62 @@ mod tests {
         let sdcpp = build_server_args(&cfg, cfg.profile());
         cfg.mac_engine = true;
         assert!(cfg.uses_mac_engine());
-        assert!(cfg.server_exe().ends_with("engine-mac/kokon-engine-mac"), "{}", cfg.server_exe().display());
+        assert!(
+            cfg.server_exe().ends_with("engine-mac/kokon-engine-mac"),
+            "{}",
+            cfg.server_exe().display()
+        );
         let a = build_server_args(&cfg, cfg.profile());
         let p = |p: &Path| p.to_string_lossy().into_owned();
         let profile = cfg.profile();
-        let mut want: Vec<String> = ["serve", "--listen-ip", "127.0.0.1", "--listen-port", &cfg.server_port.to_string(), "--diffusion-model",
-            &p(&profile.diffusion_model), "--vae", &p(&profile.vae), "--llm", &p(&profile.text_encoder)].map(String::from).to_vec();
+        let mut want: Vec<String> = [
+            "serve",
+            "--listen-ip",
+            "127.0.0.1",
+            "--listen-port",
+            &cfg.server_port.to_string(),
+            "--diffusion-model",
+            &p(&profile.diffusion_model),
+            "--vae",
+            &p(&profile.vae),
+            "--llm",
+            &p(&profile.text_encoder),
+        ]
+        .map(String::from)
+        .to_vec();
         if let Some(v) = &profile.vision_projector {
-            want.extend(["--llm_vision".to_string(), p(v)]);   // edits
+            want.extend(["--llm_vision".to_string(), p(v)]); // edits
         }
         assert_eq!(a, want);
-        assert!(profile.vision_projector.is_some(), "the default profile has the mmproj, so the engine can edit");
-        assert_ne!(a, sdcpp, "a different launch: switching restarts the server");
+        assert!(
+            profile.vision_projector.is_some(),
+            "the default profile has the mmproj, so the engine can edit"
+        );
+        assert_ne!(
+            a, sdcpp,
+            "a different launch: switching restarts the server"
+        );
         // Only on the Metal backend: elsewhere sd.cpp stays the engine.
         cfg.gpu_backend = crate::config::GpuBackend::Cuda;
         assert!(!cfg.uses_mac_engine());
         assert!(build_server_args(&cfg, cfg.profile()).contains(&"--diffusion-model".to_string()));
         assert!(!build_server_args(&cfg, cfg.profile()).contains(&"serve".to_string()));
-        assert!(cfg.server_exe().file_name().unwrap().to_string_lossy().starts_with("sd-server"));
+        assert!(
+            cfg.server_exe()
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("sd-server")
+        );
     }
 
     #[test]
     fn server_process_names() {
-        assert!(is_server_process("sd-server") && is_server_process("sd-server.exe") && is_server_process("SD-Server.exe"));
+        assert!(
+            is_server_process("sd-server")
+                && is_server_process("sd-server.exe")
+                && is_server_process("SD-Server.exe")
+        );
         assert!(is_server_process("kokon-engine-mac"));
         assert!(!is_server_process("kokon-service") && !is_server_process("sleep"));
     }
@@ -1056,13 +1323,29 @@ mod tests {
     #[test]
     fn progress_from_mac_engine_log() {
         let mut p = ProgressParser::default();
-        let updates: Vec<BackendProgress> = MAC_ENGINE_LOG.split(['\n', '\r']).filter_map(|l| p.feed(l)).collect();
+        let updates: Vec<BackendProgress> = MAC_ENGINE_LOG
+            .split(['\n', '\r'])
+            .filter_map(|l| p.feed(l))
+            .collect();
         let stages: Vec<BackendStage> = updates.iter().map(|u| u.stage).collect();
         assert_eq!(stages.first(), Some(&BackendStage::Preparing));
         assert!(stages.contains(&BackendStage::EncodingPrompt));
-        assert_eq!(updates.iter().find(|u| u.stage == BackendStage::Generating).unwrap().image, Some((1, 1)));
-        let steps: Vec<(u32, u32, Option<f32>)> = updates.iter().filter_map(|u| u.step.map(|s| (s.0, s.1, u.seconds_per_step))).collect();
-        assert_eq!(steps.iter().map(|s| (s.0, s.1)).collect::<Vec<_>>(), vec![(1, 8), (2, 8), (7, 8), (8, 8)]);
+        assert_eq!(
+            updates
+                .iter()
+                .find(|u| u.stage == BackendStage::Generating)
+                .unwrap()
+                .image,
+            Some((1, 1))
+        );
+        let steps: Vec<(u32, u32, Option<f32>)> = updates
+            .iter()
+            .filter_map(|u| u.step.map(|s| (s.0, s.1, u.seconds_per_step)))
+            .collect();
+        assert_eq!(
+            steps.iter().map(|s| (s.0, s.1)).collect::<Vec<_>>(),
+            vec![(1, 8), (2, 8), (7, 8), (8, 8)]
+        );
         assert_eq!(steps[1].2, Some(7.36));
         assert!(stages.contains(&BackendStage::Decoding));
         assert_eq!(stages.last(), Some(&BackendStage::Finishing));
@@ -1070,9 +1353,20 @@ mod tests {
 
     #[test]
     fn step_bar_parsing() {
-        assert_eq!(parse_step_bar("  |=====>                                            | 2/20 - 1.99s/it"), Some((2, 20, Some(1.99))));
-        assert_eq!(parse_step_bar("|====| 4/8 - 2.00it/s"), Some((4, 8, Some(0.5))));
-        assert_eq!(parse_step_bar("  |#############    | 98/397 - 3.76GB/s"), None);
+        assert_eq!(
+            parse_step_bar(
+                "  |=====>                                            | 2/20 - 1.99s/it"
+            ),
+            Some((2, 20, Some(1.99)))
+        );
+        assert_eq!(
+            parse_step_bar("|====| 4/8 - 2.00it/s"),
+            Some((4, 8, Some(0.5)))
+        );
+        assert_eq!(
+            parse_step_bar("  |#############    | 98/397 - 3.76GB/s"),
+            None
+        );
         assert_eq!(parse_step_bar("random text"), None);
     }
 
@@ -1095,7 +1389,10 @@ mod tests {
     #[test]
     fn progress_from_real_log() {
         let mut p = ProgressParser::default();
-        let updates: Vec<BackendProgress> = EDIT_LOG.split(['\n', '\r']).filter_map(|l| p.feed(l)).collect();
+        let updates: Vec<BackendProgress> = EDIT_LOG
+            .split(['\n', '\r'])
+            .filter_map(|l| p.feed(l))
+            .collect();
         let stages: Vec<BackendStage> = updates.iter().map(|u| u.stage).collect();
         assert_eq!(stages.first(), Some(&BackendStage::Preparing));
         assert!(stages.contains(&BackendStage::EncodingImages));
@@ -1104,7 +1401,10 @@ mod tests {
         assert_eq!(stages.last(), Some(&BackendStage::Finishing));
         let steps: Vec<(u32, u32)> = updates.iter().filter_map(|u| u.step).collect();
         assert_eq!(steps, vec![(1, 20), (2, 20), (3, 20)]);
-        let gen_ = updates.iter().find(|u| u.stage == BackendStage::Generating).unwrap();
+        let gen_ = updates
+            .iter()
+            .find(|u| u.stage == BackendStage::Generating)
+            .unwrap();
         assert_eq!(gen_.image, Some((1, 1)));
         // The tensor-loading bar during decode must not be mistaken for steps.
         assert!(updates.iter().all(|u| u.step.map(|s| s.1) != Some(128)));
@@ -1128,16 +1428,26 @@ mod tests {
         let busy = taken.local_addr().unwrap().port();
         let p = launch_port(busy).unwrap();
         assert_ne!(p, busy);
-        assert!(std::net::TcpListener::bind(("127.0.0.1", p)).is_ok(), "the fallback is free");
+        assert!(
+            std::net::TcpListener::bind(("127.0.0.1", p)).is_ok(),
+            "the fallback is free"
+        );
         let free = free_port().unwrap();
-        assert_eq!(launch_port(free), Some(free), "a free configured port is kept");
+        assert_eq!(
+            launch_port(free),
+            Some(free),
+            "a free configured port is kept"
+        );
     }
 
     #[test]
     fn parser_ignores_lines_before_a_job() {
         let mut p = ProgressParser::default();
         assert!(p.feed("  |==>   | 1/20 - 2.0s/it").is_none());
-        assert!(p.feed("[INFO] listening on: http://127.0.0.1:39150").is_none());
+        assert!(
+            p.feed("[INFO] listening on: http://127.0.0.1:39150")
+                .is_none()
+        );
     }
 
     #[test]
@@ -1145,7 +1455,10 @@ mod tests {
         let out = "ggml_cuda_init: found 1 CUDA devices:\n  Device 0: NVIDIA GeForce RTX 5070 Ti, compute capability 12.0\nCUDA0\tNVIDIA GeForce RTX 5070 Ti\nCPU\tAMD Ryzen 7 7700 8-Core Processor              \n";
         assert_eq!(
             parse_device_list(out),
-            vec![("CUDA0".into(), "NVIDIA GeForce RTX 5070 Ti".into()), ("CPU".into(), "AMD Ryzen 7 7700 8-Core Processor".into())]
+            vec![
+                ("CUDA0".into(), "NVIDIA GeForce RTX 5070 Ti".into()),
+                ("CPU".into(), "AMD Ryzen 7 7700 8-Core Processor".into())
+            ]
         );
         // ggml's Vulkan backend (device names as ggml registers them; not yet captured from a real run).
         // Device names reported by the Metal build on an M2 Pro (2026-10-09); descriptions illustrative.
@@ -1156,9 +1469,16 @@ CPU	Apple M2 Pro
         assert_eq!(parse_device_list(out)[0].0, "MTL0");
         let mut cfg = AppConfig::default();
         cfg.gpu_backend = crate::config::GpuBackend::Metal;
-        assert!(parse_device_list(out).iter().any(|(n, _)| n.to_ascii_lowercase() == cfg.effective_device()));
+        assert!(
+            parse_device_list(out)
+                .iter()
+                .any(|(n, _)| n.to_ascii_lowercase() == cfg.effective_device())
+        );
         let out = "ggml_vulkan: Found 1 Vulkan devices:\nggml_vulkan: 0 = AMD Radeon RX 7800 XT (AMD proprietary driver) | uma: 0 | fp16: 1\nVulkan0\tAMD Radeon RX 7800 XT\nCPU\tAMD Ryzen 7 7700\n";
-        assert_eq!(parse_device_list(out)[0], ("Vulkan0".into(), "AMD Radeon RX 7800 XT".into()));
+        assert_eq!(
+            parse_device_list(out)[0],
+            ("Vulkan0".into(), "AMD Radeon RX 7800 XT".into())
+        );
     }
 
     /// Regression: on Linux a crashed sd-server stayed a zombie under its pid, so the job
@@ -1178,7 +1498,10 @@ CPU	Apple M2 Pro
         // The bug itself: on Linux the zombie keeps its name under its pid. macOS reports no name
         // for a zombie, so there it never looked alive; the checks below hold on both.
         if cfg!(target_os = "linux") {
-            assert!(process_alive(pid), "the dead, unreaped server still looks alive by pid (zombie)");
+            assert!(
+                process_alive(pid),
+                "the dead, unreaped server still looks alive by pid (zombie)"
+            );
         }
         let m = ServerManager::new(dir.clone());
         m.set_state(|g| {
