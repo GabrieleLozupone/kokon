@@ -96,9 +96,9 @@ html.menu-lock, html.menu-lock body { overflow: hidden; }
 .btn.primary:hover { transform: translateY(-1px); box-shadow: 0 0 0 1px rgba(255,255,255,0.3), 0 14px 50px rgba(247,246,242,0.2); }
 .btn.ghost { background: var(--card-hi); box-shadow: inset 0 0 0 1px var(--line-hi); }
 .btn.ghost:hover { background: rgba(255,255,255,0.1); }
-.btn.yt { background: #ff0033; color: #fff; box-shadow: 0 10px 40px rgba(255,0,51,0.25); }
-.btn.yt svg { fill: currentColor; }
-.btn.yt:hover { transform: translateY(-1px); background: #e6002e; box-shadow: 0 14px 50px rgba(255,0,51,0.35); }
+.btn.yt { background: var(--card-hi); box-shadow: inset 0 0 0 1px var(--line-hi); }
+.btn.yt svg { fill: #e5484d; }
+.btn.yt:hover { background: rgba(255,255,255,0.1); }
 .btn.small { height: 38px; padding: 0 16px; font-size: 14px; }
 .btn .tag { font-size: 11.5px; font-weight: 600; padding: 2px 7px; border-radius: 6px; background: rgba(255,255,255,0.1); color: var(--text-2); letter-spacing: 0.02em; }
 
@@ -393,3 +393,109 @@ footer a:hover { color: var(--text); }
 .scene.phones { width: 604px; height: 573px; }
 .article figure .scene-box img { border-radius: 0; box-shadow: none; }
 .sec.devices-top { padding-top: 96px; }
+
+/* ---------- Hero (0.12): the first screen says what Kokon is; behind it, before/after pairs made by Kokon,
+   tilted and scrolling as in the launch film's opening. The videos follow right below. ---------- */
+.hero { padding-top: 0; }
+.hero-top { min-height: 100svh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 96px 0 56px; }
+/* Above the page grain (body::before, z-index 100), like the video frame: in Chrome a translucent layer over
+   composited content (the 3D wall promotes it) greys it. The nav (102) stays on top. */
+.hero .wrap { position: relative; z-index: 101; }
+.hero-top h1 { text-shadow: 0 4px 40px rgba(0,0,0,0.7); }
+.hero-top .fine { color: var(--text-2); text-shadow: 0 2px 12px rgba(0,0,0,0.9); }
+.hero-top .ctas .btn.ghost { background: rgba(16,16,16,0.86); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.2); }
+.hero-top .ctas .btn.ghost:hover { background: rgba(32,32,32,0.92); }
+.hero-top .eyebrow { background: rgba(12,12,12,0.82); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.wall { position: absolute; z-index: 0; left: 0; right: 0; top: 0; height: calc(100svh + 140px); overflow: hidden; pointer-events: none; perspective: 1800px; -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent); }
+/* Dark only behind the words, so the pictures keep their colour around them. */
+.wall::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse 46% 34% at 50% 46%, rgba(7,7,7,0.86) 0%, rgba(7,7,7,0.6) 55%, rgba(7,7,7,0.04) 100%); }
+.wall-plane { position: absolute; left: 50%; top: 40%; display: flex; flex-direction: column; gap: 22px; transform: translate(-50%, -50%) rotateX(22deg) rotateZ(-9deg); }
+.wall-row { display: flex; gap: 22px; width: max-content; animation: wall-l 120s linear infinite; will-change: transform; }
+.wall-row.r { animation-name: wall-r; }
+@keyframes wall-l { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes wall-r { from { transform: translateX(-50%); } to { transform: translateX(0); } }
+.wall-tile { position: relative; flex: none; width: 360px; aspect-ratio: 3 / 2; border-radius: 16px; overflow: hidden; background: #111; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+.wall-tile img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* The wipe from before to after: the after's box slides in while its picture slides back (transforms only). */
+.wall-tile .aw { position: absolute; inset: 0; overflow: hidden; transform: translateX(100%); animation: wipe-box 10s cubic-bezier(0.65, 0, 0.35, 1) infinite; animation-delay: var(--d); }
+.wall-tile .aw img { transform: translateX(-100%); animation: wipe-img 10s cubic-bezier(0.65, 0, 0.35, 1) infinite; animation-delay: var(--d); }
+.wall-tile .aw::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; z-index: 1; background: #fff; box-shadow: 0 0 12px rgba(255,255,255,0.8); }
+@keyframes wipe-box { 0%, 20% { transform: translateX(100%); } 32%, 82% { transform: translateX(0); } 94%, 100% { transform: translateX(100%); } }
+@keyframes wipe-img { 0%, 20% { transform: translateX(-100%); } 32%, 82% { transform: translateX(0); } 94%, 100% { transform: translateX(-100%); } }
+.wall-tile .chip { position: absolute; left: 10px; bottom: 10px; z-index: 2; max-width: calc(100% - 20px); padding: 5px 11px; border-radius: 999px; background: rgba(0,0,0,0.62); font-size: 13px; color: #f2f1ed; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14); }
+.hero .showreel { margin-top: 0; }
+@media (max-width: 719px) { .wall-tile { width: 230px; } .wall-tile .chip { font-size: 11px; } .wall-plane, .wall-row { gap: 14px; } .wall::after { background: radial-gradient(ellipse 70% 34% at 50% 46%, rgba(7,7,7,0.86) 0%, rgba(7,7,7,0.6) 55%, rgba(7,7,7,0.2) 100%); } }
+@media (prefers-reduced-motion: reduce) { .wall-row, .wall-tile .aw, .wall-tile .aw img { animation: none; } .wall-tile:nth-child(even) .aw, .wall-tile:nth-child(even) .aw img { transform: none; } }
+
+/* ---------- Video carousel: the launch film (local file), then YouTube videos loaded only on click ---------- */
+.showreel .slide { position: absolute; inset: 0; opacity: 0; visibility: hidden; transition: opacity 0.45s, visibility 0s 0.45s; }
+.showreel .slide.on { opacity: 1; visibility: visible; transition: opacity 0.45s; }
+.showreel .slide iframe { width: 100%; height: 100%; border: 0; display: block; }
+.yt-facade { position: absolute; inset: 0; width: 100%; height: 100%; background: #000 center / cover no-repeat; display: grid; place-items: center; }
+.yt-facade .play { width: 84px; height: 84px; border-radius: 50%; background: rgba(0,0,0,0.62); backdrop-filter: blur(8px); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.22); display: grid; place-items: center; transition: transform 0.2s, background 0.2s; }
+.yt-facade .play::before { content: ""; margin-left: 6px; border-left: 26px solid #fff; border-top: 16px solid transparent; border-bottom: 16px solid transparent; }
+.yt-facade:hover .play { transform: scale(1.06); background: rgba(229,72,77,0.85); }
+.yt-facade .yt-note { position: absolute; left: 18px; bottom: 16px; font-size: 13px; color: rgba(255,255,255,0.78); background: rgba(0,0,0,0.55); padding: 6px 12px; border-radius: 999px; }
+/* Above the video frame (z-index 101): its big dark shadow fell over the tabs and greyed them. */
+.vtabs { position: relative; z-index: 102; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
+/* The video shown has a light border and brighter text; a line fills along its bottom while it plays. */
+.vtab { position: relative; overflow: hidden; display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 16px; background: var(--card); box-shadow: inset 0 0 0 1px var(--line); text-align: left; transition: background 0.2s, box-shadow 0.2s; }
+.vtab:hover { background: var(--card-hi); }
+.vtab.on { background: var(--card-hi); box-shadow: inset 0 0 0 1.5px rgba(247,246,242,0.7); }
+.vtab.on b { color: #fff; }
+.vtab .bar { position: absolute; left: 0; bottom: 0; height: 2px; width: 0; background: var(--paper); opacity: 0; }
+.vtab.on .bar { opacity: 0.8; }
+.vtab img { width: 96px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 9px; flex: none; }
+.vtab b { display: block; font-size: 14.5px; font-weight: 600; letter-spacing: -0.01em; }
+.vtab span { display: block; font-size: 12.5px; color: var(--text-3); margin-top: 2px; }
+@media (max-width: 719px) { .vtabs { grid-template-columns: 1fr; gap: 8px; } .vtab img { width: 76px; } }
+
+/* ---------- 0.12: the Layers lab demo (the Halloween poster from the 0.12 video, its real layers) ---------- */
+.layers-demo { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 22px; max-width: 900px; margin: 56px auto 0; text-align: left; }
+.ld-stage { position: relative; perspective: 1600px; }
+.ld-scene { position: relative; aspect-ratio: 1; border-radius: 18px; transform-style: preserve-3d; transition: transform 1.2s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 0 0 1px var(--line-hi), 0 40px 120px rgba(0,0,0,0.6); touch-action: none; user-select: none; -webkit-user-select: none; }
+/* Clipped only while flat: clip-path flattens the 3D stack, so it comes back when the layers have landed. */
+.ld-scene.clip { clip-path: inset(0 round 18px); }
+.ld-scene.open { box-shadow: none; transform: rotateX(54deg) rotateZ(-32deg) scale(0.74); }
+/* Each layer always 1 px above the one below: coplanar layers flicker in 3D (z-fighting), and no easing overshoots below 0. */
+.ld-layer { position: absolute; pointer-events: none; transform: translateZ(calc(var(--z) * 1px)); transition: transform 1.1s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.4s, filter 0.2s; }
+.ld-layer.bg, .ld-photo { left: 0; top: 0; width: 100%; height: 100%; border-radius: 18px; }
+/* Lifting: the top layers first. Landing: one after the other from the bottom. */
+.ld-scene.open .ld-layer { transform: translateZ(calc(var(--z) * 56px)); transition-delay: calc((5 - var(--z)) * 60ms); transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1); }
+.ld-scene.landing .ld-layer { transition-delay: calc(var(--z) * 120ms); }
+.ld-scene.open .ld-layer.bg { box-shadow: 0 0 0 1px rgba(255,255,255,0.25); }
+.ld-photo { position: absolute; transition: opacity 0.5s; z-index: 10; }
+.ld-scene.split .ld-photo { opacity: 0; pointer-events: none; }
+.ld-layer.hidden { opacity: 0; }
+.ld-layer.sel { filter: drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1.5px #fff) drop-shadow(0 6px 18px rgba(0,0,0,0.5)); }
+.ld-scene.split.ready { cursor: grab; }
+.ld-scene.dragging { cursor: grabbing; }
+/* A soft light passes over the picture when the layers have landed. */
+.ld-flash { position: absolute; inset: 0; z-index: 15; border-radius: 18px; pointer-events: none; opacity: 0; background: linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.28) 50%, transparent 70%) -100% 0 / 200% 100% no-repeat; }
+.ld-flash.on { animation: ld-flash 0.9s ease-out; }
+@keyframes ld-flash { 0% { opacity: 1; background-position: 120% 0; } 100% { opacity: 1; background-position: -120% 0; } }
+.ld-go { position: absolute; left: 50%; bottom: 22px; z-index: 20; transform: translateX(-50%); box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+.ld-hint { position: absolute; left: 50%; bottom: 16px; z-index: 20; transform: translateX(-50%); padding: 7px 14px; border-radius: 999px; background: rgba(0,0,0,0.66); backdrop-filter: blur(8px); font-size: 13.5px; white-space: nowrap; opacity: 0; transition: opacity 0.4s; pointer-events: none; }
+.ld-hint.on { opacity: 1; }
+/* The right column: the layer list, then Export to PSD, together as tall as the picture. */
+.ld-side { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+.ld-panel, .ld-export { border-radius: 18px; background: var(--card); box-shadow: inset 0 0 0 1px var(--line); padding: 14px; }
+.ld-panel { flex: 1; display: flex; flex-direction: column; gap: 4px; min-height: 0; overflow: auto; }
+.ld-panel h3, .ld-export h3 { margin: 0 0 6px; font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; }
+.ld-panel h3 small { font-weight: 500; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: #f2c14e; background: rgba(242,193,78,0.12); padding: 2px 8px; border-radius: 999px; }
+.ld-rows { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.ld-row { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 10px; font-size: 14px; color: var(--text-2); cursor: pointer; }
+.ld-row.sel { background: var(--card-hi); color: var(--text); }
+.ld-row img { width: 34px; height: 34px; object-fit: contain; border-radius: 6px; background: repeating-conic-gradient(#222 0 25%, #2c2c2c 0 50%) 0 0 / 10px 10px; flex: none; }
+.ld-row span { flex: 1; }
+.ld-eye { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: var(--text-3); }
+.ld-eye:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+.ld-eye svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ld-panel .ld-empty { font-size: 13.5px; color: var(--text-3); padding: 6px 8px; }
+.ld-panel .ld-reset { margin-top: auto; align-self: flex-start; }
+.ld-export p { margin: 0 0 12px; font-size: 13.5px; color: var(--text-2); line-height: 1.45; }
+.ld-export .btn { width: 100%; }
+.ld-export .btn:disabled { opacity: 0.45; cursor: default; transform: none; }
+.layers-ctas { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 34px; }
+@media (max-width: 819px) { .layers-demo { grid-template-columns: 1fr; } .ld-panel { overflow: visible; } .ld-rows { flex-direction: row; flex-wrap: wrap; } .ld-row { padding: 4px 6px; } .ld-row img { width: 28px; height: 28px; } }
+@media (prefers-reduced-motion: reduce) { .ld-scene, .ld-layer { transition: none; } .ld-flash.on { animation: none; } }

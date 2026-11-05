@@ -2,12 +2,13 @@
 // laptop on the same network. Off until the user sets a password and turns it on; the service
 // opens the network port only then (crates/qls-service/src/remote.rs).
 
-import { Copy, ExternalLink } from "lucide-react";
+import { CirclePlay, Copy, ExternalLink } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { encode } from "uqr";
 import { api, type RemoteStatus } from "../lib/api";
 import { native } from "../lib/native";
+import { VIDEOS } from "../lib/videos";
 import { toastError, toastInfo } from "../lib/store";
 import { Switch } from "./ui";
 
@@ -154,9 +155,14 @@ export function RemoteAccess() {
             network: allow it on private networks.
           </span>
         </div>
-        <button className="btn" onClick={() => native.openLink(GUIDE_URL).catch(toastError)}>
-          <ExternalLink size={14} /> Guide
-        </button>
+        <div className="row-btns">
+          <button className="btn" onClick={() => native.openLink(VIDEOS.remote011.url).catch(toastError)} title="A video of setting it up on a phone, on YouTube (opens in your browser)">
+            <CirclePlay size={14} /> Video
+          </button>
+          <button className="btn" onClick={() => native.openLink(GUIDE_URL).catch(toastError)}>
+            <ExternalLink size={14} /> Guide
+          </button>
+        </div>
       </div>
     </>
   );

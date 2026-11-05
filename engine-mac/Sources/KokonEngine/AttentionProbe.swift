@@ -99,6 +99,23 @@ extension Probe {
         print(String(format: "GPU %@%@, 32 heads: %.1f ms, %.2f ms/head, %.2f TFLOP/s; head 0 rel %.1e", kernel, note,
                      gpu * 1e3, gpu * 1e3 / Double(heads), flops / gpu / 1e12, gpuError))
         }
+        // The same packed attention on Metal 4 tensor operations (the M5's neural accelerators), where it compiles.
+        if let na = NeuralAttention.make(device: context.device) {
+            let gpu = try best(3) {
+                let commands = context.queue.makeCommandBuffer()!
+                try pack(commands)
+                try na.encode(q: (qb, offset * stride * 4), kp: (kp, 0), vp: (vp, 0), out: (ob, offset * stride * 4),
+                              queries: queries, keys: keys, paddedKeys: paddedKeys, heads: heads, stride: stride,
+                              scale: scale * Float(M_LOG2E), commands: commands)
+                return try MetalContext.finish(commands, "na attention")
+            }
+            let flops: Double = 4 * Double(queries) * Double(keys) * Double(d) * Double(heads)
+            print(String(format: "GPU na_flash_attention (with packing)%@, 32 heads: %.1f ms, %.2f ms/head, %.2f TFLOP/s; head 0 rel %.1e",
+                         NeuralAttention.selected(device: context.device) ? " (selected)" : "", gpu * 1e3, gpu * 1e3 / Double(heads),
+                         flops / gpu / 1e12, error { i, c in f(ob)[(offset + i) * stride + c] }))
+        } else {
+            print("GPU na_flash_attention unavailable: \(NeuralAttention.unavailable ?? "?")")
+        }
         if ProcessInfo.processInfo.environment["KOKON_PROBE_GPU_ONLY"] == "1" { return }
 
         // The Neural Engine.

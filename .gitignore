@@ -7,6 +7,7 @@ node_modules
 /src-tauri/binaries/*.exe
 # Model files bundled with the app, fetched at build time (scripts/release/fetch-bundled.mjs)
 /src-tauri/resources/*.pth
+/src-tauri/resources/*.onnx
 /src-tauri/resources/engine-mac/
 *.log
 /.test-data
@@ -31,3 +32,5 @@ __pycache__/
 /engine-mac/.build
 /engine-mac/.swiftpm
 /dist-engine
+# Layers lab: MobileSAM ONNX files served by the vite dev server (not committed)
+/lab-models/

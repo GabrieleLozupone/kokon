@@ -1,16 +1,17 @@
 # Status
 
-**Updated 2026-10-28.** What is in progress, what comes next, and where help is welcome. Kept current at the end
+**Updated 2026-11-04.** What is in progress, what comes next, and where help is welcome. Kept current at the end
 of every task (see [AGENTS.md](../AGENTS.md#keeping-docsstatusmd-current)); GitHub is the source of truth.
 
-## Current version: [0.11.2](https://github.com/GabrieleLozupone/kokon/releases/tag/v0.11.2) (2026-10-28)
+## Current version: [0.12.0](https://github.com/GabrieleLozupone/kokon/releases/tag/v0.12.0) (2026-11-04)
 
 Windows, macOS (Apple Silicon, 15+) and Linux (`.deb`, `.rpm`). Installed copies update from the app.
 
 ## Next
 
-- **0.12: reliability foundations** (details soon).
-- After 0.11: the desktop app as a client of a Kokon server elsewhere, and a Docker image for AMD and Intel
+- **Layers lab** (experimental since 0.12): reports on which images split well or badly are welcome; Blend into scene
+  often does not work yet.
+- Next: the desktop app as a client of a Kokon server elsewhere, and a Docker image for AMD and Intel
   (Vulkan) once it can be tested.
 - On the list, no dates yet: a custom upscaler picker
   ([#34](https://github.com/GabrieleLozupone/kokon/issues/34)), everything in one folder / a portable build
@@ -23,16 +24,11 @@ Windows, macOS (Apple Silicon, 15+) and Linux (`.deb`, `.rpm`). Installed copies
   4.5 s per step at 1024x704. A later update lets the engine choose per card.
 - **LoRA is beta** and tested on Windows only; reports from macOS and Linux are welcome
   ([#33](https://github.com/GabrieleLozupone/kokon/issues/33) has a product-shot test).
-- **Macs are slow** compared with NVIDIA cards (about 4 minutes for 1 MP on an M2 Pro 16 GB). Kokon's own Mac
-  engine (`engine-mac/`, experimental since 0.11.1): text to image,
-  Prompt+ (a prompt written in about 7–9 s), edits with reference images (Prompt+ looking at them too), brushed edits and
-  extending an image, about 64–67 s for 1 MP text to image and ~106 s for a 1 MP edit on the same Mac (peak memory 5 GB),
-  as an experimental switch in Settings → Performance (off by default). Released in 0.11.1 (2026-10-26). Since then (2026-10-26, not yet re-measured as
-  whole images): one denoising step ~5 % faster, the decoder ~1 s faster per image, an edit's image reading 2.6 → 1.7 s. LoRAs and the upscaler still need the standard
-  engine (not planned for its first release). It ships inside Kokon.app (1.7 MB) and Kokon offers it once at start
-  on Macs with 16 GB or more, with rollback in Settings. A "Benchmark this Mac" button in Settings → Performance runs the engine's
-  bench from the app (~10 min) and gives the report to paste in
-  [Discussion #43](https://github.com/GabrieleLozupone/kokon/discussions/43).
+- **Kokon's Mac engine** (`engine-mac/`, the default on Macs with 16 GB or more since 0.12, switched on once at the
+  first start; a choice made earlier is kept): about 65 s for a new 1 MP image and ~106 s for a 1 MP edit on an M2 Pro
+  16 GB, four times faster than the standard Metal engine. LoRAs and the upscaler model still need the standard engine
+  (Settings → Performance). On M5 Macs it runs on the GPU's neural accelerators (#49, #50). A "Benchmark this Mac"
+  button in Settings → Performance gives a report for [Discussion #43](https://github.com/GabrieleLozupone/kokon/discussions/43).
 - The Windows installer is not code-signed: SmartScreen or Smart App Control may block it (README FAQ: Unblock).
 - HEIC photos can't be opened on Linux yet.
 
@@ -54,6 +50,13 @@ Windows, macOS (Apple Silicon, 15+) and Linux (`.deb`, `.rpm`). Installed copies
 
 ## Recently shipped
 
+- **0.12.0** (2026-11-04): the Layers lab (experimental: click the objects, each on its own layer with the
+  background filled behind them, move/hide/edit/expand any layer, Blend into scene, Export PSD), paint with colours
+  and one-click Select (its model downloaded on first use), Prompt+ for brushed areas and Expand with a Detail level,
+  Kokon's Mac engine on by default on Macs with 16 GB+ and faster on the M5 (@CesareDavidePace,
+  [#49](https://github.com/GabrieleLozupone/kokon/pull/49), [#50](https://github.com/GabrieleLozupone/kokon/pull/50)),
+  AI marking (IPTC metadata + invisible watermark, Check an image; [ai-marking.md](ai-marking.md)), a project list
+  by day and multi-version Delete, video guides in a Help menu.
 - **0.11.2** (2026-10-28): Mac engine 0.1.1 (on macOS 26 the matrix unit and the Neural Engine work beside the GPU,
   found by @CesareDavidePace in [#46](https://github.com/GabrieleLozupone/kokon/pull/46); on M3, M4 and M5 Macs 8–18 %
   faster steps), the progress card keeps its place when you come back to it, Settings ask before closing with unsaved

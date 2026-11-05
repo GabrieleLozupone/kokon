@@ -1,36 +1,47 @@
-import { CircleAlert, Cpu, Hourglass, MousePointerClick, Save } from "lucide-react";
+import { CircleAlert, CirclePlay, FolderTree, Layers, Palette, ShieldCheck, Sparkles, WandSparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { formatBytes, installProgress, installStep, installTimeLeft, modelChoiceUi, modelOfferDue, whatsNewDue as due } from "../lib/logic";
-import { inBrowser } from "../lib/platform";
 import { afterStartScreens, refreshStatus, setState, toastError, useStore } from "../lib/store";
 import type { GpuBackend, InstallItem, InstallStatus, ModelsStatus } from "../lib/types";
+import { native } from "../lib/native";
+import { VIDEOS } from "../lib/videos";
 import { KokonMark } from "./Welcome";
 
 /** The release these notes describe. Shown once to people updating from an earlier version. */
-export const WHATS_NEW_VERSION = "0.11.2";
-
-const MAC_NEWS = {
-  icon: Cpu,
-  title: "A faster Mac engine",
-  text: "Kokon's Mac engine 0.1.1: on macOS 26 the CPU's matrix unit and the Neural Engine now work beside the GPU too (about a fifth faster on an M5 Pro), and on M3, M4 and M5 Macs each step is 8–18 % faster. Still experimental, in Settings → Performance.",
-};
+export const WHATS_NEW_VERSION = "0.12.0";
 
 const NEWS = [
   {
-    icon: Hourglass,
-    title: "The progress card keeps its place",
-    text: "Look at another version while an image is being made, then come back: the card goes on from where it is instead of starting over, and the Prompt+ text you already read stays on screen.",
+    icon: Layers,
+    title: "Layers lab (experimental)",
+    text: "Split a photo into layers: click the objects, Kokon cuts them out and fills the background behind them. Move, resize, hide or edit each one, draw new objects with the pencil, then save one image or a PSD for Photoshop.",
+    video: VIDEOS.update012.url,
   },
   {
-    icon: Save,
-    title: "Settings ask before closing",
-    text: "Close Settings with changes you haven't saved and Kokon asks whether to save them, instead of dropping them.",
+    icon: Sparkles,
+    title: "Blend into scene (experimental)",
+    text: "After moving objects around, Blend redraws the scene around them so they belong there: shadows on the ground, reflections, contact with what they stand on.",
   },
   {
-    icon: MousePointerClick,
-    title: "Smaller fixes",
-    text: "Setup keeps its buttons in view and shows every file name while downloading, selected text is visible on Linux with WebKitGTK, and the page draws properly after leaving full screen on Android phones.",
+    icon: Palette,
+    title: "Paint with colours",
+    text: "In a brushed edit, paint each thing in its own colour and say what goes there: several changes in one go. Select (S) picks an object with one click (its model is downloaded once, 44 MB).",
+  },
+  {
+    icon: WandSparkles,
+    title: "Prompt+ for areas and Expand",
+    text: "Prompt+ now writes the prompt for a brushed area too (it names what to remove) and for Expand (what the new borders show), for you to check before it runs.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "AI marking",
+    text: "Every image Kokon makes says in its file, and in an invisible watermark, that it was made with AI, as the EU AI Act asks. Settings → General → Check an image reads both.",
+  },
+  {
+    icon: FolderTree,
+    title: "Tidier projects",
+    text: "Projects are grouped by day, and several versions can be deleted at once: Ctrl- or Shift-click them in the timeline, then Delete.",
   },
 ];
 
@@ -59,7 +70,6 @@ type Step = "engine" | "vae" | "model";
  * replace the old files only if the user accepts. Own model files are never switched: the model step is a suggestion. */
 export function WhatsNew() {
   const engine = useStore((s) => s.status?.engine);
-  const macEngine = useStore((s) => !!s.status?.mac_engine?.available) && !inBrowser;
   const needsEngine = !!engine?.update_needed;
   const [missing, setMissing] = useState<InstallItem[] | null>(null);
   const [target, setTarget] = useState<{ preset: string; backend: GpuBackend } | null>(null);
@@ -172,11 +182,21 @@ export function WhatsNew() {
         <KokonMark size={44} />
         <h1>What's new in Kokon {WHATS_NEW_VERSION}</h1>
         <div className="welcome-grid">
-          {(macEngine ? [MAC_NEWS, ...NEWS] : NEWS).map(({ icon: Icon, title, text }) => (
+          {NEWS.map(({ icon: Icon, title, text, video }: { icon: typeof Layers; title: string; text: string; video?: string }) => (
             <div className="welcome-item" key={title}>
               <Icon size={20} />
               <strong>{title}</strong>
-              <span>{text}</span>
+              <span>
+                {text}
+                {video && (
+                  <>
+                    {" "}
+                    <button className="link-btn" onClick={() => native.openLink(video).catch(toastError)} title="On YouTube (opens in your browser)">
+                      <CirclePlay size={13} /> Watch the 0.12 video
+                    </button>
+                  </>
+                )}
+              </span>
             </div>
           ))}
         </div>

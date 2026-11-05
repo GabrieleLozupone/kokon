@@ -22,7 +22,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/style.css?v=13">
+<link rel="stylesheet" href="../assets/style.css?v=14">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -126,7 +126,8 @@
           <div class="dd-panel" id="dd-product"><ul>
             <li><a href="/#examples"><b>Examples</b><span>Real edits, before and after</span></a></li>
             <li><a href="/#features"><b>Features</b><span>Edit, paint, combine, expand, upscale</span></a></li>
-            <li><a href="/#devices"><b>On your phone <span class="new">New</span></b><span>Use your GPU from any device</span></a></li>
+            <li><a href="/#layers"><b>Layers lab <span class="new">New</span></b><span>Split an image, move the pieces</span></a></li>
+            <li><a href="/#devices"><b>On your phone</b><span>Use your GPU from any device</span></a></li>
             <li><a href="/mcp-image-generation/"><b>For AI agents</b><span>MCP server and HTTP API</span></a></li>
             <li><a href="/#requirements"><b>Requirements</b><span>GPUs, Macs and disk space</span></a></li>
           </ul></div></li>
@@ -136,6 +137,7 @@
             <li><a href="/self-hosted/"><b>Phone and server</b><span>Other devices, Linux, Docker, Tailscale</span></a></li>
             <li><a href="/prompt-guide/"><b>Prompt guide</b><span>Write prompts that work</span></a></li>
             <li><a href="/remove-objects-from-photos-offline/"><b>Remove objects</b><span>Step by step, offline</span></a></li>
+            <li><a href="/image-to-layers/"><b>Image to layers <span class="new">New</span></b><span>Split a photo, export a PSD</span></a></li>
           </ul></div></li>
         <li class="dd"><button type="button" aria-expanded="false" aria-controls="dd-compare">Compare<svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"/></svg></button>
           <div class="dd-panel" id="dd-compare"><ul>
@@ -203,7 +205,7 @@
         </tbody>
       </table>
     </div>
-    <p>Speed with the default model: on an RTX 5070 Ti, about 24 seconds for an edit at 1.5K and about 36 seconds for a new image at native 2K. 12 GB cards are a little slower, 8 GB cards take 1 to 2 minutes per edit, and an M2 Pro Mac takes about 4 minutes per image.</p>
+    <p>Speed with the default model: on an RTX 5070 Ti, about 24 seconds for an edit at 1.5K and about 36 seconds for a new image at native 2K. 12 GB cards are a little slower, 8 GB cards take 1 to 2 minutes per edit, and an M2 Pro Mac takes about a minute for a new 1-megapixel image (about 106 s for an edit) with Kokon's own Mac engine.</p>
 
     <h2>Questions</h2>
     <div class="faq">
@@ -236,6 +238,7 @@
       <a href="../offline-alternative-to-nano-banana/">Offline Nano Banana alternative</a>
       <a href="../comfyui-alternative/">Simple ComfyUI alternative</a>
       <a href="../remove-objects-from-photos-offline/">Remove objects offline</a>
+      <a href="../image-to-layers/">Image to layers</a>
       <a href="../qwen-image-2-1-local/">Run Qwen-Image locally</a>
       <a href="../press/">Press kit</a>
       <a href="../support/">Support Kokon</a>

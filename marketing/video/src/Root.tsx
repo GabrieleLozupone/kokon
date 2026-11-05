@@ -15,6 +15,7 @@ import { REELS, ReelScene, reelFrames } from "./scenes/Reels";
 import { AppShot, PH_SLIDES } from "./scenes/ProductHunt";
 import { Probe011 } from "./scenes/Probe011";
 import { Update011, UPDATE011_FRAMES } from "./scenes/Update011";
+import { Update012, UPDATE012_FRAMES } from "./scenes/Update012";
 import { VREELS, VReelScene, vreelFrames } from "./scenes/VReels";
 import { UseCases, USECASES_FRAMES, USECASES_IMAGES, UseCasesThumb } from "./scenes/UseCases";
 
@@ -31,6 +32,8 @@ export function Root() {
     <>
       <Composition id="KokonLaunch" component={withPreload(Main)} durationInFrames={MAIN_FRAMES} {...S} />
       <Composition id="Update011" component={withPreload(Update011)} durationInFrames={UPDATE011_FRAMES} {...S} />
+      <Composition id="Update012" component={withPreload(Update012)} durationInFrames={UPDATE012_FRAMES} {...S} />
+      <Composition id="Update012UHD" component={withPreload(() => <Update012 uhd />)} durationInFrames={UPDATE012_FRAMES} {...S} />
       <Composition id="Probe011" component={withPreload(Probe011)} durationInFrames={1} {...S} />
       <Composition id="UseCases" component={() => (<><Preload extra={USECASES_IMAGES} /><UseCases /></>)} durationInFrames={USECASES_FRAMES} {...S} />
       <Composition id="UseCasesHouse4" component={() => (<><Preload extra={USECASES_IMAGES} /><UseCases music="music-usecases-house4.m4a" /></>)} durationInFrames={USECASES_FRAMES} {...S} />

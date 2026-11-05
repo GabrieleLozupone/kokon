@@ -295,6 +295,15 @@ edits) before the image is made, so there is no second model in memory.
 - **Review first:** `enhance_only` runs a job that stops after the prompt (no image, nothing saved); the
   app streams it into the prompt box. The next job sends the text with `enhanced_from` (the user's
   words), so the record keeps both and nothing is rewritten twice.
+- **A painted area and Expand (0.12, not A/B-tested yet):** two more built-in prompts (no Settings
+  field). For a brushed area the enhancer sees the region as it is with the area highlighted (the
+  image model's own copy is blurred there for Remove and Replace) and writes what goes in the area,
+  or names what is removed, after the action's words ("Remove", "Change", "Replace with", "Add": the app
+  puts them in the prompt, the service takes them off inside its instruction); for Expand it sees the canvas with the new borders empty and writes
+  what they show. For an area it writes the whole instruction of the action (Remove: what goes and what
+  is seen in its place; a bare name in the removal sentence made Qwen paint the object again), sent in
+  `pipeline::written_inpaint_prompt`; Expand's text goes after the outpaint instruction (`pipeline::EnhancerView`). With nothing typed for a removal or an expansion, the app has Prompt+
+  write the prompt into the box first (`enhanced_from: ""`), to approve or change.
 
 ### New image from references (compose)
 

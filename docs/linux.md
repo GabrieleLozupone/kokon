@@ -83,6 +83,10 @@ Upstream moves fast. Every platform follows the same release, so:
   → `dist-release/Kokon_<v>_amd64.deb`, `Kokon-<v>-1.x86_64.rpm`, `updater-linux-x86_64-{deb,rpm}.json`.
   Signed with the same updater key as Windows/Mac (`~/.tauri/kokon-updater.key`, also found under
   /mnt/c/Users/*/.tauri).
+- **g++-13** (ubuntu-toolchain-r PPA, `--setup` installs it; since 0.12): the ONNX Runtime that `ort`
+  downloads (AI watermark, fast stickers) needs GCC 13's libstdc++ and Ubuntu 22.04 has GCC 11's.
+  `crates/qls-core/build.rs` links g++-13's `libstdc++.a` into kokon-service statically, so users need
+  nothing new. The Docker image's build stage installs it too.
 - Quick run without packaging: `npm run build && cargo build -p kokon --release --features
   tauri/custom-protocol && ./target/release/kokon` (without the feature the window loads the dev server
   and shows "Could not connect to localhost").

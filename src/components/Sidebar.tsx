@@ -1,11 +1,13 @@
-import { Check, Images, PanelLeftClose, Pencil, Settings, SquarePen, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, Folder, FolderOpen, Images, ListChecks, PanelLeftClose, Pencil, Settings, SquarePen, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { urls } from "../lib/api";
-import { timeAgo } from "../lib/logic";
+import { dayGroup, projectTitle, timeAgo } from "../lib/logic";
 import { native } from "../lib/native";
 import { deleteProject, deleteProjects, newProject, renameProject, setState, switchProject, useStore } from "../lib/store";
 import { IconButton, NameField } from "./ui";
 import { KokonMark } from "./Welcome";
+
+const CLOSED_KEY = "kokon.sidebarClosed";
 
 /** The Kokon mark and name: the sidebar's head, and the top bar's while the sidebar is hidden. */
 export function Wordmark() {
@@ -28,6 +30,26 @@ export function Sidebar() {
   const [renaming, setRenaming] = useState<string | null>(null);
   // Selection: null = off; otherwise the picked project ids (and the last one clicked, for Shift).
   const [picked, setPicked] = useState<Set<string> | null>(null);
+  // Collapsed: "Projects" (the whole list) and day headings, remembered on this device.
+  const [closed, setClosed] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(CLOSED_KEY) ?? "[]") as string[]);
+    } catch {
+      return new Set();
+    }
+  });
+  const fold = (name: string) =>
+    setClosed((c) => {
+      const next = new Set(c);
+      if (!next.delete(name)) next.add(name);
+      try {
+        localStorage.setItem(CLOSED_KEY, JSON.stringify([...next]));
+      } catch {
+        /* storage blocked: folded until the page closes */
+      }
+      return next;
+    });
+  const listOpen = !closed.has("Projects");
   const [anchor, setAnchor] = useState<string | null>(null);
   const selecting = picked !== null;
 
@@ -69,34 +91,16 @@ export function Sidebar() {
     setPicked(null);
   };
 
-  return (
-    <aside className={`sidebar ${selecting ? "selecting" : ""}`}>
-      <div className="side-head" data-tauri-drag-region>
-        <Wordmark />
-        <IconButton title="Hide sidebar" onClick={() => setState({ sidebar: false })}>
-          <PanelLeftClose size={18} />
-        </IconButton>
-      </div>
-      <nav className="side-nav">
-        <button className={`side-item ${empty && !gallery ? "on" : ""}`} onClick={newProject}>
-          <SquarePen size={16} /> New image
-        </button>
-        <button className={`side-item ${gallery ? "on" : ""}`} onClick={() => setState({ overlay: gallery ? null : "gallery" })}>
-          <Images size={16} /> All images
-        </button>
-      </nav>
-      {projects.length > 0 && (
-        <div className="side-label">
-          <span>Projects</span>
-          <button className="side-select" onClick={() => setPicked(selecting ? null : new Set())} title={selecting ? "Stop selecting (Esc)" : "Select several projects to remove them at once (or Ctrl/⌘-click)"}>
-            {selecting ? "Done" : "Select"}
-          </button>
-        </div>
-      )}
-      <div className="side-list">
-        {projects.map((p) => {
-          const on = picked?.has(p.id) ?? false;
-          return (
+  // Under a heading per day (the list is newest first), to find a project by when.
+  const sections: { group: string; items: typeof projects }[] = [];
+  for (const p of projects) {
+    const group = dayGroup(p.updatedAt);
+    if (sections[sections.length - 1]?.group === group) sections[sections.length - 1].items.push(p);
+    else sections.push({ group, items: [p] });
+  }
+  const row = (p: (typeof projects)[number]) => {
+    const on = picked?.has(p.id) ?? false;
+    return (
             <div
               key={p.id}
               role={selecting ? "checkbox" : "button"}
@@ -117,7 +121,7 @@ export function Sidebar() {
                 } else if (e.key === "F2" && !selecting) setRenaming(p.id);
                 else if ((e.key === "Delete" || e.key === "Backspace") && selecting) removePicked();
               }}
-              title={selecting ? p.title : `${p.title}\nDouble-click or F2 to rename · Ctrl/⌘-click to select several`}
+              title={selecting ? p.title : `${p.title}\n${p.count} ${p.count === 1 ? "version" : "versions"} · ${timeAgo(p.updatedAt)}\nDouble-click or F2 to rename · Ctrl/⌘-click to select several`}
             >
               <span className="cover">
                 {p.cover && <img src={urls.sourceThumb(p.cover)} alt="" draggable={false} loading="lazy" />}
@@ -127,11 +131,8 @@ export function Sidebar() {
                 {renaming === p.id ? (
                   <NameField value={p.title} onSave={(v) => renameProject(p.id, v)} onDone={() => setRenaming(null)} />
                 ) : (
-                  <span className="proj-title">{p.title}</span>
+                  <span className="proj-title">{projectTitle(p.title)}</span>
                 )}
-                <span className="proj-sub">
-                  {p.count} {p.count === 1 ? "image" : "images"} · {timeAgo(p.updatedAt)}
-                </span>
               </span>
               {!selecting && (
                 <>
@@ -160,8 +161,53 @@ export function Sidebar() {
                 </>
               )}
             </div>
-          );
-        })}
+    );
+  };
+
+  return (
+    <aside className={`sidebar ${selecting ? "selecting" : ""}`}>
+      <div className="side-head" data-tauri-drag-region>
+        <Wordmark />
+        <IconButton title="Hide sidebar" onClick={() => setState({ sidebar: false })}>
+          <PanelLeftClose size={18} />
+        </IconButton>
+      </div>
+      <nav className="side-nav">
+        <button className={`side-item ${empty && !gallery ? "on" : ""}`} onClick={newProject}>
+          <SquarePen size={16} /> New image
+        </button>
+        <button className={`side-item ${gallery ? "on" : ""}`} onClick={() => setState({ overlay: gallery ? null : "gallery" })}>
+          <Images size={16} /> All images
+        </button>
+      </nav>
+      {projects.length > 0 && (
+        <div className="side-label">
+          <button className={`side-item side-fold ${listOpen ? "" : "closed"}`} onClick={() => fold("Projects")} aria-expanded={listOpen} title={listOpen ? "Collapse projects" : "Show projects"}>
+            {listOpen ? <FolderOpen size={16} /> : <Folder size={16} />}
+            Projects
+            <ChevronDown size={14} className="fold-chev" />
+          </button>
+          <button className="side-select" onClick={() => setPicked(selecting ? null : new Set())} title={selecting ? "Stop selecting (Esc)" : "Select several projects to remove them at once (or Ctrl/⌘-click)"}>
+            {!selecting && <ListChecks size={13} />}
+            {selecting ? "Done" : "Select"}
+          </button>
+        </div>
+      )}
+      <div className="side-list">
+        {/* Under "Projects": a line from its folder icon, a rounded branch to each day. */}
+        {listOpen && projects.length > 0 && (
+        <div className="side-tree">
+        {sections.map(({ group, items }) => (
+          <section key={group} className="side-sec">
+            <button className={`side-group ${closed.has(group) ? "closed" : ""}`} onClick={() => fold(group)} aria-expanded={!closed.has(group)}>
+              {group}
+              <ChevronDown size={12} />
+            </button>
+            {!closed.has(group) && items.map(row)}
+          </section>
+        ))}
+        </div>
+        )}
       </div>
       {selecting && (
         <div className="select-bar">

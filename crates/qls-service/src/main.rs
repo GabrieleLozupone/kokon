@@ -295,7 +295,11 @@ async fn run(args: Vec<String>) {
     };
     // The upscaler ships with the app: put it where sd-server looks (no download needed).
     let e = engine.clone();
-    let _ = tokio::task::spawn_blocking(move || e.place_bundled_upscaler()).await;
+    let _ = tokio::task::spawn_blocking(move || {
+        e.place_bundled_upscaler();
+        e.place_bundled_watermark();
+    })
+    .await;
     // The original VAE or Q4_K model left behind when a busy server held it open during the update.
     engine.remove_unused_original_vae();
     engine.remove_unused_old_dit();

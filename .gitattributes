@@ -1,1 +1,5 @@
 *.sh text eol=lf
+
+# Keep the language bar about the app: the marketing videos and the website are not counted
+marketing/** linguist-documentation
+site/** linguist-documentation

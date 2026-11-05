@@ -297,6 +297,14 @@ pub struct GenerationRequest {
     /// `JobView::enhanced_prompt` and no image, so the user can read and change it first.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub enhance_only: bool,
+    /// Prompt+ "Detailed": a longer prompt with more context about what is in the image or what
+    /// changes (enhancer::detailed). Standard lengths otherwise.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub enhance_detail: bool,
+    /// Layers lab "Blend into scene": only read the place the object with this name stands in
+    /// (`scene`, the Prompt+ model). The job ends with the reading in `JobView::scene` and no image.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_scene: Option<String>,
     /// The user's own words when `prompt` was written by Prompt+ in a review (and maybe changed
     /// by the user since): kept as the record's original prompt.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -305,15 +313,14 @@ pub struct GenerationRequest {
     /// no LoRA (MCP and the HTTP API don't use LoRAs for now). Not used by upscales.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub loras: Option<Vec<String>>,
-    /// Number of video frames for `mode: video` (e.g. 49, 65, 81).
+    /// Inpaint only: coloured marks drawn by the user, an image source the mask's size (transparent
+    /// where nothing is drawn). The model's only reference is the region with the marks drawn on,
+    /// and the prompt names what goes at each colour; no guide image (see pipeline).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub video_frames: Option<u32>,
-    /// Frame rate for `mode: video` (default: 24 fps).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fps: Option<u32>,
-    /// Generate a seamlessly looping video (`mode: video`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub video_loop: Option<bool>,
+    pub marks: Option<String>,
+    /// The result is left out of the gallery list (a layers lab step, see `GenerationRecord::hidden`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hidden: bool,
 }
 
 // ---------------------------------------------------------------------------------------
@@ -358,6 +365,9 @@ pub struct Plan {
     pub outpaint: Option<OutpaintPlan>,
     /// Region of the source sent to the model for inpainting.
     pub inpaint_region: Option<Rect>,
+    /// Inpaint with coloured marks (`GenerationRequest::marks`): one reference, no guide.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub marks: bool,
     /// Resolved inpaint action (see [`InpaintAction::resolve`]).
     #[serde(default)]
     pub inpaint_action: Option<InpaintAction>,
@@ -1120,16 +1130,18 @@ pub fn plan(
         )));
     }
     let (mode, auto_mode, mode_reason) = detect_mode(req, inputs)?;
-    if req.enhance_only && !(req.enhance && crate::enhancer::applies(mode)) {
-        return Err(AppError::invalid(
-            "Prompt+ writes prompts for new images, edits and combines only.",
-        ));
+    let marks = mode == ResolvedMode::Inpaint && req.marks.is_some();
+    if req.enhance_only && !(req.enhance && crate::enhancer::applies_to(mode, marks)) {
+        return Err(AppError::invalid("Prompt+ does not write prompts for upscales."));
     }
-    let inpaint_action =
-        (mode == ResolvedMode::Inpaint).then(|| req.inpaint_action.resolve(&req.prompt));
-    // Upscales and removals need no description.
-    let prompt_optional =
-        mode == ResolvedMode::Upscale || inpaint_action == Some(InpaintAction::Remove);
+    // Marks: the prompt names things by colour, never an action of its own (a Remove would blur the marks away).
+    let inpaint_action = (mode == ResolvedMode::Inpaint).then(|| if marks { InpaintAction::Edit } else { req.inpaint_action.resolve(&req.prompt) });
+    if req.read_scene.is_some() && (mode != ResolvedMode::Edit || inputs.image_sizes.len() != 1) {
+        return Err(AppError::invalid("The scene is read from one image, as an edit."));
+    }
+    // Upscales and removals need no description, nor a scene reading (the object's name is its own
+    // field), nor an expansion (it continues the scene; Prompt+ can write what the new areas show).
+    let prompt_optional = mode == ResolvedMode::Upscale || mode == ResolvedMode::Outpaint || inpaint_action == Some(InpaintAction::Remove) || req.read_scene.is_some();
     if req.prompt.trim().is_empty() && !prompt_optional {
         return Err(AppError::invalid("Describe what to generate or change."));
     }
@@ -1397,14 +1409,11 @@ pub fn plan(
             );
             // References: the region itself (at most the reference cap, as in edits), plus a
             // smaller copy with the area marked. Full: both at the output's area (the server's
-            // own resize), as before 0.9.4.
+            // own resize), as before 0.9.4. Coloured marks show the area themselves: no guide.
+            let guide_share = if marks { 0.0 } else { INPAINT_GUIDE_AREA };
             let wanted = tier_area.unwrap_or(src.area());
-            let image1_share = if wanted > ref_cap.saturating_add(ref_cap / 10) {
-                ref_cap as f64 / wanted as f64
-            } else {
-                1.0
-            };
-            let area = cap_for_refs(wanted, image1_share + INPAINT_GUIDE_AREA, &mut notes);
+            let image1_share = if wanted > ref_cap.saturating_add(ref_cap / 10) { ref_cap as f64 / wanted as f64 } else { 1.0 };
+            let area = cap_for_refs(wanted, image1_share + guide_share, &mut notes);
             // At least the working size of context around the mask, so the model sees the scene.
             let min_ctx = (area as f64).sqrt() as u32;
             let region = geometry::inpaint_region(src, bbox, min_ctx, 0.55);
@@ -1425,22 +1434,12 @@ pub fn plan(
             inpaint_region = Some(region);
             output = src;
             // The image being painted stays at the working size; only the model's view of it shrinks.
-            let image1 = if working.canvas.area() <= ref_cap.saturating_add(ref_cap / 10) {
-                working
-            } else {
-                ref_canvas(region.size(), ref_cap, rec)
-            };
-            references.push(RefPlan {
-                index: 0,
-                source: region.size(),
-                canvas: image1,
-            });
-            let guide_area = (working.canvas.area() as f64 * INPAINT_GUIDE_AREA) as u64;
-            references.push(RefPlan {
-                index: 0,
-                source: region.size(),
-                canvas: ref_canvas(region.size(), guide_area, rec),
-            });
+            let image1 = if working.canvas.area() <= ref_cap.saturating_add(ref_cap / 10) { working } else { ref_canvas(region.size(), ref_cap, rec) };
+            references.push(RefPlan { index: 0, source: region.size(), canvas: image1 });
+            if !marks {
+                let guide_area = (working.canvas.area() as f64 * INPAINT_GUIDE_AREA) as u64;
+                references.push(RefPlan { index: 0, source: region.size(), canvas: ref_canvas(region.size(), guide_area, rec) });
+            }
             strength = Some(adv.strength.unwrap_or(1.0).clamp(0.05, 1.0));
         }
         ResolvedMode::Outpaint => {
@@ -1462,7 +1461,9 @@ pub fn plan(
                 _ => tier_area.unwrap().min(final_area.max(256 * 256)),
             };
             let area = cap_for_refs(wanted, 1.0, &mut notes);
-            let p = plan_outpaint(src, exp, &limits(area, rec), 32).map_err(AppError::invalid)?;
+            // 64 working px of the original's border are regenerated and blended: narrower bands
+            // left a visible line on flat backgrounds (10-30 suit Expand).
+            let p = plan_outpaint(src, exp, &limits(area, rec), 64).map_err(AppError::invalid)?;
             working = p.working;
             output = p.final_size;
             references.push(RefPlan {
@@ -1664,6 +1665,7 @@ pub fn plan(
         references,
         outpaint,
         inpaint_region,
+        marks,
         inpaint_action,
         quality,
         resolution: req.resolution,
@@ -2756,7 +2758,16 @@ mod tests {
         );
         // The fields stay out of saved requests unless used.
         let v = serde_json::to_value(req("x")).unwrap();
-        assert!(v.get("enhance_only").is_none() && v.get("enhanced_from").is_none());
+        assert!(v.get("enhance_only").is_none() && v.get("enhanced_from").is_none() && v.get("read_scene").is_none());
+    }
+
+    #[test]
+    fn scene_reading_is_an_edit_of_one_image() {
+        let mut r = req("");
+        r.read_scene = Some("woman".into());
+        assert_eq!(plan(&r, &inputs(&[(1324, 1176)]), &rec()).unwrap().mode, ResolvedMode::Edit, "no prompt needed");
+        assert!(plan(&r, &inputs(&[]), &rec()).is_err(), "no image");
+        assert!(plan(&r, &inputs(&[(800, 800), (800, 800)]), &rec()).is_err(), "two images");
     }
 
     #[test]

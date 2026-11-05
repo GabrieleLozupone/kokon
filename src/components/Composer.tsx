@@ -1,12 +1,12 @@
-import { ArrowUp, Brush, Check, ChevronDown, Expand, Eye, FolderOpen, Gauge, ImagePlus, Layers, Lightbulb, Maximize, Pencil, Repeat, Settings2, SlidersHorizontal, Sparkles, Square, Undo2, Video, WandSparkles, X } from "lucide-react";
+import { ArrowUp, Brush, Check, ChevronDown, Expand, Eye, FolderOpen, Gauge, ImagePlus, Layers, Lightbulb, Maximize, Pencil, Repeat, Settings, Settings2, SlidersHorizontal, Sparkles, Square, Undo2, Video, WandSparkles, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, urls } from "../lib/api";
-import { activeLoras, activeOverrides, aspectLabel, buildRequest, composing, editing, enhancerApplies, expansionPixels, formatDuration, hasOutpaint, imageName, MAX_LORAS, moveRef, needsPrompt, parseRatio, toggleLora, wantsPromptReview, type Ref } from "../lib/logic";
+import { activeLoras, activeOverrides, aspectLabel, buildRequest, composing, editing, expansionPixels, formatDuration, hasOutpaint, imageName, MAX_LORAS, moveRef, needsPrompt, parseRatio, toggleLora, typedWords, wantsPromptReview, withActionVerb, type Ref } from "../lib/logic";
 import { native } from "../lib/native";
 import { haptic } from "../lib/haptics";
 import { inBrowser, useNarrow } from "../lib/platform";
 import {
-  addAsReference, addInputs, cancelPromptReview, editShownImage, enhancerAvailable, getState, itemSource, openSettings, selectedItem, sessionLabels, setProjectLoras, setState, startNewImage, submitComposer, switchToAnimate, toastError, undoEnhancedPrompt, updateComposer, useStore, type SessionItem,
+  addAsReference, addInputs, openEditor, cancelPromptReview, editShownImage, enhancerAvailable, focusPrompt, getState, itemSource, openSettings, selectedItem, sessionLabels, setProjectLoras, setState, startNewImage, submitComposer, switchToAnimate, toastError, undoEnhancedPrompt, updateComposer, useStore, type SessionItem,
 } from "../lib/store";
 import type { InpaintAction, Plan, Quality } from "../lib/types";
 import { AdvancedPanel } from "./Advanced";
@@ -29,8 +29,8 @@ const VIDEO_DURATIONS: { frames: number; label: string; sub: string }[] = [
 ];
 
 const INPAINT_ACTIONS: { value: InpaintAction; label: string; placeholder: string }[] = [
-  { value: "edit", label: "Change", placeholder: "Describe the change in the painted area…" },
   { value: "remove", label: "Remove", placeholder: "What to remove (optional)…" },
+  { value: "edit", label: "Change", placeholder: "Describe the change in the painted area…" },
   { value: "replace", label: "Replace", placeholder: "What to put there instead…" },
   { value: "add", label: "Add", placeholder: "What to add in the painted area…" },
 ];
@@ -212,6 +212,7 @@ function ModeSwitch({ editing }: { editing: boolean }) {
 function TargetBar() {
   const c = useStore((s) => s.composer);
   const nameOf = useRefNames();
+  const narrow = useNarrow();
 
   if (c.mode === "video") {
     const isI2V = c.refs.length > 0;
@@ -259,7 +260,7 @@ function TargetBar() {
   const name = nameOf(first)?.toLowerCase() ?? (first.source.startsWith("gen:") ? "this result" : first.name);
   const outPx = hasOutpaint(c.outpaint) ? expansionPixels(c.outpaint!, first.width, first.height) : null;
   const what =
-    c.refs.length > 1 ? `Combining ${c.refs.length} images` : c.mask ? `${INPAINT_VERB[c.inpaintAction]} the painted area of ${name}` : outPx ? `Expanding ${name}` : `Editing ${name}`;
+    c.refs.length > 1 ? `Combining ${c.refs.length} images` : c.mask?.marks ? `Adding at the coloured marks on ${name}` : c.mask ? `${INPAINT_VERB[c.inpaintAction]} the painted area of ${name}` : outPx ? `Expanding ${name}` : `Editing ${name}`;
   const sub =
     c.refs.length > 1
       ? "Refer to them as image 1, image 2… in the prompt"
@@ -277,8 +278,8 @@ function TargetBar() {
       </span>
       <span className="spacer" />
       <span className="tool-group">
-        <button className={`tool ${c.mask ? "on" : ""}`} data-tour="paint" onClick={() => setState({ overlay: "inpaint" })} title="Paint the area to change; the rest stays as it is">
-          <Brush size={14} /> <span className="lbl">{c.mask ? "Area painted" : "Paint area"}</span>
+        <button className={`tool ${c.mask ? "on" : ""}`} data-tour="paint" onClick={() => openEditor("inpaint")} title="Paint where things go (one colour each), or the area to change; the rest stays as it is">
+          <Brush size={14} /> <span className="lbl">{c.mask?.marks ? "Colours painted" : c.mask ? "Area painted" : "Paint area"}</span>
         </button>
         {c.mask && (
           <button className="tool-x" title="Remove the painted area" onClick={() => updateComposer({ mask: null })}>
@@ -287,7 +288,7 @@ function TargetBar() {
         )}
       </span>
       <span className="tool-group">
-        <button className={`tool ${outPx ? "on" : ""}`} onClick={() => setState({ overlay: "expand" })} title="Extend the image beyond its borders">
+        <button className={`tool ${outPx ? "on" : ""}`} onClick={() => openEditor("expand")} title="Extend the image beyond its borders">
           <Expand size={14} /> <span className="lbl">{outPx ? "Expanded" : "Expand"}</span>
         </button>
         {outPx && (
@@ -296,6 +297,14 @@ function TargetBar() {
           </button>
         )}
       </span>
+      {/* The lab needs a mouse and room: not in the phone layout. */}
+      {c.refs.length === 1 && !narrow && (
+        <span className="tool-group">
+          <button className="tool lab" onClick={() => setState({ overlay: "layers" })} title="Experimental: put the objects into layers and save each one, and the background, as a new version">
+            <Layers size={14} /> <span className="lbl">Layers (lab)</span>
+          </button>
+        </span>
+      )}
     </div>
   );
 }
@@ -480,13 +489,19 @@ function PromptPlus() {
     >
       {(close) => (
         <>
-          <div className="label">Prompt+</div>
+          <div className="menu-title">Prompt+</div>
           <Option selected={mode === "off"} label="Off" onClick={() => (pick("off"), close())} />
           <Option selected={mode === "write"} label="On" sub="writes, then makes" onClick={() => (pick("write"), close())} />
           <Option selected={mode === "review"} label="Review first" sub="you edit it first" onClick={() => (pick("review"), close())} />
-          <button className="opt" onClick={() => (close(), openSettings("general"))}>
+          {/* How much context Prompt+ gives the image model: only about what is there or what changes. */}
+          <div className="menu-sep" />
+          <div className="label">Detail</div>
+          <Option selected={!c.enhanceDetail} label="Standard" sub="short, focused" onClick={() => (updateComposer({ enhanceDetail: false }), close())} />
+          <Option selected={c.enhanceDetail} label="Detailed" sub="more context" onClick={() => (updateComposer({ enhance: true, enhanceDetail: true }), close())} />
+          <div className="menu-sep" />
+          <button className="opt" onClick={() => (close(), openSettings("general", "prompt-plus"))}>
             <span className="check">
-              <Settings2 size={15} />
+              <Settings size={15} />
             </span>
             <span>Prompt+ instructions…</span>
           </button>
@@ -549,7 +564,7 @@ export function Composer() {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const hasImages = c.refs.length > 0;
   const overrides = activeOverrides(c.advanced);
-  const canEnhance = useStore(enhancerAvailable) && enhancerApplies(c);
+  const canEnhance = useStore(enhancerAvailable);
   const newImage = !editing(c);
   // Prompt+ review: the prompt it is writing streams into the box, which is read-only meanwhile.
   const review = useStore((s) => s.review);
@@ -626,6 +641,8 @@ export function Composer() {
         : "Describe the new image with the reference: the scene, what it's doing…"
     : c.refs.length > 1
       ? "Describe how to combine image 1, image 2…"
+      : c.mask?.marks
+        ? "Say what goes at each colour, e.g. “a leather armchair at the red, a lamp at the blue”…"
       : c.mask
         ? INPAINT_ACTIONS.find((a) => a.value === c.inpaintAction)!.placeholder
         : outPx
@@ -696,7 +713,7 @@ export function Composer() {
       className="send"
       title={wantsPromptReview(c) ? "Write the prompt with Prompt+ (Enter)" : newImage ? "Create (Enter)" : "Apply (Enter)"}
       aria-label={wantsPromptReview(c) ? "Write the prompt" : "Generate"}
-      disabled={!c.prompt.trim() && needsPrompt(c)}
+      disabled={!typedWords(c) && needsPrompt(c)}
       onClick={submit}
     >
       {wantsPromptReview(c) ? <WandSparkles size={17} strokeWidth={2.2} /> : <ArrowUp size={18} strokeWidth={2.4} />}
@@ -737,8 +754,8 @@ export function Composer() {
           <div className="controls">
             <AddImage />
 
-            {c.mask && (
-              <Seg value={c.inpaintAction} options={INPAINT_ACTIONS} onChange={(v) => updateComposer({ inpaintAction: v })} />
+            {c.mask && !c.mask.marks && (
+              <Seg value={c.inpaintAction} options={INPAINT_ACTIONS} onChange={(v) => (updateComposer({ inpaintAction: v, prompt: withActionVerb(c.prompt, v), enhancedFrom: null }), focusPrompt(true))} />
             )}
 
             {shaped && (

@@ -670,6 +670,39 @@ pub const UPSCALER: Download = Download {
     engine_tag: None,
 };
 
+/// Adobe TrustMark, variant P (MIT code and weights): the invisible AI watermark every result
+/// gets (watermark.rs; AI Act Art. 50(2), with the XMP of provenance.rs). Bundled with the app
+/// like the upscaler (copied into place at start) so marking never waits for a download; Adobe's
+/// model host is the fallback. Pinned by size and SHA-256 (downloaded 2026-11-04).
+pub const TRUSTMARK_P_ENCODER: Download = Download {
+    id: "trustmark_p_encoder",
+    label: "TrustMark P encoder (AI watermark)",
+    kind: FileKind::Model,
+    url: "https://cai-watermark.adobe.net/watermarking/trustmark-models/encoder_P.onnx",
+    fallback_urls: &[],
+    page: "https://github.com/adobe/trustmark",
+    size: 17_312_208,
+    sha256: "053441c9c9f05fc158ccba71c610d9d58fcd2c82d1912bf0ffcee988cf2f74c8",
+    dest: "models/watermark/encoder_P.onnx",
+    provides: &[],
+    engine_tag: None,
+};
+
+/// The TrustMark P decoder: reads the watermark (skip an image already marked, "Check an image").
+pub const TRUSTMARK_P_DECODER: Download = Download {
+    id: "trustmark_p_decoder",
+    label: "TrustMark P decoder (AI watermark check)",
+    kind: FileKind::Model,
+    url: "https://cai-watermark.adobe.net/watermarking/trustmark-models/decoder_P.onnx",
+    fallback_urls: &[],
+    page: "https://github.com/adobe/trustmark",
+    size: 47_400_467,
+    sha256: "be6d7c33f8a7b376f179e75f3f7c58ff816a9ac7bb6d37fd0a729a635f624c35",
+    dest: "models/watermark/decoder_P.onnx",
+    provides: &[],
+    engine_tag: None,
+};
+
 const ESRGAN_MODELS: &str = "https://huggingface.co/uwg/upscaler/tree/main/ESRGAN";
 
 /// 4x_NMKD-Superscale-SP_178000_G by Nmkd (ESRGAN, WTFPL): the default upscaler since
@@ -1062,6 +1095,7 @@ pub fn recommended_preset(vram_mib: Option<u64>, unified: bool) -> &'static Pres
 pub fn downloads_for(p: &Preset, backend: GpuBackend, sdcpp_dir: &Path) -> Vec<Download> {
     let mut v = engine_downloads(backend);
     v.push(UPSCALER);
+    v.extend([TRUSTMARK_P_ENCODER, TRUSTMARK_P_DECODER]);
     if backend != GpuBackend::Metal {
         v.push(SUPERSCALE);
     }
@@ -1115,6 +1149,7 @@ pub fn downloads_for_profile(
 ) -> Vec<Download> {
     let mut v = engine_downloads(backend);
     v.push(UPSCALER);
+    v.extend([TRUSTMARK_P_ENCODER, TRUSTMARK_P_DECODER]);
     if backend != GpuBackend::Metal {
         v.push(SUPERSCALE);
     }
@@ -1255,18 +1290,11 @@ mod tests {
         );
         for p in PRESETS {
             let cuda = downloads_for(p, GpuBackend::Cuda, Path::new("new"));
-            assert_eq!(cuda.len(), 8);
-            assert!(
-                cuda.iter().any(|d| d.id == "upscaler")
-                    && cuda.iter().any(|d| d.id == "upscaler_superscale"),
-                "MoSR (bundled) and the default model"
-            );
+            assert_eq!(cuda.len(), 10);
+            assert!(cuda.iter().any(|d| d.id == "upscaler") && cuda.iter().any(|d| d.id == "upscaler_superscale"), "MoSR (bundled) and the default model");
             let vk = downloads_for(p, GpuBackend::Vulkan, Path::new("new"));
-            assert_eq!(vk.len(), 7);
-            assert!(
-                vk.iter()
-                    .all(|d| d.id != "engine_cuda" && d.id != "cuda_runtime")
-            );
+            assert_eq!(vk.len(), 9);
+            assert!(vk.iter().all(|d| d.id != "engine_cuda" && d.id != "cuda_runtime"));
         }
     }
 
@@ -1517,15 +1545,7 @@ mod tests {
         std::fs::write(&vae, b"mine").unwrap();
         assert_eq!(profile_model_downloads(&p).len(), 1);
         let all = downloads_for_profile(&p, GpuBackend::Vulkan);
-        assert_eq!(
-            all.iter().map(|d| d.id).collect::<Vec<_>>(),
-            [
-                "engine_vulkan",
-                "upscaler",
-                "upscaler_superscale",
-                "vision_projector"
-            ]
-        );
+        assert_eq!(all.iter().map(|d| d.id).collect::<Vec<_>>(), ["engine_vulkan", "upscaler", "trustmark_p_encoder", "trustmark_p_decoder", "upscaler_superscale", "vision_projector"]);
     }
 
     #[test]

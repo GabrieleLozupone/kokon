@@ -43,7 +43,7 @@
       "url": "https://kokon.app/",
       "downloadUrl": "https://github.com/GabrieleLozupone/kokon/releases/latest",
       "installUrl": "https://github.com/GabrieleLozupone/kokon/releases/latest",
-      "softwareVersion": "0.11.2",
+      "softwareVersion": "0.12.0",
       "releaseNotes": "https://github.com/GabrieleLozupone/kokon/releases/latest",
       "softwareHelp": { "@type": "CreativeWork", "url": "https://kokon.app/prompt-guide/", "name": "Prompt guide for Qwen-Image 2.1" },
       "applicationCategory": "MultimediaApplication",
@@ -51,15 +51,15 @@
       "operatingSystem": "Windows 10, Windows 11, macOS 15, Linux",
       "processorRequirements": "NVIDIA, AMD or Intel GPU with 12 GB of VRAM (NVIDIA 8 GB in beta), or Apple Silicon",
       "storageRequirements": "15 GB",
-      "fileSize": "53 MB",
+      "fileSize": "136 MB",
       "isAccessibleForFree": true,
       "license": "https://www.gnu.org/licenses/agpl-3.0.html",
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
       "screenshot": "https://kokon.app/assets/kokon-poster.jpg?v=3",
       "image": "https://kokon.app/assets/og.png",
-      "featureList": ["Edit photos with a sentence", "Create images from text", "Prompt+: a few words become a detailed prompt, written by the model already loaded", "Your own Qwen-Image 2.1 LoRAs (beta)", "Paint an area to change only that area (inpainting)", "Remove, replace and add objects", "Expand images beyond their borders (outpainting)", "Before/after comparison and version history", "Use it from a phone, tablet or laptop in the browser, behind a password", "Docker image for NVIDIA GPUs", "Private mode", "MCP server and local HTTP API for AI agents", "Runs offline on NVIDIA, AMD, Intel and Apple Silicon"],
+      "featureList": ["Edit photos with a sentence", "Create images from text", "Prompt+: a few words become a detailed prompt, written by the model already loaded", "Your own Qwen-Image 2.1 LoRAs (beta)", "Paint an area to change only that area (inpainting)", "Remove, replace and add objects", "Expand images beyond their borders (outpainting)", "Split an image into layers: each object cut out, the background filled in behind it (Layers lab, experimental)", "Export layers as a PSD for Photoshop, GIMP or Photopea", "Paint with colours: one colour per thing, say what goes there", "AI marking in every image: IPTC metadata and an invisible watermark", "Before/after comparison and version history", "Use it from a phone, tablet or laptop in the browser, behind a password", "Docker image for NVIDIA GPUs", "Private mode", "MCP server and local HTTP API for AI agents", "Runs offline on NVIDIA, AMD, Intel and Apple Silicon"],
       "author": { "@id": "https://gabrielelozupone.github.io/#me" },
-      "sameAs": ["https://github.com/GabrieleLozupone/kokon", "https://www.npmjs.com/package/kokon-mcp", "https://www.youtube.com/watch?v=y2NAJkZ4vH0"]
+      "sameAs": ["https://github.com/GabrieleLozupone/kokon", "https://www.npmjs.com/package/kokon-mcp", "https://www.youtube.com/@glozupone", "https://www.youtube.com/watch?v=y2NAJkZ4vH0"]
     },
     {
       "@type": "Person",
@@ -80,6 +80,25 @@
       "embedUrl": "https://www.youtube.com/embed/y2NAJkZ4vH0"
     },
     {
+      "@type": "VideoObject",
+      "name": "Free AI photo editor on your PC: remove people, restore old photos, change colors",
+      "description": "What Kokon can do, in examples made with it: remove photobombers, fix closed eyes, restore and colorize an old photo, add someone who is missing, try a haircut or a jacket, repaint a wall, turn a selfie into a headshot, put text on an invite.",
+      "thumbnailUrl": "https://kokon.app/assets/img/videos/usecases.webp",
+      "contentUrl": "https://kokon.app/assets/usecases.mp4?v=1",
+      "uploadDate": "2026-11-04",
+      "duration": "PT1M25S",
+      "embedUrl": "https://www.youtube.com/embed/WDbHxkbpU4s"
+    },
+    {
+      "@type": "VideoObject",
+      "name": "Kokon 0.12: split any image into layers, move objects, export to PSD",
+      "description": "The Layers lab: click each object, Kokon cuts it out onto its own layer and paints the background behind it; move, hide or edit each layer, blend it into the scene, export a PSD. Also painting with colours and Kokon's own Mac engine.",
+      "thumbnailUrl": "https://kokon.app/assets/img/videos/update-0.12.webp",
+      "uploadDate": "2026-11-04",
+      "duration": "PT2M21S",
+      "embedUrl": "https://www.youtube.com/embed/eGr9yYe7NVc"
+    },
+    {
       "@type": "WebSite",
       "@id": "https://kokon.app/#site",
       "name": "Kokon",
@@ -92,7 +111,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/style.css?v=13">
+<link rel="stylesheet" href="assets/style.css?v=14">
 <link rel="stylesheet" href="assets/devices.css?v=1">
 <script type="application/ld+json">
 {
@@ -164,11 +183,16 @@
    }
   },
   {
+      "@type": "Question",
+      "name": "Can Kokon split an image into layers or make a PSD?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes, since 0.12, in the Layers lab (experimental). Click each thing you want on its own layer; Kokon cuts it out and paints the background behind it, so moving it leaves no hole. Then move, resize, hide or edit each layer, and save one image or a layered PSD for Photoshop, GIMP or Photopea. Text in the picture becomes an image layer, not editable type." }
+    },
+    {
    "@type": "Question",
    "name": "Is it an alternative to Photoshop Generative Fill?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "For many edits, yes: paint an area and describe what should be there, or remove, replace and add objects. It runs offline and costs nothing, but it is an AI editor, not a full layer-based image editor."
+    "text": "For many edits, yes: paint an area and describe what should be there, or remove, replace and add objects. It runs offline and costs nothing. Since 0.12 it can also split an image into layers and export a PSD, but it is an AI editor, not a full layer-based editor like Photoshop."
    }
   },
   {
@@ -282,6 +306,7 @@
             <li><a href="/self-hosted/"><b>Phone and server</b><span>Other devices, Linux, Docker, Tailscale</span></a></li>
             <li><a href="/prompt-guide/"><b>Prompt guide</b><span>Write prompts that work</span></a></li>
             <li><a href="/remove-objects-from-photos-offline/"><b>Remove objects</b><span>Step by step, offline</span></a></li>
+            <li><a href="/image-to-layers/"><b>Image to layers <span class="new">New</span></b><span>Split a photo, export a PSD</span></a></li>
           </ul></div></li>
         <li class="dd"><button type="button" aria-expanded="false" aria-controls="dd-compare">Compare<svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"/></svg></button>
           <div class="dd-panel" id="dd-compare"><ul>
@@ -305,25 +330,49 @@
 
 <main id="top">
   <section class="hero">
-    <div class="wrap">
+    <div class="wall" id="wall" aria-hidden="true"></div>
+    <div class="wrap hero-top">
       <span class="eyebrow rv"><b>Beta</b><span>A local alternative to Nano Banana<span class="eb-long"> and Generative Fill</span></span></span>
       <h1 class="rv d1">Edit photos by describing the change.</h1>
-      <p class="lede rv d2">Kokon runs the best open image model on your own computer, set up for your GPU by one installer. Brush an area, type what you want, get the edit. Your photos stay with you, and you can edit as often as you like.</p>
       <div class="ctas rv d3" id="download">
         <a class="btn primary" href="https://github.com/GabrieleLozupone/kokon/releases/latest" rel="noopener" data-dl="windows"><svg fill="currentColor"><use href="#win"/></svg>Download for Windows</a>
         <a class="btn ghost" href="https://github.com/GabrieleLozupone/kokon/releases/latest" rel="noopener" data-dl="mac"><svg fill="currentColor"><use href="#apple"/></svg>Download for macOS <span class="tag">BETA</span></a>
         <a class="btn ghost" href="https://github.com/GabrieleLozupone/kokon/releases/latest" rel="noopener"><svg fill="currentColor"><use href="#linux"/></svg>Download for Linux <span class="tag">BETA</span></a>
       </div>
-      <p class="fine rv d3">Free and open source · Windows, Linux with a 12 GB GPU · Apple Silicon Macs · images for non-commercial use</p>
+      <p class="fine rv d3">Free and open source · runs on your own GPU · images for non-commercial use</p>
     </div>
     <div class="wrap">
-      <div class="showreel rv">
+      <div class="showreel rv" id="videos">
         <div class="glow"></div>
         <div class="frame">
-          <video id="reel" src="assets/kokon.mp4?v=3" poster="assets/kokon-poster.jpg?v=3" muted loop playsinline preload="metadata" aria-label="Kokon in use: Prompt+ writing a prompt from a few words, painting an area to remove a scooter, and five more edits"></video>
-          <button class="sound" id="reel-btn" type="button" aria-label="Watch the film from the start with sound">🔊 Watch with sound</button>
+          <div class="slide on">
+            <video class="reel" src="assets/usecases.mp4?v=1" poster="assets/img/videos/usecases.webp" muted loop playsinline preload="metadata" aria-label="What you can do with Kokon: remove photobombers, fix closed eyes, restore and colorize an old photo, add someone who is missing, try a haircut or a jacket, repaint a wall, and more. All images are examples made with Kokon."></video>
+            <button class="sound" type="button" aria-label="Watch the video from the start with sound">🔊 Watch with sound</button>
+          </div>
+          <div class="slide">
+            <video class="reel" src="assets/kokon.mp4?v=3" poster="assets/kokon-poster.jpg?v=3" muted loop playsinline preload="none" aria-label="Kokon in use: Prompt+ writing a prompt from a few words, painting an area to remove a scooter, and five more edits"></video>
+            <button class="sound" type="button" aria-label="Watch the film from the start with sound">🔊 Watch with sound</button>
+          </div>
+          <div class="slide"><button class="yt-facade" type="button" data-yt="5wqd9jus8C0" style="background-image:url(assets/img/videos/demo.webp)" aria-label="Play the video: from setup to the first edit (YouTube)"><span class="play"></span><span class="yt-note">Plays on YouTube</span></button></div>
         </div>
-        <p class="reel-link"><a href="https://youtu.be/y2NAJkZ4vH0" rel="noopener">Watch in 4K on YouTube</a> · <a href="https://youtu.be/qGiGXasJJNI" rel="noopener">What's new in 0.10</a></p>
+        <div class="vtabs" role="tablist" aria-label="Videos">
+          <button class="vtab on" type="button" role="tab" aria-selected="true"><img src="assets/img/videos/usecases.webp" alt=""><div><b>What you can do with it</b><span>Everyday edits · 1:25</span></div><i class="bar"></i></button>
+          <button class="vtab" type="button" role="tab" aria-selected="false"><img src="assets/kokon-poster.jpg?v=3" alt=""><div><b>Kokon in 85 seconds</b><span>The film · 1:25</span></div><i class="bar"></i></button>
+          <button class="vtab" type="button" role="tab" aria-selected="false"><img src="assets/img/videos/demo.webp" alt=""><div><b>From setup to the first edit</b><span>Real-time demo · 0:58</span></div><i class="bar"></i></button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" id="layers">
+    <div class="wrap center">
+      <p class="kicker rv">New in 0.12 · Layers lab</p>
+      <h2 class="rv d1" style="margin-left:auto;margin-right:auto">Any image, split into layers.</h2>
+      <p class="sec-lede rv d2" style="margin-left:auto;margin-right:auto">Click the things you want. Each gets its own layer, with the background painted in behind.</p>
+      <div class="layers-demo rv" data-layers-demo></div>
+      <div class="layers-ctas rv">
+        <a class="btn yt" href="https://youtu.be/eGr9yYe7NVc" rel="noopener"><svg><use href="#youtube"/></svg>Watch the 0.12 video</a>
+        <a class="btn ghost" href="image-to-layers/">How to split an image into layers</a>
       </div>
     </div>
   </section>
@@ -488,7 +537,7 @@
         <article class="card b-small rv">
           <div class="icon"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></div>
           <h3>No Python. One installer.</h3>
-          <p>A small native app, about 55 MB. The models download and are checked on first run, with resume.</p>
+          <p>A native app, about 140 to 170 MB. The models download and are checked on first run, with resume.</p>
           <div class="vis"><div class="big-num">55<small>MB installer</small></div></div>
         </article>
         <article class="card b-wide rv d1">
@@ -519,7 +568,7 @@
       <h2 class="rv d1">Run Qwen-Image 2.1 locally in three steps.</h2>
       <p class="sec-lede rv d2">No Python environment, no ComfyUI workflows, no model files to hunt down. <a href="qwen-image-2-1-local/" style="text-decoration:underline">Read the full guide</a>.</p>
       <div class="privacy">
-        <article class="card rv"><span class="step">1</span><h3>Download the installer</h3><p>A native app for Windows 10/11 (about 55 MB), macOS on Apple Silicon or Linux (.deb and .rpm, about 75 MB). On Windows it installs for your user, no admin rights needed.</p></article>
+        <article class="card rv"><span class="step">1</span><h3>Download the installer</h3><p>A native app for Windows 10/11 (about 136 MB), macOS on Apple Silicon (about 162 MB) or Linux (.deb and .rpm, about 170 MB). On Windows it installs for your user, no admin rights needed.</p></article>
         <article class="card rv d1"><span class="step">2</span><h3>Let it set up the model</h3><p>Kokon detects your GPU (NVIDIA, AMD, Intel or Apple Silicon), picks the right preset and downloads Qwen-Image 2.1 Turbo, with resume and SHA-256 checks.</p></article>
         <article class="card rv d2"><span class="step">3</span><h3>Describe the change</h3><p>Drop a photo, write what you want and press Enter. Or paint an area first, and only that area changes.</p></article>
       </div>
@@ -634,7 +683,8 @@
         <details><summary>Does it work on AMD or Intel GPUs?</summary><p>Yes, in beta, through the Vulkan engine on Windows with 12 GB of VRAM or more. On NVIDIA it uses CUDA; on Apple Silicon Macs it uses Metal.</p></details>
         <details><summary>My GPU has 8 GB. Will it work?</summary><p>Yes, in beta. Kokon makes images at about 1 megapixel on 8 GB cards; users report it works on an RTX 3060 Ti and an RTX 5050 Laptop (1 to 2 minutes per edit). 16 GB of system RAM is recommended. On a Mac, 16 GB of unified memory works but slowly; 32 GB is recommended.</p></details>
         <details><summary>Can Claude Code or Cursor generate images with it?</summary><p>Yes. Kokon ships an MCP server: register it once and any MCP client can create, edit, inpaint, expand and upscale images on your GPU, for free and without an API key.</p></details>
-        <details><summary>Is it an alternative to Photoshop Generative Fill?</summary><p>For many edits, yes: paint an area and describe what should be there, or remove, replace and add objects. It runs offline and costs nothing, but it is an AI editor, not a full layer-based image editor.</p></details>
+        <details><summary>Can Kokon split an image into layers or make a PSD?</summary><p>Yes, since 0.12, in the Layers lab (experimental). Click each thing you want on its own layer; Kokon cuts it out and paints the background behind it, so moving it leaves no hole. Then move, resize, hide or edit each layer, and save one image or a layered PSD for Photoshop, GIMP or Photopea. Text in the picture becomes an image layer, not editable type. More in <a href="image-to-layers/" style="text-decoration:underline">split an image into layers</a>.</p></details>
+        <details><summary>Is it an alternative to Photoshop Generative Fill?</summary><p>For many edits, yes: paint an area and describe what should be there, or remove, replace and add objects. It runs offline and costs nothing. Since 0.12 it can also split an image into layers and export a PSD, but it is an AI editor, not a full layer-based editor like Photoshop.</p></details>
         <details><summary>Can I use the images commercially?</summary><p>Not with the default model. The app is open source (AGPL-3.0), but Qwen-Image 2.1 is released under the Qwen Research License: research and evaluation only, no commercial use without a license from the Qwen team. The default upscaler (Superscale-SP) allows commercial use; the optional UltraSharp upscaler is non-commercial (CC BY-NC-SA 4.0).</p></details>
         <details><summary>Windows says the app is unrecognized. Is it safe?</summary><p>The beta installer is not code-signed yet, so SmartScreen warns about it. Click &quot;More info&quot; and then &quot;Run anyway&quot;. The code is public and every download the app makes is checked against a pinned hash.</p></details>
         <details id="mac-open"><summary>macOS says Kokon cannot be opened. What do I do?</summary><p>The beta is not notarized by Apple yet, so macOS blocks it the first time:</p>
@@ -684,6 +734,7 @@
       <a href="offline-alternative-to-nano-banana/">Offline Nano Banana alternative</a>
       <a href="comfyui-alternative/">Simple ComfyUI alternative</a>
       <a href="remove-objects-from-photos-offline/">Remove objects offline</a>
+      <a href="image-to-layers/">Image to layers</a>
       <a href="qwen-image-2-1-local/">Run Qwen-Image locally</a>
       <a href="mcp-image-generation/">MCP image generation</a>
       <a href="self-hosted/">Use it from your phone</a>
@@ -774,12 +825,66 @@
   }), { threshold: 0.18 });
   document.querySelectorAll(".rv, #mask-demo, #cmp").forEach((el) => io.observe(el));
 
-  const reel = $("reel"), reelBtn = $("reel-btn");
-  const vio = new IntersectionObserver(([en]) => { if (en.isIntersecting) reel.play().catch(() => {}); else reel.pause(); }, { threshold: 0.3 });
-  vio.observe(reel);
-  // Browsers only autoplay muted, so the reel starts silent; the button restarts it with the
-  // voice-over and music.
-  reelBtn.addEventListener("click", () => { reel.currentTime = 0; reel.muted = false; reel.controls = true; reel.loop = false; reel.play().catch(() => {}); reelBtn.remove(); });
+  // Hero wall: before/after pairs made by Kokon (small copies in assets/img/wall), three rows
+  // scrolling in turn, each tile wiping to its edit with the request on it.
+  const PAIRS = [
+    ["street", "street-removed", "remove the red scooter"], ["uc01-before", "uc01-after", "remove the tourists"],
+    ["cabin", "cabin-winter", "make it a snowy winter night"], ["uc03-before", "uc03-after", "restore this old photo"],
+    ["bakery", "bakery-text", "change the sign to “KOKON CAFÉ”"], ["uc13-before", "uc13-after", "a copper bob haircut"],
+    ["potter", "potter-watercolor", "turn it into a watercolor"], ["uc10-before", "uc10-after", "paint the wall sage green"],
+    ["room", "room-sofa", "a green velvet sofa instead"], ["uc17-before", "uc17-after", "on a flamingo, surfing a wave"],
+    ["sneaker", "sneaker-ad", "on wet black stone, advertising shot"], ["uc03-after", "uc03-color", "colorize it"],
+    ["street-removed", "street-cat", "add a ginger cat"], ["uc04-before", "uc04-after", "add grandma from this photo"],
+    ["lighthouse-framed", "lighthouse-wide", "expand: continue the coastline"], ["uc16-before", "uc16-after", "a professional headshot"],
+    ["uc12-before", "uc12-after", "tidy up the garden"], ["uc11-before", "uc11-after", "a leather sofa"], ["uc05-before", "uc05-after", "tidy up the room"],
+  ];
+  const wall = $("wall");
+  if (wall) {
+    const w = (n) => `assets/img/wall/${n}.webp`;
+    const tile = ([a, b, p], k) => `<div class="wall-tile" style="--d:${-((k * 3.7) % 10).toFixed(1)}s"><img src="${w(a)}" alt="" loading="lazy" decoding="async"><div class="aw"><img src="${w(b)}" alt="" loading="lazy" decoding="async"></div><span class="chip">${p}</span></div>`;
+    wall.innerHTML = `<div class="wall-plane">${[0, 1, 2].map((r) => {
+      const row = PAIRS.slice(r * 6).concat(PAIRS.slice(0, r * 6));
+      const html = row.map((p, i) => tile(p, i + r * 5)).join("");
+      return `<div class="wall-row${r % 2 ? " r" : ""}" style="animation-duration:${110 + r * 18}s">${html}${html}</div>`;
+    }).join("")}</div>`;
+  }
+
+  // Videos: the film plays here; the others are YouTube, loaded only when played.
+  const slides = [...document.querySelectorAll("#videos .slide")], vtabs = [...document.querySelectorAll("#videos .vtab")];
+  let vcur = 0;
+  const showVideo = (i) => {
+    vcur = (i + slides.length) % slides.length;
+    slides.forEach((s, j) => {
+      s.classList.toggle("on", j === vcur);
+      if (j !== vcur) { const f = s.querySelector("iframe"); if (f) f.replaceWith(f._facade); }
+    });
+    vtabs.forEach((b, j) => { b.classList.toggle("on", j === vcur); b.setAttribute("aria-selected", j === vcur); });
+    playShown();
+  };
+  vtabs.forEach((b, j) => b.addEventListener("click", () => showVideo(j)));
+  document.querySelectorAll(".yt-facade").forEach((f) => f.addEventListener("click", () => {
+    const ifr = document.createElement("iframe");
+    ifr.src = `https://www.youtube-nocookie.com/embed/${f.dataset.yt}?autoplay=1&rel=0`;
+    ifr.title = f.getAttribute("aria-label").replace("Play the video: ", "");
+    ifr.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
+    ifr.allowFullscreen = true;
+    ifr._facade = f;
+    f.replaceWith(ifr);
+  }));
+
+  // The local videos (use cases first, then the film) play muted while their slide is shown and the
+  // carousel is on screen; their button restarts the video with the voice-over and music.
+  let videosSeen = false;
+  const playShown = () => slides.forEach((s, j) => { const v = s.querySelector("video.reel"); if (!v) return; if (j === vcur && videosSeen) v.play().catch(() => {}); else v.pause(); });
+  new IntersectionObserver(([en]) => { videosSeen = en.isIntersecting; playShown(); }, { threshold: 0.3 }).observe(document.querySelector("#videos .frame"));
+  slides.forEach((s, j) => {
+    const vv = s.querySelector("video.reel"), bar = vtabs[j] && vtabs[j].querySelector(".bar");
+    if (vv && bar) vv.addEventListener("timeupdate", () => { bar.style.width = `${(vv.currentTime / (vv.duration || 1)) * 100}%`; });
+  });
+  slides.forEach((s) => {
+    const v = s.querySelector("video.reel"), btn = s.querySelector(".sound");
+    if (v && btn) btn.addEventListener("click", () => { v.currentTime = 0; v.muted = false; v.controls = true; v.loop = false; v.play().catch(() => {}); btn.remove(); });
+  });
 
   // Other devices: the scene is drawn at a fixed size and scaled to the column; on a narrow
   // screen it drops the laptop and moves the parts (data-narrow).
@@ -819,6 +924,7 @@
     </form>
   </div>
 </dialog>
+<script src="/assets/layers-demo.js?v=1" defer></script>
 <script src="/download.js" defer></script>
 <script src="/nav.js" defer></script>
 </body>

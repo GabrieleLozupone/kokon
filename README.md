@@ -40,7 +40,8 @@
 <p align="center">
   <a href="https://kokon.app/">Website</a> ·
   <a href="#install">Install</a> ·
-  <a href="#new-in-011-use-it-from-your-phone-or-run-it-as-a-server">Phone & server</a> ·
+  <a href="#new-in-012-split-any-image-into-layers">New in 0.12</a> ·
+  <a href="#since-011-use-it-from-your-phone-or-run-it-as-a-server">Phone & server</a> ·
   <a href="#what-you-can-do">Features</a> ·
   <a href="#examples">Examples</a> ·
   <a href="#use-it-from-your-ai-agent">AI agents</a> ·
@@ -51,7 +52,7 @@
 
 https://github.com/user-attachments/assets/8851c580-99b9-432a-82be-b6d42fa9a749
 
-<p align="center"><a href="https://youtu.be/y2NAJkZ4vH0">Watch in 4K on YouTube</a> · <a href="https://youtu.be/qGiGXasJJNI">What's new in 0.10 (42 s)</a></p>
+<p align="center"><a href="https://youtu.be/y2NAJkZ4vH0">Watch in 4K on YouTube</a> · <a href="https://youtu.be/WDbHxkbpU4s">What you can do with Kokon (85 s)</a> · <a href="https://youtu.be/eGr9yYe7NVc">What's new in 0.12</a></p>
 
 <p align="center">
   <a href="https://github.com/GabrieleLozupone/kokon/releases/latest"><picture>
@@ -72,16 +73,35 @@ https://github.com/user-attachments/assets/8851c580-99b9-432a-82be-b6d42fa9a749
 
 ---
 
-## New in 0.11: use it from your phone, or run it as a server
+## New in 0.12: split any image into layers
+
+<p align="center">
+  <a href="https://youtu.be/eGr9yYe7NVc"><img src="assets/readme/layers-0.12.webp" alt="The Layers lab: a Halloween poster split into its layers (girl, spider, ghosts, bats, text and the filled background), lifted apart in 3D, with the layer list and Export to PSD" width="860"></a>
+</p>
+<p align="center"><a href="https://youtu.be/eGr9yYe7NVc">▶ Watch the 0.12 video (2:21)</a> · <a href="https://kokon.app/image-to-layers/">Try the layers in your browser</a></p>
+
+- **Layers lab** (experimental): click the things you want on their own layer. Kokon cuts each one out and paints
+  the background behind it, so you can move, scale, hide or edit any piece, expand one that was cut off by the frame,
+  and save one image or **export a PSD** for Photoshop, GIMP or Photopea.
+- **Blend into scene** (experimental): after a move, Kokon redraws the shadows, or reflections on wet or shiny ground.
+- **Paint with colours**: one colour per thing, and say what goes there, right on the picture; **Select** picks an
+  object with one click.
+- **Prompt+ for painted areas and Expand**, with a Standard or Detailed level.
+- **Kokon's own Mac engine is the default** on Macs with 16 GB or more: about a minute for a new 1-megapixel image on
+  an M2 Pro, four times faster than before.
+- **AI marking**: every image says, in its file and in an invisible watermark, that it was made with AI
+  ([docs/ai-marking.md](docs/ai-marking.md)).
+
+---
+
+## Since 0.11: use it from your phone, or run it as a server
 
 <p align="center">
   <a href="https://kokon.app/self-hosted/"><img src="assets/readme/other-devices.webp" alt="A computer with a graphics card runs Kokon; a MacBook and an iPhone use it in the browser over the home network" width="860"></a>
 </p>
 
 Your computer with the graphics card makes the images; your phone, tablet or laptop uses Kokon in a browser.
-Nothing goes through a cloud, and there is no account.
-
-https://github.com/user-attachments/assets/ccf8da7c-175d-4d1b-9976-91eaa7bddd09
+Nothing goes through a cloud, and there is no account. [▶ Watch the 0.11 video (77 s)](https://youtu.be/XnC_7P2_cww)
 
 - **Other devices:** open **Settings → Other devices**, set a password and scan the QR code with your phone.
   Add Kokon to the home screen and it opens like an app. Off until you turn it on; 5 wrong passwords make
@@ -310,6 +330,8 @@ files are not tested by Kokon; you can switch to the official files at any time 
 | Several photos + a sentence | **Combine** them | Refer to them as “image 1”, “image 2”… and drag to reorder |
 | A brushed area + an action | **Inpaint**: Change, Remove, Replace or Add | Remove needs no prompt |
 | Dragged edges | **Expand** the photo (outpainting) | Or type pixel or percent values |
+| Clicks on the objects | **Split it into layers** (Layers lab, experimental) | The background is filled behind them; move, edit, export a PSD |
+| Areas painted in colours + what goes there | **Several changes in one go** | Only what you painted changes |
 | Any result | **Upscale** to 2×, 4K, the source size or a custom width | With the upscaler model, in seconds |
 | Any result | **Colour-grade** it with a LUT | Eight built-in looks (Neutral takes out a yellow cast) or your own `.cube` files, live preview with intensity |
 | A short idea, in any language | **Prompt+** writes the detailed prompt first | You watch it being written; for edits it looks at your photo. Runs on the model Kokon already has: no extra download, a few seconds more |
@@ -495,6 +517,8 @@ Kokon makes only two kinds of network request:
 
 - **Setup:** `github.com` for the stable-diffusion.cpp release (and the MoSR upscaler, if the copy
   that comes with the app is missing) and `huggingface.co` for the models and the other upscalers.
+  The AI watermark's models come with the app; Adobe's model host (`cai-watermark.adobe.net`) is
+  contacted only if that copy is missing.
 - **Update check:** at most once a day, the app fetches `latest.json` from this repository's
   latest GitHub release, a small file with the newest version number. Nothing about you or your
   images is sent. Turn it off on the welcome screen or in Settings → General. Updates are
@@ -613,9 +637,10 @@ image at Balanced in about 80 s (first image, model loading included); Intel Arc
 untested, and integrated graphics are not supported. Please
 [open an issue](https://github.com/GabrieleLozupone/kokon/issues) with your card and how it went.
 
-Mac: yes, in beta, on Apple Silicon (M1 or newer) with macOS 15 Sequoia or newer. It runs on a
-16 GB Mac in a lighter mode, but slowly (about 4 minutes per 1-megapixel image on an M2 Pro);
-32 GB or more and a Pro, Max or Ultra chip are recommended. See the [requirements](#requirements)
+Mac: yes, in beta, on Apple Silicon (M1 or newer) with macOS 15 Sequoia or newer. Since 0.12 Kokon runs its own
+Mac engine by default on Macs with 16 GB or more: about a minute per new 1-megapixel image on an M2 Pro (about 106 s
+for an edit), four times faster than before. LoRAs and the upscaler model still use the standard engine (Settings →
+Performance). 32 GB or more and a Pro, Max or Ultra chip are recommended. See the [requirements](#requirements)
 and [docs/platforms.md](docs/platforms.md).
 
 Linux: yes, in beta, on x86-64 with a `.deb` (Ubuntu, Debian, Mint) or an `.rpm` (Fedora). NVIDIA
@@ -754,8 +779,10 @@ or macOS version and the log from `KokonData/logs` (see the table above).
 - [x] **0.11:** the interface in a browser on your other devices, served by Kokon itself, with a password,
   and a Docker image for NVIDIA ([#15](https://github.com/GabrieleLozupone/kokon/issues/15))
 - [ ] Docker image for AMD and Intel (Vulkan); the desktop app as a client of a Kokon server elsewhere
-- [x] Kokon's own engine for Apple Silicon (GPU, CPU matrix unit and Neural Engine together; experimental, 0.11.1:
-  text to image about 4× faster on an M2 Pro)
+- [x] Kokon's own engine for Apple Silicon (GPU, CPU matrix unit and Neural Engine together; 0.11.1, the default on
+  Macs with 16 GB or more since 0.12: text to image about 4× faster on an M2 Pro)
+- [x] **0.12:** the Layers lab (split an image into layers, the background filled, PSD export; experimental), paint
+  with colours, AI marking (metadata and an invisible watermark)
 - [ ] Intel GPUs through Vulkan (to verify)
 - [ ] Background removal and transparent cutouts
 - [ ] Batch edits: one instruction for a whole folder
@@ -844,6 +871,13 @@ place to start. Please run the tests above before opening a pull request.
 
 Kokon edits real photos. Don't use it to deceive, harass or impersonate people, or to make
 images of someone without their consent. You are responsible for what you create and share.
+
+Every image Kokon makes or changes with AI is marked as such, as the EU AI Act asks: in the file's
+metadata (IPTC Digital Source Type) and with an invisible watermark ([TrustMark](https://github.com/adobe/trustmark),
+the text `Kokon-AI`) that survives JPEG, resizing and screenshots. Please don't remove these
+marks. If you publish a realistic image of real people, places or events, say that it was made
+or changed with AI. Settings → General → **Check an image** reads the marks of any image;
+[docs/ai-marking.md](docs/ai-marking.md) has the details.
 
 ## License
 

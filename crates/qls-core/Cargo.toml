@@ -14,6 +14,8 @@ futures-util = "0.3.34"
 hex = "0.4.3"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp", "bmp", "gif", "tiff"] }
 png = "0.18.1"
+# Fast stickers (matting.rs): ONNX Runtime on the CPU, linked in from pyke's prebuilt binaries.
+ort = { version = "=2.0.0-rc.14", default-features = false, features = ["std", "download-binaries", "tls-native", "api-31"] }
 
 regex = "1.13.1"
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "native-tls", "stream"] }

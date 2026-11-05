@@ -295,19 +295,24 @@ extension Checks {
             }
             return best
         }
-        let tNA = try run { try na.encode(a: (a, 0), b: (b, 0), c: (c1, 0), m: m, n: n, k: k, commands: $0) }
         let tMPS = try run {
             product.encode(commandBuffer: $0,
                            leftMatrix: MPSMatrix(buffer: a, descriptor: MPSMatrixDescriptor(rows: m, columns: k, rowBytes: k * 2, dataType: .float16)),
                            rightMatrix: MPSMatrix(buffer: b, descriptor: MPSMatrixDescriptor(rows: k, columns: n, rowBytes: n * 2, dataType: .float16)),
                            resultMatrix: MPSMatrix(buffer: c2, descriptor: MPSMatrixDescriptor(rows: m, columns: n, rowBytes: n * 4, dataType: .float32)))
         }
-        let x = c1.contents().assumingMemoryBound(to: Float.self), y = c2.contents().assumingMemoryBound(to: Float.self)
-        var diff = 0.0, norm = 0.0
-        for i in 0..<(m * n) { diff += Double(x[i] - y[i]) * Double(x[i] - y[i]); norm += Double(y[i]) * Double(y[i]) }
         let flops = 2.0 * Double(m) * Double(n) * Double(k)
-        print(String(format: "%d×%d×%d: na_matmul %.2f ms (%.1f TFLOP/s), MPS %.2f ms (%.1f TFLOP/s), relative difference %.2e",
-                     m, k, n, tNA * 1e3, flops / tNA / 1e12, tMPS * 1e3, flops / tMPS / 1e12, (diff / norm).squareRoot()))
+        // Both tile variants (`NeuralAccelerators.simdgroups`), this chip's choice marked.
+        for groups in [4, 2] {
+            guard let variant = NeuralAccelerators.make(device: context.device, simdgroups: groups) else { continue }
+            let tNA = try run { try variant.encode(a: (a, 0), b: (b, 0), c: (c1, 0), m: m, n: n, k: k, commands: $0) }
+            let x = c1.contents().assumingMemoryBound(to: Float.self), y = c2.contents().assumingMemoryBound(to: Float.self)
+            var diff = 0.0, norm = 0.0
+            for i in 0..<(m * n) { diff += Double(x[i] - y[i]) * Double(x[i] - y[i]); norm += Double(y[i]) * Double(y[i]) }
+            print(String(format: "%d×%d×%d: na_matmul, %d SIMD groups%@ %.2f ms (%.1f TFLOP/s), MPS %.2f ms (%.1f TFLOP/s), relative difference %.2e",
+                         m, k, n, groups, groups == na.simdgroups ? " (selected)" : "", tNA * 1e3, flops / tNA / 1e12,
+                         tMPS * 1e3, flops / tMPS / 1e12, (diff / norm).squareRoot()))
+        }
     }
 }
 

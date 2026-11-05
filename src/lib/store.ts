@@ -10,10 +10,11 @@ import { native } from "./native";
 import { useSyncExternalStore } from "react";
 import { markFresh } from "../components/Cocoon";
 import { api, ApiError, setPrivateInputs, subscribe, urls } from "./api";
-import { activeLoras, buildRequest, composing, emptyComposer, goneVersions, macEngineOfferDue, needsPrompt, newKey, pageOutdated, persistentAdvanced, refFromGen, refFromInput, reviewRequest, stageFitsPreview, starPromptDue, timelineLinks, undoTarget, versionLabels, wantsPromptReview, type CompareMode, type Composer, type Ref } from "./logic";
+import { activeLoras, buildRequest, composing, emptyComposer, goneVersions, isGenericName, macEngineDefaultDue, needsPrompt, newKey, pageOutdated, persistentAdvanced, refFromGen, refFromInput, reviewRequest, stageFitsPreview, starPromptDue, timelineLinks, typedWords, undoTarget, versionLabels, wantsPromptReview, type CompareMode, type Composer, type Ref } from "./logic";
+import { keepLabsIn, labsChanged, labSources, loadLab, type LabStore } from "./layerDoc";
 import type { AppErrorBody, GenerationRecord, GenerationRequest, InputRecord, JobView, LoraItem, MacBenchState, ServerState, StatusResponse } from "./types";
 
-export type Overlay = null | "gallery" | "settings" | "inpaint" | "expand" | "welcome" | "whats-new" | "mac-engine" | "prompt-tips" | "shortcuts";
+export type Overlay = null | "gallery" | "settings" | "inpaint" | "expand" | "layers" | "welcome" | "whats-new" | "prompt-tips" | "shortcuts" | "ai-check";
 
 export interface SessionItem {
   key: string;
@@ -71,6 +72,8 @@ export interface State {
   /** Last submitted prompt (Up arrow in an empty prompt brings it back). */
   lastPrompt: string;
   overlay: Overlay;
+  /** Where Paint area / Expand go back to when they close (the layers lab), else nothing. */
+  overlayBack: Overlay;
   /** The upscaler comparison, shown over any overlay (Settings, the Advanced menu). */
   compareUpscalers: boolean;
   toasts: Toast[];
@@ -97,6 +100,8 @@ export interface State {
   loras: LoraItem[];
   /** Tab Settings opens on (then cleared). */
   settingsTab: string | null;
+  /** A section of that tab to scroll to once open (its element id is `settings-<name>`). */
+  settingsFocus: string | null;
   /** Prompt+ is writing a prompt into the box for review: its job, and the user's words. */
   review: { jobId: string; prompt: string } | null;
 }
@@ -117,9 +122,9 @@ function loadPrefs(): Partial<Composer> {
 
 function savePrefs(c: Composer) {
   try {
-    const { quality, resolution, aspect, customWidth, customHeight, enhance, enhanceReview } = c;
+    const { quality, resolution, aspect, customWidth, customHeight, enhance, enhanceReview, enhanceDetail } = c;
     const advanced = persistentAdvanced(c.advanced);
-    localStorage.setItem(PREFS_KEY, JSON.stringify({ quality, resolution, aspect, customWidth, customHeight, advanced, enhance, enhanceReview }));
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ quality, resolution, aspect, customWidth, customHeight, advanced, enhance, enhanceReview, enhanceDetail }));
   } catch {
     /* storage unavailable */
   }
@@ -146,6 +151,8 @@ export interface ProjectData {
   loras?: string[];
   /** The service's revision of it (see crates/qls-core/src/projects.rs). */
   rev?: number;
+  /** Its layers lab (lib/layerDoc.ts `LabStore`); null once removed. */
+  lab?: unknown;
 }
 
 // The project list lives in kokon-service, shared by every device (0.11). Before, each app
@@ -167,7 +174,51 @@ const edits = new Map<string, number>();
 let saveTimer: number | undefined;
 
 /** What other devices need to hear about (the selection alone is this device's own). */
-const content = (p: ProjectData | undefined) => (p ? JSON.stringify([p.items.map((i) => i.key), p.meta.title, p.meta.named, p.loras]) : "");
+const content = (p: ProjectData | undefined) => (p ? JSON.stringify([p.items.map((i) => i.key), p.meta.title, p.meta.named, p.loras, p.lab ?? null]) : "");
+
+// The layers lab lives in its project (saved and merged with it). A lab made before its project
+// reached the service waits here; private projects keep theirs here only.
+const labsHere = new Map<string, LabStore>();
+/** Gallery results already hidden as lab steps (this session). */
+const hiddenSteps = new Set<string>();
+
+/** Leaves the lab's steps out of the gallery (they stay in the project): the ones made before
+ * requests were marked hidden, and any that slipped through. Only the image saved from the lab shows. */
+function hideLabSteps(lab: LabStore) {
+  for (const s of labSources(lab)) {
+    if (!s.startsWith("gen:") || hiddenSteps.has(s)) continue;
+    hiddenSteps.add(s);
+    const g = genCache.get(s.slice(4));
+    if (g?.hidden) continue;
+    api.setHidden(s.slice(4), true).catch(() => hiddenSteps.delete(s));
+  }
+}
+
+keepLabsIn({
+  get(id) {
+    const lab = projects[id]?.lab ?? labsHere.get(id);
+    if (lab && !state.privateMode) hideLabSteps(lab as LabStore);
+    return lab;
+  },
+  set(id, lab) {
+    if (state.privateMode || !projects[id]) {
+      labsHere.set(id, lab);
+      return;
+    }
+    labsHere.delete(id);
+    const p = projects[id];
+    projects[id] = { ...p, lab, meta: { ...p.meta, cover: lastCover(p.items, lab) } };
+    hideLabSteps(lab);
+    persistProjects([id]);
+  },
+});
+
+/** The lab's own images: a request editing one is a lab step (kept out of the gallery). */
+function isLabStep(source: string | undefined): boolean {
+  if (!source) return false;
+  const lab = loadLab(state.projectId);
+  return labSources(lab).has(source);
+}
 
 function persistProjects(ids: string[]) {
   for (const id of ids) {
@@ -203,6 +254,7 @@ async function applyProject(p: ProjectData) {
   if (dirty.has(id)) return;
   const old = projects[id];
   projects[id] = { ...p, selected: old?.selected && p.items.some((i) => i.key === old.selected) ? old.selected : p.selected };
+  if (JSON.stringify(p.lab ?? null) !== JSON.stringify(old?.lab ?? null)) labsChanged();
   if (id !== state.projectId || state.privateMode) {
     setState({ projects: projectList() });
     return;
@@ -283,10 +335,16 @@ const toStored = (i: SessionItem): StoredItem => ({
 });
 
 function titleOf(items: SessionItem[]): string | null {
+  const prompt = (i: SessionItem) => i.gen?.original_prompt || i.gen?.prompt || i.request?.prompt;
   for (const i of items) {
-    const p = i.gen?.original_prompt || i.gen?.prompt || i.request?.prompt;
+    const p = prompt(i);
     if (p) return p;
-    if (i.input) return i.input.original_name ? safeDecode(i.input.original_name) : "Imported image";
+    if (i.input) {
+      const name = i.input.original_name ? safeDecode(i.input.original_name) : "Imported image";
+      // A file name that says nothing ("image.png", "IMG_1234.jpg"): the project's first prompt,
+      // so it can be told apart in the list.
+      return isGenericName(name) ? (items.map(prompt).find(Boolean) ?? name) : name;
+    }
   }
   return null;
 }
@@ -299,10 +357,14 @@ function safeDecode(s: string) {
   }
 }
 
-const lastCover = (items: StoredItem[]) => {
+/** The cover: the latest image that is not a layers lab step (one object's crop, a fill...): the
+ * lab's `made` list (lib/layerDoc.ts), as the service does (crates/qls-core/src/projects.rs). */
+const lastCover = (items: StoredItem[], lab?: unknown) => {
+  const made = (lab as { made?: unknown } | undefined)?.made;
+  const steps = new Set(Array.isArray(made) ? (made as string[]) : []);
   for (let k = items.length - 1; k >= 0; k--) {
     const s = storedSource(items[k]);
-    if (s) return s;
+    if (s && !steps.has(s)) return s;
   }
   return null;
 };
@@ -327,13 +389,14 @@ function syncProject(prev: State) {
       title: old?.meta.named ? old.meta.title : titleOf(state.session) ?? old?.meta.title ?? "Untitled",
       named: old?.meta.named,
       updatedAt: edited || !old ? Date.now() : old.meta.updatedAt,
-      cover: lastCover(items),
+      cover: lastCover(items, old?.lab ?? labsHere.get(id)),
       count: countOf(items),
     },
     items,
     selected: state.selected,
     loras: state.composer.loras ?? undefined,
     rev: old?.rev,
+    lab: old?.lab ?? labsHere.get(id),
   };
   // Saved (and heard by the other devices) only when something they show changed.
   if (content(projects[id]) !== content(old)) persistProjects([id]);
@@ -407,6 +470,7 @@ let state: State = {
   composer: emptyComposer(loadPrefs()),
   lastPrompt: "",
   overlay: null,
+  overlayBack: null,
   compareUpscalers: false,
   toasts: [],
   galleryVersion: 0,
@@ -422,6 +486,7 @@ let state: State = {
   starPrompt: false,
   loras: [],
   settingsTab: null,
+  settingsFocus: null,
   review: null,
 };
 
@@ -602,17 +667,27 @@ export function dismissToast(id: string) {
 
 let unsub: (() => void) | null = null;
 
-/** After Setup or What's new: the Mac engine offer when it is due (the answer decides which engine loads), else the
- * model loads in the background so the first image starts at once. */
+/** Kokon's Mac engine, the default on Macs it suits since 0.12: switched on once (`macEngineDefaultDue`), with a note
+ * on how to go back. Remembered like the 0.11 offer's answer, so a later "off" in Settings stays off. */
+export async function turnOnMacEngine(): Promise<void> {
+  try {
+    const cfg = await api.config();
+    const ui = { ...((cfg.ui ?? {}) as Record<string, unknown>), macEngineOffered: true };
+    await api.saveConfig({ ...cfg, macEngine: true, ui });
+    toastInfo("Kokon's Mac engine is on: about 4 times faster. LoRAs and the upscaler model need the standard engine (Settings → Performance).");
+  } catch (e) {
+    toastError(e);
+  }
+}
+
+/** After Setup or What's new: Kokon's Mac engine switched on when it is due (before the model loads, so it loads on
+ * it), then the model loads in the background so the first image starts at once. */
 export async function afterStartScreens() {
   try {
     const [cfg, st] = await Promise.all([api.config(), api.status()]);
-    if (!inBrowser && macEngineOfferDue(st, (cfg.ui ?? {}) as Record<string, unknown>, cfg.setupComplete)) {
-      setState({ overlay: "mac-engine" });
-      return;
-    }
+    if (!inBrowser && macEngineDefaultDue(st, (cfg.ui ?? {}) as Record<string, unknown>, cfg.setupComplete)) await turnOnMacEngine();
   } catch {
-    // The offer can wait for the next start; the model still loads.
+    // It can wait for the next start; the model still loads.
   }
   api.startBackend().then(refreshStatus, () => refreshStatus());
 }
@@ -754,7 +829,7 @@ function onJob(job: JobView) {
       p.items = [...p.items.slice(0, k), ...stored, ...p.items.slice(k + 1)];
       if (wasSelected && stored[0]) p.selected = stored[0].key;
       // Shown at once; the service made the same change and saves it (no save from here).
-      p.meta = { ...p.meta, cover: lastCover(p.items), count: countOf(p.items), updatedAt: Date.now() };
+      p.meta = { ...p.meta, cover: lastCover(p.items, p.lab), count: countOf(p.items), updatedAt: Date.now() };
       return { jobs, projects: projectList() };
     }
     // A job from another client (e.g. MCP): track it but do not add it to a project.
@@ -942,8 +1017,8 @@ export async function refreshLoras() {
 }
 
 /** Opens Settings on one of its tabs. */
-export function openSettings(tab: string) {
-  setState({ overlay: "settings", settingsTab: tab });
+export function openSettings(tab: string, focus: string | null = null) {
+  setState({ overlay: "settings", settingsTab: tab, settingsFocus: focus });
 }
 
 /** Adds the example projects that ship with Kokon (made by Kokon itself), except the ones
@@ -1070,7 +1145,7 @@ export function forgetGeneration(id: string) {
   for (const p of Object.values(projects)) {
     if (!p.items.some((i) => i.genId === id)) continue;
     p.items = p.items.filter((i) => i.genId !== id);
-    p.meta = { ...p.meta, cover: lastCover(p.items), count: countOf(p.items) };
+    p.meta = { ...p.meta, cover: lastCover(p.items, p.lab), count: countOf(p.items) };
     changed.push(p.meta.id);
   }
   persistProjects(changed);
@@ -1121,7 +1196,7 @@ export function startNewImage() {
 /** "Edit image": the prompt edits the version shown (or the latest image). When it is one of a
  * new image's references it becomes image 1 and the others stay; a version that is not (such as
  * the new image just made) is edited on its own. */
-export function editShownImage() {
+export function editShownImage(focus = true) {
   setState((s) => {
     const shown = s.session.find((i) => i.key === s.selected);
     const ref = refOf(shown) ?? refOf([...s.session].reverse().find((i) => i.gen || i.input));
@@ -1134,7 +1209,16 @@ export function editShownImage() {
     }
     return { composer: { ...retarget(c, ref), create: false } };
   });
-  focusPrompt();
+  if (focus) focusPrompt();
+}
+
+/** Opens Paint area / Expand; from the layers lab they return there when they close. */
+export function openEditor(o: "inpaint" | "expand") {
+  setState((s) => ({ overlay: o, overlayBack: s.overlay === "layers" ? "layers" : null }));
+}
+
+export function closeEditor() {
+  setState((s) => ({ overlay: s.overlayBack, overlayBack: null }));
 }
 
 /** "Animate": turns an image (generated or uploaded input) into a video using Wan2.2 TI2V */
@@ -1256,18 +1340,38 @@ export function addInputs(records: InputRecord[]) {
   if (getState().composer.refs.length >= 10) toastInfo("Up to 10 reference images are supported.");
 }
 
-export async function submitRequest(req: GenerationRequest) {
+/** Images made in the app (the layers lab's split): new versions at the end of the project, not
+ * references; `select` (an index in `records`) is shown and becomes the image to edit. */
+export function addVersions(records: InputRecord[], select = 0) {
+  if (!records.length) return;
+  const items: SessionItem[] = records.map((r) => ({ key: newKey(), kind: "input", input: r }));
+  setState((s) => ({ session: [...s.session, ...items], redo: [] }));
+  selectItem(items[Math.min(select, items.length - 1)].key);
+}
+
+/** Makes a version the image to edit (the layers lab's selected layer); false when the version
+ * is no longer in the project. `focus`: the prompt box takes the keyboard. */
+export function editSource(source: string, focus = true): boolean {
+  const it = getState().session.find((i) => itemSource(i) === source);
+  if (!it) return false;
+  selectItem(it.key);
+  editShownImage(focus);
+  return true;
+}
+
+/** Sends a request; its job joins the project as a version. The job's id, or null when it failed. */
+export async function submitRequest(req: GenerationRequest): Promise<string | null> {
   try {
     if (getState().privateMode) req = { ...req, private: true };
     const job = await api.submit(req);
     const item: SessionItem = { key: newKey(), kind: "job", jobId: job.id, request: req };
     setState((s) => ({ jobs: { ...s.jobs, [job.id]: job }, session: [...s.session, item], selected: item.key, redo: [] }));
-    return true;
+    return job.id;
   } catch (e) {
     // The prompt and images stay in the composer: once the files are back, Generate again.
     if (isMissingModel(e)) openModelSetup();
     toastError(e);
-    return false;
+    return null;
   }
 }
 
@@ -1289,7 +1393,9 @@ export async function submitComposer() {
   const target = composing(s.composer) ? undefined : s.composer.refs[0]?.source;
   const parent = target?.startsWith("gen:") ? target.slice(4) : null;
   const req: GenerationRequest = { ...buildRequest(s.composer, parent), loras: activeLoras(s.composer, s.loras) };
-  if (!req.prompt && needsPrompt(s.composer)) {
+  // Made from the layers lab: a step, out of the gallery (only the image saved from the lab shows).
+  if (s.overlay === "layers" || isLabStep(target)) req.hidden = true;
+  if (!typedWords(s.composer) && needsPrompt(s.composer)) {
     toastInfo("Describe what to create or change.");
     return;
   }
@@ -1364,13 +1470,20 @@ export function focusPrompt(cursorToEnd = false) {
 }
 
 export function removeSessionItem(key: string) {
+  removeSessionItems([key]);
+}
+
+/** Versions taken out of the open project (their images stay in All images). */
+export function removeSessionItems(keys: string[]) {
   const s = getState();
-  const removed = s.session.find((i) => i.key === key);
-  const session = s.session.filter((i) => i.key !== key);
-  const src = removed ? itemSource(removed) : null;
-  const refs = src ? s.composer.refs.filter((r) => r.source !== src) : s.composer.refs;
+  const gone = new Set(keys);
+  const removed = s.session.filter((i) => gone.has(i.key));
+  if (!removed.length) return;
+  const session = s.session.filter((i) => !gone.has(i.key));
+  const srcs = new Set(removed.map(itemSource).filter(Boolean));
+  const refs = s.composer.refs.filter((r) => !srcs.has(r.source));
   setState({ session, composer: refs.length === s.composer.refs.length ? s.composer : { ...s.composer, refs, mask: null, outpaint: null } });
-  if (s.selected === key) {
+  if (s.selected && gone.has(s.selected)) {
     const next = session[session.length - 1];
     if (next) selectItem(next.key);
     else setState({ selected: null });

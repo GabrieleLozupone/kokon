@@ -17,6 +17,18 @@ export class ApiError extends Error {
   }
 }
 
+/** Work the user stopped (Stop, Skip, Cancel): not an error to show. */
+export class Stopped extends Error {
+  constructor() {
+    super("Stopped.");
+    this.name = "Stopped";
+  }
+}
+
+/** True for a Stop: ours, the browser's AbortError, or the service's "cancelled" answer. */
+export const isStopped = (e: unknown) =>
+  e instanceof Stopped || (e instanceof DOMException && e.name === "AbortError") || (e instanceof ApiError && e.body.code === "cancelled");
+
 let base = "";
 let token = "";
 /** Private mode: uploads and imports go to the service's temporary store. */
@@ -54,6 +66,7 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
       headers: { ...authHeaders(init.method), ...(init.body && typeof init.body === "string" ? { "Content-Type": "application/json" } : {}), ...(init.headers || {}) },
     });
   } catch (e) {
+    if (init.signal?.aborted) throw new Stopped();
     throw new ApiError({ code: "server_unavailable", message: inBrowser ? "Kokon is not reachable." : "The local service is not reachable.", detail: String(e) }, 0);
   }
   const text = await res.text();
@@ -90,6 +103,18 @@ export interface RemoteStatus {
 
 const json = (body: unknown) => JSON.stringify(body);
 
+/** The answer of "Check an image" (crates/qls-core/src/provenance.rs `check`). */
+export interface AiCheckReport {
+  ai: boolean;
+  metadata: { digital_source_type: string | null; ai: boolean; creator_tool: string | null; c2pa_manifest: boolean };
+  watermark: { checked: boolean; found?: boolean; kokon?: boolean; text?: string; schema?: string };
+  width: number;
+  height: number;
+  sha256: string;
+  checked_at: string;
+  checker: string;
+}
+
 export const api = {
   status: () => call<StatusResponse>("/status"),
   setup: () => call<SetupReport>("/setup"),
@@ -122,6 +147,32 @@ export const api = {
   upscalers: () => call<{ selected: string; active: string | null; items: UpscalerItem[] }>("/upscalers"),
   /** Progress in `installStatus` (preset "upscaler:<name>"). */
   downloadUpscaler: (name: string) => call<InstallStatus>(`/upscalers/${encodeURIComponent(name)}/download`, { method: "POST" }),
+  /** The click-to-select model (MobileSAM, run here in the webview): there or not, and its size. */
+  segmentStatus: () => call<{ installed: boolean; bytes: number }>("/segment"),
+  /** Progress in `installStatus` (preset "segment"). */
+  downloadSegment: () => call<InstallStatus>("/segment/download", { method: "POST" }),
+  /** The fast-sticker model of the layers lab: there or not, and its download size. */
+  matteStatus: () => call<{ installed: boolean; bytes: number }>("/matte"),
+  /** Progress in `installStatus` (preset "matting"). */
+  downloadMatte: () => call<InstallStatus>("/matte/download", { method: "POST" }),
+  /** The fast-sticker matte of an image in Kokon ("input:"/"gen:"): a grey PNG at its size. `run`:
+   * the id `cancelMatte` stops; aborting `signal` drops the request (the service stops the model too). */
+  matte: async (image: string, run?: string, signal?: AbortSignal): Promise<Blob> => {
+    let res: Response;
+    try {
+      res = await fetch(base + "/matte", { method: "POST", headers: { ...authHeaders("POST"), "Content-Type": "application/json" }, body: json({ image, run }), signal });
+    } catch (e) {
+      if (signal?.aborted) throw new Stopped();
+      throw new ApiError({ code: "server_unavailable", message: inBrowser ? "Kokon is not reachable." : "The local service is not reachable.", detail: String(e) }, 0);
+    }
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      throw new ApiError(data?.error ?? { code: "internal", message: `HTTP ${res.status}` }, res.status);
+    }
+    return res.blob();
+  },
+  /** Stops the quick cut-out `run` in the service (running, or as soon as it starts). */
+  cancelMatte: (run: string) => call<{ stopped: boolean }>("/matte/cancel", { method: "POST", body: json({ run }) }),
   /** ESRGAN models of earlier versions in the app's own folder. */
   legacyUpscalers: (keep: string) => call<{ files: string[]; bytes: number }>(`/setup/legacy-upscalers?keep=${encodeURIComponent(keep)}`),
   /** `keep`: the model chosen in Settings, even if not saved yet. */
@@ -147,8 +198,11 @@ export const api = {
   job: (id: string) => call<JobView>(`/jobs/${id}`),
   jobs: () => call<JobView[]>("/jobs"),
   cancel: (id: string) => call<JobView>(`/jobs/${id}/cancel`, { method: "POST" }),
-  upload: (bytes: Blob | ArrayBuffer | Uint8Array, name?: string) =>
-    call<InputRecord>(`/inputs${privateQuery()}`, { method: "POST", body: bytes as BodyInit, headers: { "Content-Type": "application/octet-stream", ...(name ? { "x-filename": encodeURIComponent(name) } : {}) } }),
+  upload: (bytes: Blob | ArrayBuffer | Uint8Array, name?: string, signal?: AbortSignal) =>
+    call<InputRecord>(`/inputs${privateQuery()}`, { method: "POST", body: bytes as BodyInit, signal, headers: { "Content-Type": "application/octet-stream", ...(name ? { "x-filename": encodeURIComponent(name) } : {}) } }),
+  /** What an image's AI markings say (metadata and Kokon's invisible watermark); nothing is kept. */
+  checkImage: (bytes: Blob | ArrayBuffer | Uint8Array) =>
+    call<AiCheckReport>("/provenance/check", { method: "POST", body: bytes as BodyInit, headers: { "Content-Type": "application/octet-stream" } }),
   importPath: (path: string) => call<InputRecord>(`/inputs/import${privateQuery()}`, { method: "POST", body: json({ path }) }),
   clearPrivate: () => call<{ cleared: number }>("/private/clear", { method: "POST" }),
   input: (id: string) => call<InputRecord>(`/inputs/${id}`),
@@ -163,6 +217,11 @@ export const api = {
   },
   generation: (id: string) => call<GenerationRecord>(`/gallery/${id}`),
   setFavorite: (id: string, favorite: boolean) => call<GenerationRecord>(`/gallery/${id}`, { method: "PATCH", body: json({ favorite }) }),
+  /** Leaves a result out of the gallery list (layers lab steps), or shows it again. */
+  setHidden: (id: string, hidden: boolean) => call<GenerationRecord>(`/gallery/${id}`, { method: "PATCH", body: json({ hidden }) }),
+  /** The layers lab's flattened image (an upload), saved to the gallery as made from `from`. */
+  saveLayers: (image: string, from: string | null, isPrivate: boolean) =>
+    call<GenerationRecord>("/gallery/layers", { method: "POST", body: json({ image, from, private: isPrivate }) }),
   deleteGeneration: (id: string) => call<{ deleted: string }>(`/gallery/${id}`, { method: "DELETE" }),
   /** Adds the bundled example projects to the gallery (idempotent) and lists them. */
   installExamples: () => call<{ projects: { title: string; generations: string[] }[] }>("/examples", { method: "POST" }),
@@ -221,6 +280,8 @@ export const urls = {
   lutPreview: (name: string, source: string, max: number) => `${base}/luts/${encodeURIComponent(name)}/preview?source=${encodeURIComponent(source)}&max=${max}${tq("&")}`,
   sourcePreview: (s: string) => (s.startsWith("gen:") ? urls.genPreview(s.slice(4)) : urls.inputPreview(s.slice(6))),
   sourceThumb: (s: string) => (s.startsWith("gen:") ? urls.genThumb(s.slice(4)) : urls.inputThumb(s.slice(6))),
+  /** A MobileSAM file kokon-service downloaded (`segmentStatus`). */
+  segmentModel: (file: string) => `${base}/segment/models/${file}${tq("?")}`,
 };
 
 /** Server-sent events with automatic reconnect. Returns an unsubscribe function. */

@@ -1,7 +1,7 @@
 {
   "name": "kokon",
   "private": true,
-  "version": "0.11.2",
+  "version": "0.12.0",
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
@@ -20,6 +20,7 @@
     "@tauri-apps/plugin-process": "^2.4.0",
     "@tauri-apps/plugin-updater": "^2.13.2",
     "lucide-react": "^1.52.0",
+    "onnxruntime-web": "1.30.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "uqr": "^0.1.3"

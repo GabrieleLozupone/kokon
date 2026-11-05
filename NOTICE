@@ -35,6 +35,32 @@ Third-party software included in the Kokon installer
   https://creativecommons.org/licenses/by/4.0/). Included unmodified; Setup downloads the same
   file from a mirror (https://github.com/GabrieleLozupone/kokon/releases/tag/models-1) if the
   installed copy is missing.
+- TrustMark by Adobe (https://github.com/adobe/trustmark), MIT: the P variant's encoder and
+  decoder models (encoder_P.onnx, decoder_P.onnx), included unmodified for the AI watermark,
+  and its BCH error-correction code (crates/qls-core/src/watermark/bch.rs, from the Rust
+  implementation), with an image pipeline ported from its Python reference:
+
+    MIT License
+
+    Copyright (c) 2024 Adobe
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
 
 
 Downloaded by the setup screen (not part of this product)
