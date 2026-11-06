@@ -23,6 +23,7 @@ Key facts (version 0.12.0, November 2026):
 - [Simple ComfyUI alternative](https://kokon.app/comfyui-alternative/): what Kokon decides for you (model, files, steps, VRAM), reusing ComfyUI model files, when to stay with ComfyUI
 - [Remove objects from photos offline](https://kokon.app/remove-objects-from-photos-offline/): step-by-step object and people removal on your own GPU
 - [Split an image into layers](https://kokon.app/image-to-layers/): image to layers and a layered PSD, offline: how it works, the filled background, PSD export, FAQ
+- [Uninstall Kokon completely](https://kokon.app/uninstall/): remove the app and every folder it uses, models included, on Windows, Linux and macOS
 - [Press kit](https://kokon.app/press/): one-line and short descriptions, key facts, videos, images, logos
 - [Run Qwen-Image 2.1 locally](https://kokon.app/qwen-image-2-1-local/): step-by-step setup on Windows, Mac and Linux without Python or ComfyUI, speed, troubleshooting
 - [Prompt guide](https://kokon.app/prompt-guide/): how to write prompts for Qwen-Image 2.1, with vague vs clear examples (negative prompts, text in images, edit prompts)

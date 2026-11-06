@@ -739,9 +739,10 @@ gives the upscaler a smaller image, like the ones it was trained on.
 **Windows:** Settings → Apps → Installed apps → Kokon → Uninstall. The uninstaller asks whether to
 delete the downloaded models and app data too (`%LOCALAPPDATA%\KokonData`).
 
-**Mac:** drag Kokon from Applications to the Trash. To free the model space too, delete
-`~/Library/Application Support/KokonData`.
+**Mac:** drag Kokon from Applications to the Trash. **Linux:** `sudo apt remove kokon` (or `dnf`).
+On both, the models and app data stay in your home folder until you delete them.
 
+Step by step, with every folder to delete on each system: **[kokon.app/uninstall](https://kokon.app/uninstall/)**.
 Your images stay in your Pictures folder.
 
 </details>
