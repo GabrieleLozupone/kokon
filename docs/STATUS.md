@@ -1,6 +1,6 @@
 # Status
 
-**Updated 2026-11-04.** What is in progress, what comes next, and where help is welcome. Kept current at the end
+**Updated 2026-11-06.** What is in progress, what comes next, and where help is welcome. Kept current at the end
 of every task (see [AGENTS.md](../AGENTS.md#keeping-docsstatusmd-current)); GitHub is the source of truth.
 
 ## Current version: [0.12.0](https://github.com/GabrieleLozupone/kokon/releases/tag/v0.12.0) (2026-11-04)
@@ -14,8 +14,9 @@ Windows, macOS (Apple Silicon, 15+) and Linux (`.deb`, `.rpm`). Installed copies
 - Next: the desktop app as a client of a Kokon server elsewhere, and a Docker image for AMD and Intel
   (Vulkan) once it can be tested.
 - On the list, no dates yet: a custom upscaler picker
-  ([#34](https://github.com/GabrieleLozupone/kokon/issues/34)), everything in one folder / a portable build
-  ([#26](https://github.com/GabrieleLozupone/kokon/issues/26)), translations (only with contributor help).
+  ([#34](https://github.com/GabrieleLozupone/kokon/issues/34)), translations (only with contributor help).
+- Not planned: a portable build ([#26](https://github.com/GabrieleLozupone/kokon/issues/26)). Kokon removes cleanly
+  instead: [kokon.app/uninstall](https://kokon.app/uninstall/).
 
 ## Known issues
 
