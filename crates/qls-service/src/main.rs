@@ -396,7 +396,7 @@ async fn stop_on_signal(state: Arc<AppState>) {
 }
 
 /// Exits when no client holds a lease, no job is pending, and the grace period passed.
-/// Also unloads the model after long idle periods when no desktop window is attached.
+/// Also unloads the model after `idle_unload_minutes` without work, with or without a window open.
 async fn lifecycle(state: Arc<AppState>) {
     let mut last_tick = Instant::now();
     loop {
@@ -414,7 +414,7 @@ async fn lifecycle(state: Arc<AppState>) {
         if resumed {
             tracing::info!("resumed after {} s (computer asleep?): waiting for clients to check in", gap.as_secs());
         }
-        let (n_leases, has_ui, has_window, lost) = {
+        let (n_leases, has_ui, lost) = {
             let mut leases = state.leases.lock().unwrap();
             if resumed {
                 leases.values_mut().for_each(|l| l.last_seen = Instant::now());
@@ -428,7 +428,7 @@ async fn lifecycle(state: Arc<AppState>) {
                 alive
             });
             // A browser tab keeps the model loaded like the desktop window does.
-            (holding_clients(&state, &leases), leases.values().any(|l| l.kind == "ui"), leases.values().any(|l| l.kind == "ui" || l.kind == "web"), lost)
+            (holding_clients(&state, &leases), leases.values().any(|l| l.kind == "ui"), lost)
         };
         for (id, kind) in &lost {
             tracing::info!("client {id} ({kind}) is gone");
@@ -457,17 +457,17 @@ async fn lifecycle(state: Arc<AppState>) {
                 _ => {}
             }
         }
-        // Idle unload (MCP-only or scripted use): free VRAM after N idle minutes.
+        // Idle unload: free VRAM after N minutes without work, also with a window or browser tab
+        // open (a shared GPU stays usable for other programs). The next job loads the model again.
         let cfg = state.engine.config();
         let st = state.engine.server.status();
-        if !has_window
-            && !busy
+        if !busy
             && cfg.idle_unload_minutes > 0
             && st.state == ServerState::Ready
             && st.owned
             && state.engine.idle_for() > Duration::from_secs(cfg.idle_unload_minutes as u64 * 60)
         {
-            tracing::info!("idle for {} min without the desktop app — unloading model", cfg.idle_unload_minutes);
+            tracing::info!("idle for {} min — unloading model (it loads again with the next job)", cfg.idle_unload_minutes);
             state.engine.server.stop().await;
             state.engine.emit_server();
         }

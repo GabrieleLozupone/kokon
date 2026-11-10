@@ -471,7 +471,8 @@ claude mcp add-json --scope user kokon '{"type":"stdio","command":"C:\\Users\\<y
 - `upscale_image` takes `scale` (default 2) or `width`/`height` (up to 8192 px).
 - Progress is reported through MCP progress notifications. Claude Code's default tool timeout is
   30 minutes (`MCP_TOOL_TIMEOUT`).
-- Without the desktop window open, the model is unloaded after 15 idle minutes (Settings → General).
+- After 10 minutes without work the model is unloaded, so the graphics card is free for other programs, also
+  with the desktop window open; the next call loads it again (Settings → General, 0 keeps it loaded).
 
 </details>
 

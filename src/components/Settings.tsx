@@ -461,10 +461,10 @@ export function Settings() {
               </div>
               <span className="muted" style={{ marginTop: -10 }}>Keeps the model loaded so the next start is instant.</span>
               <label className="field-row">
-                <span>Unload the model after idle minutes (app closed)</span>
+                <span>Free the graphics card after idle minutes</span>
                 <input className="input" type="number" min={0} max={1440} style={{ width: 90 }} value={cfg.idleUnloadMinutes} onChange={(e) => set({ idleUnloadMinutes: Math.max(0, Number(e.target.value) || 0) })} />
               </label>
-              <span className="muted" style={{ marginTop: -10 }}>Applies to MCP and API use without the desktop window. 0 keeps it loaded.</span>
+              <span className="muted" style={{ marginTop: -10 }}>When nothing is being made for this long, the model leaves the graphics card's memory, even with Kokon open, so other programs can use it. The next image loads it again first. 0 keeps it loaded.</span>
               {inBrowser ? (
                 <div className="field-row">
                   <span>Kokon {appVersion} on the computer running it. It updates there.</span>

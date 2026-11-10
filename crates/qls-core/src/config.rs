@@ -24,7 +24,7 @@ pub const DEFAULT_REMOTE_PORT: u16 = 39152;
 /// Schema 9 (2026-10-16, #14): profiles record their model and source; model paths edited by
 /// hand on the official profile move to a profile of the user's own files.
 /// Schema 10 (2026-10-19): the 8 GB preset's VRAM reserve 1 -> 1.5 GiB (unless set by hand).
-const SCHEMA_VERSION: u32 = 10;
+const SCHEMA_VERSION: u32 = 11;
 /// `upscaler_model` value for a plain Lanczos resize (no model).
 pub const LANCZOS: &str = "lanczos";
 /// Upscalers offered in Settings: (file stem, label). Superscale-SP is a setup download, MoSR is
@@ -346,8 +346,8 @@ pub struct AppConfig {
     pub mac_engine: bool,
     pub output_dir: PathBuf,
     pub keep_server_running: bool,
-    /// When no desktop window is attached (e.g. MCP only), unload the model after this
-    /// many idle minutes. 0 disables.
+    /// Unload the model after this many minutes without work, also while a window or browser tab is
+    /// open, so the GPU is free for other programs; the next job loads it again. 0 disables.
     pub idle_unload_minutes: u32,
     pub setup_complete: bool,
     /// Hardware preset chosen in the setup wizard (`catalog::PRESETS`).
@@ -398,7 +398,7 @@ impl Default for AppConfig {
             mac_engine: false,
             output_dir: default_output_dir(),
             keep_server_running: false,
-            idle_unload_minutes: 15,
+            idle_unload_minutes: 10,
             setup_complete: false,
             hardware_preset: crate::catalog::DEFAULT_PRESET.into(),
             vram_override_mib: 0,
@@ -579,6 +579,11 @@ impl AppConfig {
                     }
                     if c.schema_version < 10 && c.hardware_preset == "8gb" && c.vram_reserve_gib == 1.0 {
                         c.vram_reserve_gib = c.preset().vram_reserve_gib;
+                    }
+                    // Idle unload now also applies with a window open: the old default (15) moves
+                    // to the new one; a value set by hand stays.
+                    if c.schema_version < 11 && c.idle_unload_minutes == 15 {
+                        c.idle_unload_minutes = 10;
                     }
                     // The official weights are always available as a profile, built for the
                     // configured folder and preset; the active one stays as it is.
@@ -1242,6 +1247,21 @@ mod tests {
         // A tile size chosen after the change is kept.
         std::fs::write(&p, r#"{"schemaVersion":8,"upscaleTileSize":512}"#).unwrap();
         assert_eq!(AppConfig::load_from(&p).upscale_tile_size, 512);
+    }
+
+    #[test]
+    fn idle_unload_default_moves_to_10() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("config.json");
+        std::fs::write(&p, r#"{"schemaVersion":10,"idleUnloadMinutes":15}"#).unwrap();
+        assert_eq!(AppConfig::load_from(&p).idle_unload_minutes, 10, "the old default moves");
+        std::fs::write(&p, r#"{"schemaVersion":10,"idleUnloadMinutes":45}"#).unwrap();
+        assert_eq!(AppConfig::load_from(&p).idle_unload_minutes, 45, "a value set by hand stays");
+        std::fs::write(&p, r#"{"schemaVersion":10,"idleUnloadMinutes":0}"#).unwrap();
+        assert_eq!(AppConfig::load_from(&p).idle_unload_minutes, 0, "turned off stays off");
+        std::fs::write(&p, r#"{"schemaVersion":11,"idleUnloadMinutes":15}"#).unwrap();
+        assert_eq!(AppConfig::load_from(&p).idle_unload_minutes, 15, "15 chosen after the change stays");
+        assert_eq!(AppConfig::default().idle_unload_minutes, 10);
     }
 
     #[test]
