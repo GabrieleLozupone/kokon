@@ -10,13 +10,13 @@
 // the flattened layers: "New objects" adds what the user drew with the coloured pencil as new
 // layers, "Edit together" gives the selected objects the edit's look. "Save as image" flattens the layers into a new version; "Export PSD" saves them for Photoshop (lib/psd.ts).
 
-import { Brush, Eraser, Eye, EyeOff, FileDown, GripVertical, Group, Hand, History, ImageDown, Link2, Loader2, Lock, MousePointer2, Paintbrush, Pencil, Redo2, RotateCcw, Scissors, Sparkles, Square, Sun, Trash2, Undo2, Ungroup, WandSparkles, X } from "lucide-react";
+import { Brush, Eraser, Eye, EyeOff, FileDown, GripVertical, Group, Hand, History, ImageDown, Link2, Loader2, Lock, Maximize2, MousePointer2, Paintbrush, Pencil, Redo2, RotateCcw, Scissors, Sparkles, Square, Sun, Trash2, Undo2, Ungroup, WandSparkles, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, isStopped, Stopped, urls } from "../lib/api";
 import { checkStop, cutControl, focusPixels, foreground, keptShare, MIN_KEPT, modelMatte, stickerAlpha, type CutControl } from "../lib/matte";
 import { blendPrompt, DEFAULT_READING } from "../lib/blend";
 import { dilate, erode, fileSafe } from "../lib/layers";
-import { centre, copiedShare, stoppedScenes, CROP_MAX_RATIO, cropFor, docId, extOf, unionRect, type Rect, waitingMarks, shadowAlpha, strengthPixels, mapBox, reorder, unmapPoint, withGroup, xfOf, type Box, type DocLayer, type Effect, type Feed, type LayerDoc, type SceneEdit, type Sticker, type Xf } from "../lib/layerDoc";
+import { centre, copiedShare, stoppedScenes, CROP_MAX_RATIO, cropFor, docId, extOf, keepSize, redrawCheck, redrawCrop, redrawnSize, REDRAW_MIN_KEPT, REDRAW_PAINTED, showVersion, sizeOf, STRETCHED, unionRect, type Rect, waitingMarks, shadowAlpha, strengthPixels, mapBox, reorder, unmapPoint, withGroup, xfOf, type Box, type DocLayer, type Effect, type Feed, type LayerDoc, type SceneEdit, type Sticker, type Xf } from "../lib/layerDoc";
 import { buildRequest, cutoutText, downloadIsFor, jobStepText, refFromInput, type CutStep } from "../lib/logic";
 import { native } from "../lib/native";
 import { aiMarkingXmp, writePsd } from "../lib/psd";
@@ -37,6 +37,12 @@ import { ZoomPan } from "./ZoomPan";
  * in view this kept only the bats / the lettering, clean (bench/20261101-stickers-fill). */
 const stickerPrompt = (name: string) =>
   `Keep only the ${name.toLowerCase()}, exactly as it is with its own colours and details, in the same place and size. Remove the background and everything else around it, with no rim of background colour left along its edges, and empty any gap inside it (like the hole of a handle). Make the background fully transparent.`;
+
+/** Redraw at this size's prompt, on the object scaled up (stretched pixels) on transparency. The same
+ * object, only sharp: what it must keep is named, and what to take off (the blur, the halo, a cast).
+ * "transparent" asks for the RGBA output (pipeline.rs wants_transparency). Not benched yet. */
+const redrawPrompt = (name: string) =>
+  `Redraw the ${name.toLowerCase()} sharp and detailed at this size, as the same ${name.toLowerCase()}: exactly the same shape, outline, pose, colours, materials and details, in the same place and size. Remove the blur, the soft light halo along its edges and any colour cast. Keep the background fully transparent.`;
 
 /** Fill the holes' prompt, inside Kokon's Add wrapper (pipeline.rs inpaint_prompt). Naming what must not
  * be there took the grey off on the seed that had kept it, and the contact shadows (11-01 bench). */
@@ -305,9 +311,9 @@ export function useMaskTint(src: string | null): string | null {
  * Clean edges (so the edit cannot bring a neighbour back). An Expand of the crop (`grown`: where its
  * result lies, expandedRect) is put there at the same scale, not squeezed into the crop. The image
  * covers the frame, or more when the object reaches past its edge (`ext`, for LayerDoc.ext). */
-export async function pasteCrop(f: Feed, result: string, W: number, H: number, name: string, grown?: Rect): Promise<{ rec: InputRecord; ext?: Rect }> {
+export async function pasteCrop(f: Feed, result: string, W: number, H: number, name: string, grown?: Rect, pre?: CanvasImageSource): Promise<{ rec: InputRecord; ext?: Rect }> {
   const r = grown ?? f.rect!;
-  let img: CanvasImageSource = await loadImage(urls.source(result));
+  let img: CanvasImageSource = pre ?? (await loadImage(urls.source(result)));
   const frame = { x: 0, y: 0, w: W, h: H };
   const u = unionRect(frame, r);
   const out = { x: Math.floor(u.x), y: Math.floor(u.y), w: Math.ceil(u.x + u.w) - Math.floor(u.x), h: Math.ceil(u.y + u.h) - Math.floor(u.y) };
@@ -352,8 +358,30 @@ export async function pasteCrop(f: Feed, result: string, W: number, H: number, n
     ctx.globalCompositeOperation = "destination-in";
     ctx.drawImage(mc, r.x, r.y, r.w, r.h);
   } else ctx.drawImage(img, r.x, r.y, r.w, r.h);
-  const rec = await api.upload(await toPng(c), `${name} (${grown ? "expanded" : "edited"}).png`);
+  const rec = await api.upload(await toPng(c), `${name} (${grown ? "expanded" : f.size ? "redrawn" : "edited"}).png`);
   return past ? { rec, ext: out } : { rec };
+}
+
+/** Redraw at this size's result -> the layer's next image, pasted where the object is drawn now
+ * (pasteCrop, clipped to its outline grown a little). Checked first (redrawCheck): a result that
+ * lost the object throws, and the layer stays as it was; one that drew a background round it is cut
+ * out by the object's own outline. */
+export async function pasteRedraw(f: Feed, result: string, W: number, H: number, name: string): Promise<{ rec: InputRecord; ext?: Rect }> {
+  const [img, sent] = await Promise.all([loadImage(urls.source(result)), loadImage(urls.source(f.source))]);
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  const before = pixels(sent, w, h);
+  const { kept, painted } = redrawCheck(before, pixels(img, w, h));
+  if (kept < REDRAW_MIN_KEPT) throw new Error(`The redraw of ${name} did not keep the object (${Math.round(kept * 100)} % of it): the layer is unchanged. Try again, or with another quality.`);
+  if (painted < REDRAW_PAINTED) return pasteCrop(f, result, W, H, name, undefined, img);
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext("2d")!;
+  ctx.drawImage(img, 0, 0);
+  ctx.globalCompositeOperation = "destination-in";
+  ctx.drawImage(sent, 0, 0, w, h);
+  return pasteCrop(f, result, W, H, name, undefined, c);
 }
 
 /** One dab of the layer brushes, in the layer's own pixels: the eraser clears (solid core, soft
@@ -728,6 +756,82 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     }
   };
 
+  /** Redraw at this size: the object as it is drawn now (scaled, moved), cut out at that size
+   * (redrawCrop; enlarged to about 1 MP when small) with its outline grown ~3 px as the clip, and
+   * sent with a prompt to draw the same object again, sharp. Quality and the size menu under the
+   * prompt apply (Auto: the crop's size, rendered at the preset's size); the shape is the crop's.
+   * The result becomes the layer's version at this size, its scale back to 1 (LayersEditor). */
+  const redrawOf = async (l: DocLayer): Promise<Feed> => {
+    const info = await sourceInfo(l.source, W, H);
+    const c0 = centre(info.box);
+    const t: Xf = { c: c0, s: l.s, dx: l.dx, dy: l.dy };
+    const { rect, scale } = redrawCrop(mapBox(info.box, t), W, H);
+    const cw = Math.max(1, Math.round(rect.w * scale));
+    const ch = Math.max(1, Math.round(rect.h * scale));
+    const c = document.createElement("canvas");
+    c.width = cw;
+    c.height = ch;
+    const ctx = c.getContext("2d")!;
+    ctx.imageSmoothingQuality = "high";
+    ctx.setTransform(cw / rect.w, 0, 0, ch / rect.h, (-rect.x * cw) / rect.w, (-rect.y * ch) / rect.h);
+    ctx.translate(t.c.x + t.dx, t.c.y + t.dy);
+    ctx.scale(t.s, t.s);
+    ctx.translate(-t.c.x, -t.c.y);
+    drawSource(ctx, info);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    // The clip: the object's outline (alpha > 16) grown ~3 px of the frame (pasteCrop drops faint
+    // pixels in that ring: the stretched halo).
+    const px = ctx.getImageData(0, 0, cw, ch).data;
+    const sel0 = new Uint8Array(cw * ch);
+    for (let i = 0; i < sel0.length; i++) sel0[i] = px[i * 4 + 3] > 16 ? 255 : 0;
+    if (!sel0.some((v) => v)) throw new Error(`${l.name} has no pixels to redraw.`);
+    const g = Math.max(2, Math.round(3 * scale));
+    const grown = dilate(sel0, cw, ch, g);
+    const mk = document.createElement("canvas");
+    mk.width = cw;
+    mk.height = ch;
+    const mkx = mk.getContext("2d")!;
+    const md = mkx.createImageData(cw, ch);
+    for (let i = 0; i < grown.length; i++) {
+      md.data[i * 4] = md.data[i * 4 + 1] = md.data[i * 4 + 2] = grown[i];
+      md.data[i * 4 + 3] = 255;
+    }
+    mkx.putImageData(md, 0, 0);
+    const clip = (await api.upload(await toPng(mk), "clip.png")).id;
+    const rec = await api.upload(await toPng(c), `${fileSafe(l.name)} (to redraw).png`);
+    addVersions([rec], 0);
+    const d = liveRef.current;
+    const size = redrawnSize(sizeOf(d, l, l.source), { dx: l.dx, dy: l.dy, s: l.s }, c0);
+    const f: Feed = { source: `input:${rec.id}`, mask: "", rect, scale, from: l.source, clip, grow: g, size };
+    commitRef.current({ ...d, layers: d.layers.map((x) => (x.id === l.id ? { ...x, feeds: [...(x.feeds ?? []), f] } : x)) });
+    return f;
+  };
+
+  /** Redraw at this size for each object in `ls`, one job each (hidden, like Clean edges). A failed
+   * job or a result that lost the object leaves the layer as it was. */
+  const redraw = async (ls: DocLayer[]) => {
+    setBusy(true);
+    try {
+      for (const l0 of ls) {
+        const l = liveRef.current.layers.find((x) => x.id === l0.id);
+        if (!l) continue;
+        const f = await redrawOf(l);
+        const it = getState().session.find((i) => itemSource(i) === f.source);
+        if (!it?.input) throw new Error(`The crop of ${l.name} is not in the project.`);
+        const c = getState().composer;
+        // The crop's own shape: no ratio, and a size of your own becomes the level nearest its area.
+        const res = c.resolution !== "custom" ? c.resolution : c.customWidth * c.customHeight <= 1.3 * 1024 * 1024 ? "1k" : c.customWidth * c.customHeight <= 3 * 1024 * 1024 ? "1.5k" : "2k";
+        const req = buildRequest({ ...c, prompt: redrawPrompt(l.name), refs: [refFromInput(it.input)], mask: null, outpaint: null, create: false, mode: "auto", aspect: "auto", resolution: res, enhance: false, enhancedFrom: null, seed: null });
+        await submitRequest({ ...req, hidden: true });
+      }
+      toastInfo(ls.length > 1 ? "Redrawing the objects at their size: each one replaces its layer when it is done." : `Redrawing ${ls[0]?.name ?? "the object"} at this size: it replaces the layer when it is done (Versions keeps the stretched one).`);
+    } catch (e) {
+      toastError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   /** A fast sticker, as the layer's next version: the object over the photo around it, matted by the
    * service (lib/matte.ts: the selection decides what, the matte only the edge; edge colours freed of
    * the background). Deterministic, a few seconds; Clean edges is the AI redraw. */
@@ -798,7 +902,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     addVersions([rec], 0);
     const src = `input:${rec.id}`;
     const now = liveRef.current;
-    commitRef.current({ ...now, layers: now.layers.map((x) => (x.id === l.id ? { ...x, source: src, history: [...x.history, src] } : x)), known: [...now.known, src] });
+    commitRef.current({ ...now, ...keepSize(now, l, l.source, src), layers: now.layers.map((x) => (x.id === l.id ? { ...x, source: src, history: [...x.history, src] } : x)), known: [...now.known, src] });
   };
 
   /** The fast sticker model is downloaded once (224 MB), the first time Fast is used; the % shows.
@@ -1272,6 +1376,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       commitRef.current({
         ...d,
         ...(e ? { ext: { ...d.ext, [src]: e } } : {}),
+        ...keepSize(d, l, l.source, src),
         // Strength starts from what was brushed (else its next change would bring back what was erased).
         layers: d.layers.map((x) => (x.id === l.id ? { ...x, source: src, history: [...x.history, src], ...(x.made ? { made: src, strength: 1 } : {}) } : x)),
         known: [...d.known, src],
@@ -2146,7 +2251,14 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
                     <Loader2 className="spin" size={12} /> <JobPct job={rowJob(l)!.job} item={rowJob(l)!.item} />
                   </span>
                 ) : (
-                  l.history.length > 1 && <span className="layer-pct" title="Versions">v{l.history.indexOf(l.source) + 1}</span>
+                  <>
+                    {!l.base && !l.effect && l.s > STRETCHED && (
+                      <span className="layer-pct doc-stretched" title="Scaled up: stretched pixels. Select it, then Redraw at this size">
+                        {l.s.toFixed(1)}×
+                      </span>
+                    )}
+                    {l.history.length > 1 && <span className="layer-pct" title="Versions">v{l.history.indexOf(l.source) + 1}</span>}
+                  </>
                 )}
                 <IconButton title={l.hidden ? "Show" : "Hide"} onClick={() => patchLayer(l.id, { hidden: !l.hidden })}>
                   {l.hidden ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -2212,6 +2324,11 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
                     <Sparkles size={14} /> Edit together
                   </button>
                 )}
+                {selObjects.some((l) => l.s > STRETCHED) && (
+                  <button className="btn primary" onClick={() => void redraw(selObjects.filter((l) => l.s > STRETCHED && !rowJob(l)))} disabled={busy} title="The AI draws each scaled-up object again at the size it has now, sharp (one edit each). Quality and the size menu under the prompt apply">
+                    <Maximize2 size={14} /> Redraw at this size
+                  </button>
+                )}
                 {selObjects.length > 0 && (
                   <button className="btn" onClick={() => commit({ ...live, layers: live.layers.map((l) => (selObjects.some((o) => o.id === l.id) ? { ...l, dx: 0, dy: 0, s: 1 } : l)) })} title="Back to where they were in the photo">
                     <RotateCcw size={14} /> Reset place
@@ -2236,10 +2353,25 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
                         : "Made where the objects are: make them again after moving objects."
                     : `The prompt edits this layer at its own size, e.g. “Complete the ${sel.name.toLowerCase()}, keep the transparent background”.`}
               </p>
+              {!sel.base && !sel.effect && sel.s > STRETCHED && (
+                <p className="layers-help doc-stretched-help">
+                  Scaled up {sel.s.toFixed(1)}×: its pixels are stretched, so it looks soft. <b>Redraw at this size</b> has the AI draw it again at this size, sharp. For more detail pick 1.5K or 2K in the size menu under the prompt first.
+                </p>
+              )}
               <div className="doc-grid">
                 {sel.base && (
                   <button className="btn" onClick={() => fillHoles(sel)} disabled={busy} title="Paints the holes as an Add with a prompt to fine-tune, ready to generate">
                     <Eraser size={14} /> Fill the holes
+                  </button>
+                )}
+                {!sel.base && !sel.effect && (
+                  <button
+                    className={`btn ${sel.s > STRETCHED ? "primary" : ""}`}
+                    onClick={() => void redraw([sel])}
+                    disabled={busy || !!rowJob(sel)}
+                    title="The AI draws this object again at the size it has now, sharp: same shape and colours. Quality and the size menu under the prompt apply. The result replaces the layer at this size (scale back to 100 %); Versions keeps the stretched one"
+                  >
+                    <Maximize2 size={14} /> Redraw at this size
                   </button>
                 )}
                 {!sel.base && !sel.effect && (
@@ -2272,7 +2404,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
               {versionsOpen && sel.history.length > 1 && (
                 <div className="doc-versions">
                   {[...sel.history].reverse().map((v) => (
-                    <button key={v} className={`doc-version ${v === sel.source ? "on" : ""}`} onClick={() => patchLayer(sel.id, { source: v })} title={v === sel.source ? "Shown now" : "Show this version"}>
+                    <button key={v} className={`doc-version ${v === sel.source ? "on" : ""}`} onClick={() => commit(showVersion(live, sel.id, v, (src) => infos[src]?.box, W, H))} title={v === sel.source ? "Shown now" : "Show this version"}>
                       <img src={urls.source(v)} alt="" />
                       <span>v{sel.history.indexOf(v) + 1}</span>
                     </button>

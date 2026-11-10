@@ -3,10 +3,10 @@
 // the edits made to its layers.
 
 import { useEffect, useRef, useState } from "react";
-import { docFor, docId, expandedRect, loadLab, putDoc, reconcile, saveLab, type DocLayer, type LayerDoc as Doc } from "../lib/layerDoc";
+import { docFor, docId, expandedRect, keepSize, loadLab, putDoc, reconcile, saveLab, showVersion, type Box, type DocLayer, type LayerDoc as Doc } from "../lib/layerDoc";
 import { editSource, getState, itemOrigin, itemSource, toastError, toastInfo, useStore } from "../lib/store";
 import { readScene } from "./LabScene";
-import { LayerDoc, pasteCrop, shadowImage } from "./LayerDoc";
+import { LayerDoc, noteExtents, pasteCrop, pasteRedraw, shadowImage, sourceInfo } from "./LayerDoc";
 import { LayerSplit } from "./LayerSplit";
 
 export function LayersEditor() {
@@ -154,7 +154,8 @@ function LayersLab({ projectId }: { projectId: string }) {
   }, [session, doc]);
 
   // An edit of an object's crop -> shrunk back into place, the layer's next version (the newest
-  // result of each crop; the others are marked seen).
+  // result of each crop; the others are marked seen). Redraw at this size: pasted where the object
+  // is drawn, at that size.
   useEffect(() => {
     if (!doc) return;
     for (const l of doc.layers)
@@ -170,14 +171,40 @@ function LayersLab({ projectId }: { projectId: string }) {
         const o = done.gen.mode === "outpaint" ? done.gen.outpaint : null;
         const ref = done.gen.references[0];
         const grown = o && ref ? expandedRect(f.rect, ref.width, ref.height, o) : undefined;
+        const seen = made.map((i) => `gen:${i.gen!.id}`);
+        // Redraw at this size: the result is the object at the size it is drawn, its place converted
+        // (scale back to about 1; showVersion). A result that lost the object leaves the layer.
+        if (f.size) {
+          const W = doc.width;
+          const H = doc.height;
+          pasteRedraw(f, result, W, H, l.name)
+            .then(async ({ rec, ext }) => {
+              const src = `input:${rec.id}`;
+              const add = (d: Doc): Doc => ({ ...d, ...(ext ? { ext: { ...d.ext, [src]: ext } } : {}), sizes: { ...d.sizes, [src]: f.size! }, known: [...d.known, ...seen, src] });
+              noteExtents(add(latest.current!));
+              // Both versions' boxes (their centres), then from the document as it is by then.
+              const was = latest.current!.layers.find((x) => x.id === l.id)?.source;
+              const boxes = new Map<string, Box>();
+              await Promise.all([was, src].map((s) => s && sourceInfo(s, W, H).then((i) => boxes.set(s, i.box), () => {})));
+              const d = add(latest.current!);
+              update(showVersion(d, l.id, src, (s) => boxes.get(s), W, H));
+            })
+            .catch((e) => {
+              const d = latest.current!;
+              update({ ...d, known: [...d.known, ...seen] });
+              toastError(e);
+            });
+          continue;
+        }
         pasteCrop(f, result, doc.width, doc.height, l.name, grown).then(
           ({ rec, ext }) => {
             const d = latest.current!;
             const src = `input:${rec.id}`;
-            const seen = made.map((i) => `gen:${i.gen!.id}`);
+            const owner = d.layers.find((x) => x.id === l.id);
             update({
               ...d,
               ...(ext ? { ext: { ...d.ext, [src]: ext } } : {}),
+              ...(owner && f.from ? keepSize(d, owner, f.from, src) : {}),
               layers: d.layers.map((x) => (x.id === l.id ? { ...x, source: src, history: [...x.history, src] } : x)),
               known: [...d.known, ...seen, src],
             });

@@ -11,6 +11,10 @@ Windows, macOS (Apple Silicon, 15+) and Linux (`.deb`, `.rpm`). Installed copies
 
 - **Layers lab** (experimental since 0.12): reports on which images split well or badly are welcome; Blend into scene
   often does not work yet.
+- **Next release: Redraw at this size in the Layers lab.** An object scaled up with the corner handle is drawn
+  from stretched pixels, so past ~1.2x it looks soft. A "Redraw at this size" button has the model draw it again at
+  the size it has on the canvas (Quality and the size menu under the prompt set the detail); the result replaces the
+  layer at that size, sharp, and the stretched version stays under Versions. Built and tested.
 - **Next release: free the GPU when Kokon is idle, even with a window or browser tab open.** Today the model is
   unloaded after 15 idle minutes only when no window is attached, so a Kokon left open on a shared server keeps the
   GPU busy for other programs. The model reloads on the next request
