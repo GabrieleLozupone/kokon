@@ -43,6 +43,11 @@ const DESCRIPTIONS: Record<keyof typeof schemas, { title: string; description: s
     description:
       "Enlarge an image (default 2x, or to a width/height up to 8192 px). Runs the upscaler model chosen in Kokon (Superscale-SP by default; seconds on a PC GPU, longer on a Mac; adds no new content). Saves a new file; the input is never overwritten.",
   },
+  generate_video: {
+    title: "Generate video",
+    description:
+      "Generate a video with local Wan 2.2 model from text (Text-to-Video) or animate a starting image (Image-to-Video). Resolution and frames automatically follow the GPU VRAM tier (480p/720p, 3s-5s). Returns the absolute path of the saved MP4 video.",
+  },
   get_image_info: {
     title: "Image info",
     description: "Width, height, aspect ratio, file type and, for images made by Kokon, the generation metadata (prompt, seed, model, steps...).",

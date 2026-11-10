@@ -1,6 +1,6 @@
 // Mirrors the kokon-service JSON contract (crates/qls-core).
 
-export type Mode = "auto" | "generate" | "edit" | "inpaint" | "outpaint" | "multi_reference" | "compose" | "upscale";
+export type Mode = "auto" | "generate" | "edit" | "inpaint" | "outpaint" | "multi_reference" | "compose" | "upscale" | "video";
 export type ResolvedMode = Exclude<Mode, "auto">;
 /** What made a saved result: a generation mode, or a colour LUT applied to an image. */
 /** "layers": the layers lab's image saved to the gallery. */
@@ -77,6 +77,12 @@ export interface GenerationRequest {
   marks?: string | null;
   /** The result is left out of the gallery list (a layers lab step). */
   hidden?: boolean;
+  /** Video frame count (e.g. 49, 65, 81 frames). */
+  video_frames?: number | null;
+  /** Video playback frame rate (default 24 fps). */
+  fps?: number | null;
+  /** Generate a seamlessly looping video. */
+  video_loop?: boolean | null;
 }
 
 export interface WorkingCanvas { source: Size; content: Size; canvas: Size; content_offset: [number, number]; scale: number }
@@ -112,6 +118,22 @@ export interface Plan {
   upscale: { method: UpscaleMethod; source: Size } | null;
   /** Edits and combines only (absent in older records). */
   reference_detail?: ReferenceDetail | null;
+  /** Video frame count. */
+  video_frames?: number | null;
+  /** Video playback frame rate. */
+  fps?: number | null;
+}
+
+export interface VideoPreset {
+  id: string;
+  label: string;
+  min_vram_mib: number;
+  unified_label: string;
+  default_width: number;
+  default_height: number;
+  default_frames: number;
+  default_fps: number;
+  summary: string;
 }
 
 export interface AppErrorBody { code: string; message: string; suggestion?: string; detail?: string }
@@ -268,6 +290,7 @@ export interface StatusResponse {
   /** The installed engine predates `release` (needed for the upscaler): Setup updates it. */
   engine?: { release: string; update_needed: boolean };
   setup_complete: boolean;
+  video_model_installed?: boolean;
   /** Kokon's Mac engine: installed (inside the app or by hand) and switched on. */
   mac_engine?: { available: boolean; on: boolean };
 }
@@ -335,6 +358,8 @@ export interface AppConfig {
   setupComplete: boolean;
   /** Hardware preset chosen in the setup wizard. */
   hardwarePreset: string;
+  /** Video hardware preset chosen in setup or settings. */
+  videoHardwarePreset: string;
   /** Plan as if the GPU had this much VRAM (MiB); 0 = detected. */
   vramOverrideMib: number;
   /** Prompt enhancer instructions for new images, edits and new images from references; "" = the built-in ones. */
@@ -429,6 +454,7 @@ export interface ModelsStatus {
   /** Every file of the user's own profile is there. */
   user_installed: boolean;
   official_installed: boolean;
+  video_official_installed?: boolean;
   default_download_dir: string;
   /** The texture-fix VAE (#21): in use, or what switching to it downloads. */
   vae: { improved: boolean; download_bytes: number; page: string };
@@ -459,8 +485,11 @@ export interface HardwareReport {
   vram_simulated: boolean;
   ram_total_mib: number;
   recommended: string;
+  recommended_video?: string;
   current: string;
+  current_video?: string;
   presets: HardwarePreset[];
+  video_presets?: HardwarePreset[];
   sdcpp_dir: string;
   default_sdcpp_dir: string;
   free_bytes: number | null;

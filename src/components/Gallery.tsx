@@ -1,9 +1,9 @@
-import { ArrowLeft, Check, FolderOpen, Heart, Loader2, Maximize2, Search, Trash2, X } from "lucide-react";
+import { ArrowLeft, Check, FolderOpen, Heart, Loader2, Maximize2, Search, Trash2, Video, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, urls } from "../lib/api";
 import { native } from "../lib/native";
 import { inBrowser, isNarrow } from "../lib/platform";
-import { forgetGeneration, openGeneration, setState, toastError, useStore } from "../lib/store";
+import { animateItem, forgetGeneration, openGeneration, setState, toastError, useStore } from "../lib/store";
 import { MODE_LABEL, neighbourAfterRemoval, previewIndex } from "../lib/logic";
 import type { GenerationRecord } from "../lib/types";
 import { DevelopImg } from "./Develop";
@@ -230,7 +230,42 @@ export function Gallery() {
             }}
             title={g.prompt}
           >
-            <DevelopImg src={urls.genThumb(g.id)} lazy />
+            {g.mode === "video" ? (
+              <div style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden" }}>
+                <video
+                  src={urls.gen(g.id)}
+                  muted
+                  playsInline
+                  loop
+                  onMouseEnter={(e) => e.currentTarget.play().catch(() => {})}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.pause();
+                    e.currentTarget.currentTime = 0;
+                  }}
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                />
+                <span
+                  style={{
+                    position: "absolute",
+                    bottom: 6,
+                    right: 6,
+                    background: "rgba(0,0,0,0.65)",
+                    color: "#fff",
+                    borderRadius: 4,
+                    padding: "2px 6px",
+                    fontSize: 11,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 3,
+                    pointerEvents: "none",
+                  }}
+                >
+                  <Video size={11} /> Video
+                </span>
+              </div>
+            ) : (
+              <DevelopImg src={urls.genThumb(g.id)} lazy />
+            )}
             {selecting && <span className="pick-mark">{picked.has(g.id) && <Check size={14} strokeWidth={3} />}</span>}
             <div className={`card-actions ${g.favorite ? "fav" : ""}`} onClick={(e) => e.stopPropagation()}>
               <button title={g.favorite ? "Remove from favorites" : "Favorite"} onClick={() => toggleFav(g)}>
@@ -347,7 +382,20 @@ function Preview(props: {
         <SwipeNav nav={nav} pageKey={g.id}>
           <div className="preview-img" onDoubleClick={() => setFull(true)}>
             {/* A phone shows the screen-sized preview here (full screen loads more when zoomed). */}
-            <DevelopImg src={inBrowser && isNarrow() ? urls.genPreview(g.id) : urls.gen(g.id)} placeholder={urls.genThumb(g.id)} alt={g.prompt} />
+            {g.mode === "video" ? (
+              <video
+                src={urls.gen(g.id)}
+                controls
+                autoPlay
+                loop
+                muted
+                playsInline
+                onError={(e) => console.error("Gallery preview video error:", e.currentTarget.error)}
+                style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
+              />
+            ) : (
+              <DevelopImg src={inBrowser && isNarrow() ? urls.genPreview(g.id) : urls.gen(g.id)} placeholder={urls.genThumb(g.id)} alt={g.prompt} />
+            )}
           </div>
         </SwipeNav>
         <NavArrows nav={nav} visible={active} />
@@ -366,13 +414,40 @@ function Preview(props: {
         <IconButton title="Full screen (F)" onClick={() => setFull(true)}>
           <Maximize2 size={17} />
         </IconButton>
+        {g.mode !== "video" && (
+          <button
+            className="btn"
+            title="Animate: turn this image into a video"
+            onClick={() => {
+              animateItem({ key: g.id, kind: "gen", gen: g });
+              onClose();
+              setState({ overlay: null });
+            }}
+          >
+            <Video size={15} /> Animate
+          </button>
+        )}
         <button className="btn primary" title="Open in its project to keep editing (Enter)" onClick={() => onOpen(g)}>
           <FolderOpen size={15} /> Open in project
         </button>
       </div>
       {full && (
-        <Fullscreen hint="Scroll or click to zoom · Drag to pan" onClose={() => setFull(false)} nav={nav}>
-          <ZoomImage key={g.id} src={urls.gen(g.id)} source={`gen:${g.id}`} size={{ width: g.width, height: g.height }} alt={g.prompt} />
+        <Fullscreen hint={g.mode === "video" ? "" : "Scroll or click to zoom · Drag to pan"} onClose={() => setFull(false)} nav={nav}>
+          {g.mode === "video" ? (
+            <video
+              key={g.id}
+              src={urls.gen(g.id)}
+              controls
+              autoPlay
+              loop
+              muted
+              playsInline
+              onError={(e) => console.error("Gallery fullscreen video error:", e.currentTarget.error)}
+              style={{ maxWidth: "100vw", maxHeight: "100vh", objectFit: "contain" }}
+            />
+          ) : (
+            <ZoomImage key={g.id} src={urls.gen(g.id)} source={`gen:${g.id}`} size={{ width: g.width, height: g.height }} alt={g.prompt} />
+          )}
         </Fullscreen>
       )}
     </div>
