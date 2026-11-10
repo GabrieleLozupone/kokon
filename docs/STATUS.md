@@ -1,6 +1,6 @@
 # Status
 
-**Updated 2026-11-06.** What is in progress, what comes next, and where help is welcome. Kept current at the end
+**Updated 2026-11-10.** What is in progress, what comes next, and where help is welcome. Kept current at the end
 of every task (see [AGENTS.md](../AGENTS.md#keeping-docsstatusmd-current)); GitHub is the source of truth.
 
 ## Current version: [0.12.0](https://github.com/GabrieleLozupone/kokon/releases/tag/v0.12.0) (2026-11-04)
@@ -11,6 +11,10 @@ Windows, macOS (Apple Silicon, 15+) and Linux (`.deb`, `.rpm`). Installed copies
 
 - **Layers lab** (experimental since 0.12): reports on which images split well or badly are welcome; Blend into scene
   often does not work yet.
+- **Next release: free the GPU when Kokon is idle, even with a window or browser tab open.** Today the model is
+  unloaded after 15 idle minutes only when no window is attached, so a Kokon left open on a shared server keeps the
+  GPU busy for other programs. The model reloads on the next request
+  ([#52](https://github.com/GabrieleLozupone/kokon/discussions/52)).
 - Next: the desktop app as a client of a Kokon server elsewhere, and a Docker image for AMD and Intel
   (Vulkan) once it can be tested.
 - On the list, no dates yet: a custom upscaler picker
