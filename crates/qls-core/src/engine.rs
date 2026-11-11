@@ -2120,11 +2120,20 @@ mod tests {
         assert_eq!(numbered("x", 2), "x-3");
     }
 
+    /// Points the config at a test's own folder and holds it there until the guard drops: the folder is a
+    /// process-wide environment variable, so tests that use it run one at a time.
+    fn use_config_dir(path: &Path) -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        // SAFETY: test-only env override; every test that reads or sets it holds LOCK.
+        unsafe { std::env::set_var("QLS_CONFIG_DIR", path) };
+        guard
+    }
+
     #[test]
     fn lora_library_survives_settings_saves() {
         let dir = tempfile::tempdir().unwrap();
-        // SAFETY: test-only env override, single-threaded setup.
-        unsafe { std::env::set_var("QLS_CONFIG_DIR", dir.path().join("cfg")) };
+        let _cfg = use_config_dir(&dir.path().join("cfg"));
         let mut cfg = AppConfig { sdcpp_dir: dir.path().join("sdcpp"), ..AppConfig::default() };
         cfg.normalize();
         let model = cfg.profile().diffusion_model.clone();
@@ -2160,8 +2169,7 @@ mod tests {
     #[tokio::test]
     async fn submit_validate_and_cancel_queued() {
         let dir = tempfile::tempdir().unwrap();
-        // SAFETY: test-only env override, single-threaded setup.
-        unsafe { std::env::set_var("QLS_CONFIG_DIR", dir.path().join("cfg")) };
+        let _cfg = use_config_dir(&dir.path().join("cfg"));
         // Engine and model files (empty) in the test's own folder, never the real one.
         let mut cfg = AppConfig::default();
         cfg.sdcpp_dir = dir.path().join("sdcpp");
@@ -2246,8 +2254,7 @@ mod tests {
     #[tokio::test]
     async fn upscaling_reports_its_tiles_as_steps() {
         let dir = tempfile::tempdir().unwrap();
-        // SAFETY: test-only env override, single-threaded setup.
-        unsafe { std::env::set_var("QLS_CONFIG_DIR", dir.path().join("cfg")) };
+        let _cfg = use_config_dir(&dir.path().join("cfg"));
         let mut cfg = AppConfig::default();
         cfg.sdcpp_dir = dir.path().join("sdcpp");
         cfg.normalize();
@@ -2286,8 +2293,7 @@ mod tests {
     async fn prompt_enhancer_streams_falls_back_and_is_kept_for_retries() {
         use crate::sdcpp::{fake_server, sse_answer};
         let dir = tempfile::tempdir().unwrap();
-        // SAFETY: test-only env override, single-threaded setup.
-        unsafe { std::env::set_var("QLS_CONFIG_DIR", dir.path().join("cfg")) };
+        let _cfg = use_config_dir(&dir.path().join("cfg"));
         let mut cfg = AppConfig::default();
         cfg.sdcpp_dir = dir.path().join("sdcpp");
         cfg.normalize();
@@ -2398,8 +2404,7 @@ mod tests {
     #[tokio::test]
     async fn compose_labels_each_reference_then_writes_the_scene_without_images() {
         let dir = tempfile::tempdir().unwrap();
-        // SAFETY: test-only env override, single-threaded setup.
-        unsafe { std::env::set_var("QLS_CONFIG_DIR", dir.path().join("cfg")) };
+        let _cfg = use_config_dir(&dir.path().join("cfg"));
         let mut cfg = AppConfig::default();
         cfg.sdcpp_dir = dir.path().join("sdcpp");
         cfg.normalize();
@@ -2429,8 +2434,7 @@ mod tests {
     #[tokio::test]
     async fn scene_reading_parses_the_answer_or_notes_why_not() {
         let dir = tempfile::tempdir().unwrap();
-        // SAFETY: test-only env override, single-threaded setup.
-        unsafe { std::env::set_var("QLS_CONFIG_DIR", dir.path().join("cfg")) };
+        let _cfg = use_config_dir(&dir.path().join("cfg"));
         let mut cfg = AppConfig { sdcpp_dir: dir.path().join("sdcpp"), ..AppConfig::default() };
         cfg.normalize();
         std::fs::create_dir_all(cfg.engine_dir()).unwrap();
@@ -2482,8 +2486,7 @@ mod tests {
     #[test]
     fn reviewed_prompts_keep_the_users_words() {
         let dir = tempfile::tempdir().unwrap();
-        // SAFETY: test-only env override, single-threaded setup.
-        unsafe { std::env::set_var("QLS_CONFIG_DIR", dir.path().join("cfg")) };
+        let _cfg = use_config_dir(&dir.path().join("cfg"));
         let cfg = AppConfig { output_dir: dir.path().join("out"), ..AppConfig::default() };
         let e = Engine::new(cfg, dir.path()).unwrap();
         let img = image::RgbaImage::from_pixel(64, 64, image::Rgba([40, 90, 160, 255]));
@@ -2668,8 +2671,7 @@ mod tests {
     #[test]
     fn project_records_come_in_one_answer() {
         let dir = tempfile::tempdir().unwrap();
-        // SAFETY: test-only env override, single-threaded setup.
-        unsafe { std::env::set_var("QLS_CONFIG_DIR", dir.path().join("cfg")) };
+        let _cfg = use_config_dir(&dir.path().join("cfg"));
         let mut cfg = AppConfig::default();
         cfg.sdcpp_dir = dir.path().join("sdcpp");
         cfg.normalize();
@@ -2710,8 +2712,7 @@ mod tests {
     #[test]
     fn reference_seeds_come_from_metadata_and_gallery() {
         let dir = tempfile::tempdir().unwrap();
-        // SAFETY: test-only env override, single-threaded setup.
-        unsafe { std::env::set_var("QLS_CONFIG_DIR", dir.path().join("cfg")) };
+        let _cfg = use_config_dir(&dir.path().join("cfg"));
         let mut cfg = AppConfig::default();
         cfg.sdcpp_dir = dir.path().join("sdcpp");
         cfg.normalize();
