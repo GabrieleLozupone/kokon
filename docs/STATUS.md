@@ -21,6 +21,11 @@ Windows, macOS (Apple Silicon, 15+) and Linux (`.deb`, `.rpm`). Installed copies
   ([#52](https://github.com/GabrieleLozupone/kokon/discussions/52)).
 - **Next release: the time saved in an image's metadata is local time.** Windows and many photo viewers showed
   it an hour early in Europe (UTC was written). Built and tested.
+- **Next release: More like this** ([#55](https://github.com/GabrieleLozupone/kokon/issues/55)). Under a new image,
+  Subtle makes another one that keeps the picture and changes the details, Strong keeps the idea and changes more
+  (img2img from the result at strength 0.5 / 0.7). Regenerate still starts from a new seed. Built and tested.
+- **Next release: a clear message when the service cannot start** ([#53](https://github.com/GabrieleLozupone/kokon/issues/53)):
+  a processor without AVX is named, and a crash while starting is logged to `kokon-service-start.log` in the temp folder.
 - **Next release: a folder for each project (optional).** Settings → General → "A folder for each project": new
   images go to a folder named after their project instead of one folder per day. Off by default. Built and tested.
 - Next: the desktop app as a client of a Kokon server elsewhere, and a Docker image for AMD and Intel
