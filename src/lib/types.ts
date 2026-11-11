@@ -77,6 +77,8 @@ export interface GenerationRequest {
   marks?: string | null;
   /** The result is left out of the gallery list (a layers lab step). */
   hidden?: boolean;
+  /** More like this: a new version of image 1 keeping its layout; the share of the steps redrawn (0..1). */
+  vary?: number;
   /** The open project's title: the result's folder when Settings → "A folder for each project" is on. */
   project?: string;
 }

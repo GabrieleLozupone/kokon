@@ -1,11 +1,11 @@
 import {
-  Brush, Check, ClipboardPaste, Combine, Copy, Download, Ellipsis, Expand, FolderOpen, Heart, ImageUpscale, Info, Layers, Loader2, MousePointerClick, Palette, Pencil, RefreshCw, RotateCcw, SlidersHorizontal, Square, TextCursorInput, Trash2, Wand2, WandSparkles, X,
+  Brush, Check, ClipboardPaste, Combine, Copy, Download, Ellipsis, Expand, FolderOpen, Heart, ImageUpscale, Images, Info, Layers, Loader2, MousePointerClick, Palette, Pencil, RefreshCw, RotateCcw, SlidersHorizontal, Square, TextCursorInput, Trash2, Wand2, WandSparkles, X,
 } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, urls } from "../lib/api";
 import {
   compareBase, composerFromRecord, formatDuration, jobLabel, type JobClock, lutInfo, lutLabel, MAX_UPSCALE_AREA, MAX_UPSCALE_SIDE, MODE_LABEL, pipelineSummary, remainingSeconds, sizeForWidth, upscaleRequest, arcLayout,
-  upscalerLabel, upscaleTargets, variationRequest, imageName, type LinkKind, type TimelineLink,
+  upscalerLabel, upscaleTargets, variationRequest, moreLikeThisRequest, imageName, type LinkKind, type TimelineLink,
 } from "../lib/logic";
 import { canCopyImage, native } from "../lib/native";
 import {
@@ -449,6 +449,17 @@ function GenActions({ item, g, showOriginal, onLut }: { item: SessionItem; g: Ge
           label="Regenerate"
           onClick={() => {
             const r = variationRequest(g);
+            if (r) submitRequest(r);
+          }}
+        />
+      )}
+      {moreLikeThisRequest(g) && (
+        <ActionButton
+          title="More like this: a new image that keeps this one's layout and look"
+          icon={<Images size={16} />}
+          label="More like this"
+          onClick={() => {
+            const r = moreLikeThisRequest(g);
             if (r) submitRequest(r);
           }}
         />

@@ -12,7 +12,7 @@ import {
   activeLoras, activeOverrides, buildRequest, composing, editing, reviewRequest, wantsPromptReview, toggleLora, MAX_LORAS, jobPercent, compareBase, composerFromRecord, diffPixels, emptyComposer, expansionPixels, expansionPreset, jobLabel, jobSecondsLeft, lutInfo, moveRef, needsPrompt, normalizeQuality, persistentAdvanced, pipelineSummary,
   planPipeline, remainingSeconds, sizeForWidth, timeAgo, upscaleRequest, upscaleTargets, versionLabels, type JobClock, type Ref,
   neighbourAfterRemoval, pageOutdated, previewIndex, starPromptDue, STAR_PROMPT_AFTER, formatBytes, formatDuration, installItemShort, installItemText, installProgress, installStep, installTimeLeft, timelineLinks, undoTarget, aspectLabel, parseRatio, sizeForRatio, sizeForLongSide, expandToRatio, expandToSize, arcLayout,
-  goneVersions, PREVIEW_SIDE, stageFitsPreview, viewerWantsFull,
+  goneVersions, moreLikeThisRequest, MORE_LIKE_THIS_STRENGTH, PREVIEW_SIDE, stageFitsPreview, viewerWantsFull,
 } from "./logic";
 import type { GenerationRecord, InstallItem, JobView, LoraItem, Plan } from "./types";
 
@@ -800,5 +800,23 @@ describe("Layers lab status lines", () => {
     expect(downloadIsFor({ running: true, preset: "segment" }, "matting")).toBe(false);
     expect(downloadIsFor({ running: false, preset: "matting" }, "matting")).toBe(false);
     expect(downloadIsFor(null, "segment")).toBe(false);
+  });
+});
+
+describe("more like this", () => {
+  const g = {
+    id: "g1", mode: "generate", prompt: "A tabby cat on a sunlit windowsill, soft light.", original_prompt: "un gatto",
+    request: { prompt: "un gatto", mode: "auto", images: [], quality: "quality", seed: 42, enhance: true, aspect_ratio: "16:9", width: 1600, height: 900 },
+  } as unknown as GenerationRecord;
+  it("starts from the image with the prompt it was made with", () => {
+    const r = moreLikeThisRequest(g)!;
+    expect(r).toMatchObject({ mode: "generate", images: ["gen:g1"], vary: MORE_LIKE_THIS_STRENGTH, seed: null, enhance: false, quality: "quality", parent_id: "g1" });
+    expect(r.prompt).toBe(g.prompt);
+    expect(r.enhanced_from).toBe("un gatto");
+    expect([r.aspect_ratio, r.width, r.height]).toEqual([undefined, undefined, undefined]);
+  });
+  it("is for text-to-image results only", () => {
+    expect(moreLikeThisRequest({ ...g, mode: "edit" } as GenerationRecord)).toBeNull();
+    expect(moreLikeThisRequest({ ...g, request: null } as unknown as GenerationRecord)).toBeNull();
   });
 });

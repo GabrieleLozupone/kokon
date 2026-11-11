@@ -280,6 +280,30 @@ export function variationRequest(g: GenerationRecord): GenerationRequest | null 
   return { ...g.request, seed: null, client: "ui", parent_id: g.id };
 }
 
+/** Share of the steps "More like this" draws again from the image (0.5 = the last 4 of 8). */
+export const MORE_LIKE_THIS_STRENGTH = 0.5;
+
+/** More like this (#55): a new image from this one, same prompt and size, keeping its layout
+ * and look. Text-to-image results only: an edit's prompt describes a change, not the image. */
+export function moreLikeThisRequest(g: GenerationRecord): GenerationRequest | null {
+  if (!g.request || (g.mode !== "generate" && g.mode !== "compose")) return null;
+  return {
+    ...g.request,
+    mode: "generate",
+    prompt: g.prompt,
+    enhance: false,
+    enhanced_from: g.original_prompt ?? undefined,
+    images: [`gen:${g.id}`],
+    vary: MORE_LIKE_THIS_STRENGTH,
+    aspect_ratio: undefined,
+    width: undefined,
+    height: undefined,
+    seed: null,
+    client: "ui",
+    parent_id: g.id,
+  };
+}
+
 export const MODE_LABEL: Record<Mode | "lut" | "layers", string> = {
   auto: "Auto",
   generate: "Create",
