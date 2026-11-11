@@ -3,31 +3,22 @@
 **Updated 2026-11-11.** What is in progress, what comes next, and where help is welcome. Kept current at the end
 of every task (see [AGENTS.md](../AGENTS.md#keeping-docsstatusmd-current)); GitHub is the source of truth.
 
-## Current version: [0.12.0](https://github.com/GabrieleLozupone/kokon/releases/tag/v0.12.0) (2026-11-04)
+## Current version: [0.12.1](https://github.com/GabrieleLozupone/kokon/releases/tag/v0.12.1) (2026-11-11)
+
+More like this (Subtle / Strong, [#55](https://github.com/GabrieleLozupone/kokon/issues/55)), Redraw at this size in the
+Layers lab, the GPU freed after 10 idle minutes even with a window open
+([#52](https://github.com/GabrieleLozupone/kokon/discussions/52)), an optional folder for each project, local time in
+image metadata, a clear message when the service cannot start ([#53](https://github.com/GabrieleLozupone/kokon/issues/53)).
 
 Windows, macOS (Apple Silicon, 15+) and Linux (`.deb`, `.rpm`). Installed copies update from the app.
 
 ## Next
 
+- **Edits on edits** ([#44](https://github.com/GabrieleLozupone/kokon/issues/44)): a chain of 4 edits was measured
+  on 2K images; most detail goes at the first edit, and starting from the pre-upscale image does not help. No change
+  yet; next to try: keeping the parts of the image an edit did not touch.
 - **Layers lab** (experimental since 0.12): reports on which images split well or badly are welcome; Blend into scene
   often does not work yet.
-- **Next release: Redraw at this size in the Layers lab.** An object scaled up with the corner handle is drawn
-  from stretched pixels, so past ~1.2x it looks soft. A "Redraw at this size" button has the model draw it again at
-  the size it has on the canvas (Quality and the size menu under the prompt set the detail); the result replaces the
-  layer at that size, sharp, and the stretched version stays under Versions. Built and tested.
-- **Next release: free the GPU when Kokon is idle, even with a window or browser tab open.** Today the model is
-  unloaded after 15 idle minutes only when no window is attached, so a Kokon left open on a shared server keeps the
-  GPU busy for other programs. The model reloads on the next request
-  ([#52](https://github.com/GabrieleLozupone/kokon/discussions/52)).
-- **Next release: the time saved in an image's metadata is local time.** Windows and many photo viewers showed
-  it an hour early in Europe (UTC was written). Built and tested.
-- **Next release: More like this** ([#55](https://github.com/GabrieleLozupone/kokon/issues/55)). Under a new image,
-  Subtle makes another one that keeps the picture and changes the details, Strong keeps the idea and changes more
-  (img2img from the result at strength 0.5 / 0.7). Regenerate still starts from a new seed. Built and tested.
-- **Next release: a clear message when the service cannot start** ([#53](https://github.com/GabrieleLozupone/kokon/issues/53)):
-  a processor without AVX is named, and a crash while starting is logged to `kokon-service-start.log` in the temp folder.
-- **Next release: a folder for each project (optional).** Settings → General → "A folder for each project": new
-  images go to a folder named after their project instead of one folder per day. Off by default. Built and tested.
 - Next: the desktop app as a client of a Kokon server elsewhere, and a Docker image for AMD and Intel
   (Vulkan) once it can be tested.
 - On the list, no dates yet: a custom upscaler picker
