@@ -5,7 +5,7 @@ import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 
 import { api, urls } from "../lib/api";
 import {
   compareBase, composerFromRecord, formatDuration, jobLabel, type JobClock, lutInfo, lutLabel, MAX_UPSCALE_AREA, MAX_UPSCALE_SIDE, MODE_LABEL, pipelineSummary, remainingSeconds, sizeForWidth, upscaleRequest, arcLayout,
-  upscalerLabel, upscaleTargets, variationRequest, moreLikeThisRequest, imageName, type LinkKind, type TimelineLink,
+  upscalerLabel, upscaleTargets, variationRequest, moreLikeThisRequest, MORE_LIKE_THIS, imageName, type LinkKind, type TimelineLink,
 } from "../lib/logic";
 import { canCopyImage, native } from "../lib/native";
 import {
@@ -373,6 +373,39 @@ export function UpscaleButton(props: { source: string; size: Size; original?: Si
   );
 }
 
+/** More like this (#55): a new image from this one, a little or more different. */
+function MoreLikeThisButton({ g }: { g: GenerationRecord }) {
+  const run = (strength: number) => {
+    const r = moreLikeThisRequest(g, strength);
+    if (r) submitRequest(r);
+  };
+  const options = [
+    { strength: MORE_LIKE_THIS.subtle, label: "Subtle", hint: "Same picture, new details" },
+    { strength: MORE_LIKE_THIS.strong, label: "Strong", hint: "Same idea, more changes" },
+  ];
+  return (
+    <Popover
+      placement="top-end"
+      trigger={(open, toggle) => <ActionButton title="More like this: a new image that keeps this one's layout and look" icon={<Images size={16} />} label="More like this" onClick={toggle} active={open} />}
+    >
+      {(close) => (
+        <>
+          {options.map((o) => (
+            <button key={o.label} className="opt" onClick={() => (close(), run(o.strength))}>
+              <span>
+                {o.label}
+                <span className="muted" style={{ display: "block" }}>
+                  {o.hint}
+                </span>
+              </span>
+            </button>
+          ))}
+        </>
+      )}
+    </Popover>
+  );
+}
+
 function MoreMenu({ item, path }: { item: SessionItem; path: string | null }) {
   const g = item.gen;
   return (
@@ -453,17 +486,7 @@ function GenActions({ item, g, showOriginal, onLut }: { item: SessionItem; g: Ge
           }}
         />
       )}
-      {moreLikeThisRequest(g) && (
-        <ActionButton
-          title="More like this: a new image that keeps this one's layout and look"
-          icon={<Images size={16} />}
-          label="More like this"
-          onClick={() => {
-            const r = moreLikeThisRequest(g);
-            if (r) submitRequest(r);
-          }}
-        />
-      )}
+      {moreLikeThisRequest(g) && <MoreLikeThisButton g={g} />}
       <UpscaleButton source={`gen:${g.id}`} size={{ width: g.width, height: g.height }} original={original} parentId={g.id} />
       <LutButton onPick={onLut} />
       <span className="sep" />

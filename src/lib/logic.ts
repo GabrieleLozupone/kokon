@@ -280,12 +280,14 @@ export function variationRequest(g: GenerationRecord): GenerationRequest | null 
   return { ...g.request, seed: null, client: "ui", parent_id: g.id };
 }
 
-/** Share of the steps "More like this" draws again from the image (0.5 = the last 4 of 8). */
-export const MORE_LIKE_THIS_STRENGTH = 0.5;
+/** Share of the steps "More like this" draws again from the image: Subtle 0.5 (the last 4 of 8:
+ * same picture, new details), Strong 0.7 (same idea, freer). Chosen on 3 prompts x 2 seeds against
+ * 0.35-0.8 (bench more-like-this-20261111-203328): 0.35 barely changed, 0.8 moved the subject. */
+export const MORE_LIKE_THIS = { subtle: 0.5, strong: 0.7 } as const;
 
 /** More like this (#55): a new image from this one, same prompt and size, keeping its layout
  * and look. Text-to-image results only: an edit's prompt describes a change, not the image. */
-export function moreLikeThisRequest(g: GenerationRecord): GenerationRequest | null {
+export function moreLikeThisRequest(g: GenerationRecord, strength: number = MORE_LIKE_THIS.subtle): GenerationRequest | null {
   if (!g.request || (g.mode !== "generate" && g.mode !== "compose")) return null;
   return {
     ...g.request,
@@ -294,7 +296,7 @@ export function moreLikeThisRequest(g: GenerationRecord): GenerationRequest | nu
     enhance: false,
     enhanced_from: g.original_prompt ?? undefined,
     images: [`gen:${g.id}`],
-    vary: MORE_LIKE_THIS_STRENGTH,
+    vary: strength,
     aspect_ratio: undefined,
     width: undefined,
     height: undefined,

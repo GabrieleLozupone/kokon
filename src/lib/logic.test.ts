@@ -12,7 +12,7 @@ import {
   activeLoras, activeOverrides, buildRequest, composing, editing, reviewRequest, wantsPromptReview, toggleLora, MAX_LORAS, jobPercent, compareBase, composerFromRecord, diffPixels, emptyComposer, expansionPixels, expansionPreset, jobLabel, jobSecondsLeft, lutInfo, moveRef, needsPrompt, normalizeQuality, persistentAdvanced, pipelineSummary,
   planPipeline, remainingSeconds, sizeForWidth, timeAgo, upscaleRequest, upscaleTargets, versionLabels, type JobClock, type Ref,
   neighbourAfterRemoval, pageOutdated, previewIndex, starPromptDue, STAR_PROMPT_AFTER, formatBytes, formatDuration, installItemShort, installItemText, installProgress, installStep, installTimeLeft, timelineLinks, undoTarget, aspectLabel, parseRatio, sizeForRatio, sizeForLongSide, expandToRatio, expandToSize, arcLayout,
-  goneVersions, moreLikeThisRequest, MORE_LIKE_THIS_STRENGTH, PREVIEW_SIDE, stageFitsPreview, viewerWantsFull,
+  goneVersions, moreLikeThisRequest, MORE_LIKE_THIS, PREVIEW_SIDE, stageFitsPreview, viewerWantsFull,
 } from "./logic";
 import type { GenerationRecord, InstallItem, JobView, LoraItem, Plan } from "./types";
 
@@ -810,9 +810,10 @@ describe("more like this", () => {
   } as unknown as GenerationRecord;
   it("starts from the image with the prompt it was made with", () => {
     const r = moreLikeThisRequest(g)!;
-    expect(r).toMatchObject({ mode: "generate", images: ["gen:g1"], vary: MORE_LIKE_THIS_STRENGTH, seed: null, enhance: false, quality: "quality", parent_id: "g1" });
+    expect(r).toMatchObject({ mode: "generate", images: ["gen:g1"], vary: MORE_LIKE_THIS.subtle, seed: null, enhance: false, quality: "quality", parent_id: "g1" });
     expect(r.prompt).toBe(g.prompt);
     expect(r.enhanced_from).toBe("un gatto");
+    expect(moreLikeThisRequest(g, MORE_LIKE_THIS.strong)!.vary).toBe(0.7);
     expect([r.aspect_ratio, r.width, r.height]).toEqual([undefined, undefined, undefined]);
   });
   it("is for text-to-image results only", () => {
