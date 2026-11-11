@@ -23,7 +23,7 @@ import { aiMarkingXmp, writePsd } from "../lib/psd";
 import { MARK_COLOURS, marksPrompt, type MarkColour } from "../lib/sceneEdit";
 import { placesOf } from "./LabScene";
 import { shortcut } from "../lib/platform";
-import { addResult, addVersions, cancelJob, editSource, focusPrompt, getState, itemOrigin, itemSource, setState, submitRequest, toastError, toastInfo, updateComposer, useStore, type SessionItem } from "../lib/store";
+import { addResult, addVersions, cancelJob, editSource, focusPrompt, getState, itemOrigin, itemSource, projectTitle, setState, submitRequest, toastError, toastInfo, updateComposer, useStore, type SessionItem } from "../lib/store";
 import type { InputRecord, JobView, SceneReading } from "../lib/types";
 import { BlendChoice, type BlendRow } from "./BlendChoice";
 import { useJobPercent } from "./jobMotion";
@@ -1874,7 +1874,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     try {
       // The one image of the lab that goes to the gallery (its steps are kept out of it).
       const rec = await api.upload(await toPng(await render(W, H)), "Layers flattened.png");
-      addResult(await api.saveLayers(`input:${rec.id}`, live.photo ?? null, getState().privateMode));
+      addResult(await api.saveLayers(`input:${rec.id}`, live.photo ?? null, getState().privateMode, projectTitle()));
       setState({ overlay: null });
       toastInfo("Saved the layers as one image: a new version, and in All images (the layers stay: open Layers lab again).");
     } catch (e) {

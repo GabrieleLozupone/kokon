@@ -945,6 +945,14 @@ export async function endTour() {
   }
 }
 
+/** The open project's title, as the project list will show it (for a new project, from `prompt`):
+ * the folder of its results when Settings → "A folder for each project" is on. */
+export function projectTitle(prompt?: string): string {
+  const old = projects[state.projectId];
+  if (old?.meta.named) return old.meta.title;
+  return titleOf(state.session) ?? (prompt?.trim() || old?.meta.title || "Untitled");
+}
+
 /** Gives a project a name; an empty name goes back to naming it after its first prompt. */
 export function renameProject(id: string, name: string) {
   const title = name.trim().replace(/\s+/g, " ").slice(0, 120);
@@ -1229,7 +1237,7 @@ export function editSource(source: string, focus = true): boolean {
 /** Sends a request; its job joins the project as a version. The job's id, or null when it failed. */
 export async function submitRequest(req: GenerationRequest): Promise<string | null> {
   try {
-    if (getState().privateMode) req = { ...req, private: true };
+    req = getState().privateMode ? { ...req, private: true } : { ...req, project: projectTitle(req.prompt) };
     const job = await api.submit(req);
     const item: SessionItem = { key: newKey(), kind: "job", jobId: job.id, request: req };
     setState((s) => ({ jobs: { ...s.jobs, [job.id]: job }, session: [...s.session, item], selected: item.key, redo: [] }));

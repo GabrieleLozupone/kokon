@@ -166,6 +166,27 @@ pub fn sanitize_file_stem(s: &str) -> String {
     if out.is_empty() { "image".into() } else { out }
 }
 
+/// A project title as a folder name, as readable as it can stay: letters, digits, spaces and
+/// `-_.,()&'` are kept, anything else becomes a space; at most 60 characters, no leading or
+/// trailing dots or spaces (Windows drops them), and the names Windows reserves (CON, NUL, COM1...)
+/// get a `_`. None when nothing is left.
+pub fn folder_name(s: &str) -> Option<String> {
+    let kept: String = s.chars().map(|c| if c.is_alphanumeric() || " -_.,()&'".contains(c) { c } else { ' ' }).collect();
+    let words = kept.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut out: String = words.chars().take(60).collect();
+    out = out.trim_matches(|c: char| c == '.' || c == ' ').to_string();
+    if out.is_empty() {
+        return None;
+    }
+    let stem = out.split('.').next().unwrap_or("").to_ascii_uppercase();
+    let reserved = ["CON", "PRN", "AUX", "NUL"].contains(&stem.as_str())
+        || ((stem.starts_with("COM") || stem.starts_with("LPT")) && stem.len() == 4 && stem.as_bytes()[3].is_ascii_digit());
+    if reserved {
+        out.push('_');
+    }
+    Some(out)
+}
+
 /// Resolves where to write an output. Adds `.png` if no extension; requires an allowed
 /// root; never returns an existing path or one of `inputs` (adds -1, -2, ...).
 pub fn resolve_output_path(raw: &str, base: Option<&Path>, roots: &[PathBuf], inputs: &[PathBuf]) -> AppResult<PathBuf> {
@@ -203,6 +224,19 @@ pub fn unique_path(p: PathBuf, avoid: &[PathBuf]) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn project_titles_become_folder_names() {
+        assert_eq!(folder_name("Holiday photos: Rome / 2026").as_deref(), Some("Holiday photos Rome 2026"));
+        assert_eq!(folder_name("  ...a red car, at night...  ").as_deref(), Some("a red car, at night"));
+        assert_eq!(folder_name("Café & Bär (v2)").as_deref(), Some("Café & Bär (v2)"));
+        assert_eq!(folder_name("con").as_deref(), Some("con_"));
+        assert_eq!(folder_name("COM1.txt").as_deref(), Some("COM1.txt_"));
+        assert_eq!(folder_name("Comet").as_deref(), Some("Comet"));
+        assert_eq!(folder_name("<>:\"/\\|?*"), None);
+        assert_eq!(folder_name(""), None);
+        assert_eq!(folder_name(&"a".repeat(200)).map(|s| s.len()), Some(60));
+    }
 
     #[test]
     fn normalize_rejects_dangerous_forms() {

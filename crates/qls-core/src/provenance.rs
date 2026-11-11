@@ -37,8 +37,17 @@ pub fn attributes(rec: &GenerationRecord) -> String {
         r#"xmlns:Iptc4xmpExt="http://iptc.org/std/Iptc4xmpExt/2008-02-29/" xmlns:xmp="http://ns.adobe.com/xap/1.0/" Iptc4xmpExt:DigitalSourceType="{IPTC_TYPES}{}" xmp:CreatorTool="Kokon {}" xmp:CreateDate="{}""#,
         source_type(rec),
         escape(&rec.app_version),
-        escape(&rec.created_at),
+        escape(&local_time(&rec.created_at)),
     )
+}
+
+/// The record's time (UTC, "...Z") on this computer's clock with its offset ("...+01:00"):
+/// Windows and many photo viewers show XMP dates as written and drop the zone, so a UTC time
+/// showed an hour early in Europe in winter. The same moment; unchanged if it doesn't parse.
+fn local_time(rfc3339: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(rfc3339)
+        .map(|t| t.with_timezone(&chrono::Local).to_rfc3339_opts(chrono::SecondsFormat::Secs, false))
+        .unwrap_or_else(|_| rfc3339.to_string())
 }
 
 /// The whole XMP packet.
@@ -207,6 +216,20 @@ mod tests {
         .unwrap();
         r.parent_id = parent.map(str::to_string);
         r
+    }
+
+    #[test]
+    fn create_date_is_local_time() {
+        let utc = "2026-11-11T14:45:06.123Z";
+        let local = local_time(utc);
+        assert!(!local.ends_with('Z'), "{local}");
+        let back = chrono::DateTime::parse_from_rfc3339(&local).unwrap();
+        assert_eq!(back.timestamp(), chrono::DateTime::parse_from_rfc3339(utc).unwrap().timestamp());
+        assert_eq!(back.offset().local_minus_utc(), back.with_timezone(&chrono::Local).offset().local_minus_utc());
+        assert_eq!(local_time("not a date"), "not a date");
+        let mut r = rec("generate", None);
+        r.created_at = utc.into();
+        assert!(attributes(&r).contains(&format!("xmp:CreateDate=\"{local}\"")));
     }
 
     #[test]

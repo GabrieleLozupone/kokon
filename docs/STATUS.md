@@ -1,6 +1,6 @@
 # Status
 
-**Updated 2026-11-10.** What is in progress, what comes next, and where help is welcome. Kept current at the end
+**Updated 2026-11-11.** What is in progress, what comes next, and where help is welcome. Kept current at the end
 of every task (see [AGENTS.md](../AGENTS.md#keeping-docsstatusmd-current)); GitHub is the source of truth.
 
 ## Current version: [0.12.0](https://github.com/GabrieleLozupone/kokon/releases/tag/v0.12.0) (2026-11-04)
@@ -19,6 +19,10 @@ Windows, macOS (Apple Silicon, 15+) and Linux (`.deb`, `.rpm`). Installed copies
   unloaded after 15 idle minutes only when no window is attached, so a Kokon left open on a shared server keeps the
   GPU busy for other programs. The model reloads on the next request
   ([#52](https://github.com/GabrieleLozupone/kokon/discussions/52)).
+- **Next release: the time saved in an image's metadata is local time.** Windows and many photo viewers showed
+  it an hour early in Europe (UTC was written). Built and tested.
+- **Next release: a folder for each project (optional).** Settings → General → "A folder for each project": new
+  images go to a folder named after their project instead of one folder per day. Off by default. Built and tested.
 - Next: the desktop app as a client of a Kokon server elsewhere, and a Docker image for AMD and Intel
   (Vulkan) once it can be tested.
 - On the list, no dates yet: a custom upscaler picker

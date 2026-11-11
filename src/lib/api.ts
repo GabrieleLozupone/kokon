@@ -211,8 +211,8 @@ export const api = {
   /** Leaves a result out of the gallery list (layers lab steps), or shows it again. */
   setHidden: (id: string, hidden: boolean) => call<GenerationRecord>(`/gallery/${id}`, { method: "PATCH", body: json({ hidden }) }),
   /** The layers lab's flattened image (an upload), saved to the gallery as made from `from`. */
-  saveLayers: (image: string, from: string | null, isPrivate: boolean) =>
-    call<GenerationRecord>("/gallery/layers", { method: "POST", body: json({ image, from, private: isPrivate }) }),
+  saveLayers: (image: string, from: string | null, isPrivate: boolean, project?: string) =>
+    call<GenerationRecord>("/gallery/layers", { method: "POST", body: json({ image, from, private: isPrivate, project }) }),
   deleteGeneration: (id: string) => call<{ deleted: string }>(`/gallery/${id}`, { method: "DELETE" }),
   /** Adds the bundled example projects to the gallery (idempotent) and lists them. */
   installExamples: () => call<{ projects: { title: string; generations: string[] }[] }>("/examples", { method: "POST" }),
@@ -228,8 +228,8 @@ export const api = {
   importLut: (path: string) => call<LutEntry>("/luts/import", { method: "POST", body: json({ path }) }),
   removeLut: (name: string) => call<{ removed: string }>(`/luts/${encodeURIComponent(name)}`, { method: "DELETE" }),
   /** Saves `source` with the LUT applied as a new version; `intensity` 0-1. */
-  applyLut: (name: string, source: string, intensity: number, isPrivate: boolean) =>
-    call<GenerationRecord>(`/luts/${encodeURIComponent(name)}/apply`, { method: "POST", body: json({ source, intensity, private: isPrivate }) }),
+  applyLut: (name: string, source: string, intensity: number, isPrivate: boolean, project?: string) =>
+    call<GenerationRecord>(`/luts/${encodeURIComponent(name)}/apply`, { method: "POST", body: json({ source, intensity, private: isPrivate, project }) }),
   exportGeneration: (id: string, path: string, original = false) => call<{ path: string }>(`/gallery/${id}/export`, { method: "POST", body: json({ path, overwrite: true, original }) }),
   /** The project list every device shares (crates/qls-core/src/projects.rs). */
   projects: () => call<{ projects: ProjectData[] }>("/projects"),

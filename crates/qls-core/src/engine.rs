@@ -979,7 +979,8 @@ impl Engine {
     /// Applies a library LUT to a "gen:"/"input:" source at `intensity` (0-1) and saves the
     /// result as a new version made from it (mode "lut"; the source stays as it is). Private
     /// when asked or when the source itself is private. Same file format as a source result.
-    pub fn apply_lut(&self, src: &str, name: &str, intensity: f32, private: bool) -> AppResult<GenerationRecord> {
+    /// `project`: the title of the app's project it joins (its folder with `project_folders`).
+    pub fn apply_lut(&self, src: &str, name: &str, intensity: f32, private: bool, project: Option<&str>) -> AppResult<GenerationRecord> {
         let started = Instant::now();
         let library = self.luts();
         let lut = library.load(name)?;
@@ -1003,14 +1004,14 @@ impl Engine {
         let id = new_id();
         let now = chrono::Local::now();
         let store = if private { &self.private_store } else { &self.store };
-        let dir = if private { self.private_dir.join("out") } else { cfg.output_dir.join(now.format("%Y-%m-%d").to_string()) };
+        let (dir, time) = if private { (self.private_dir.join("out"), now.format("%H%M%S").to_string()) } else { output_place(&cfg, project, &now) };
         std::fs::create_dir_all(&dir).map_err(|e| AppError::io("create the output folder", &dir, e))?;
         let format = match parent.as_ref().and_then(|p| Path::new(&p.file_path).extension()).map(|e| e.to_string_lossy().to_ascii_lowercase()).as_deref() {
             Some("jpg" | "jpeg") => OutputFormat::Jpeg,
             Some("webp") => OutputFormat::Webp,
             _ => OutputFormat::Png,
         };
-        let file = paths::unique_path(dir.join(format!("{}-lut-{}.{}", now.format("%H%M%S"), paths::sanitize_file_stem(name), format.ext())), &[]);
+        let file = paths::unique_path(dir.join(format!("{time}-lut-{}.{}", paths::sanitize_file_stem(name), format.ext())), &[]);
         let pct = (intensity * 100.0).round();
         let mut rec = GenerationRecord {
             id: id.clone(),
@@ -1073,7 +1074,8 @@ impl Engine {
     /// Saves the layers lab's flattened image (`image`, an "input:" upload) as a gallery result
     /// made from `from` (the image that was split): mode "layers", PNG. Private when asked or
     /// when `from` is private.
-    pub fn save_layers(&self, image: &str, from: Option<&str>, private: bool) -> AppResult<GenerationRecord> {
+    /// `project` as in [`Self::apply_lut`].
+    pub fn save_layers(&self, image: &str, from: Option<&str>, private: bool, project: Option<&str>) -> AppResult<GenerationRecord> {
         let parent = match from.and_then(|f| f.strip_prefix("gen:")) {
             Some(id) => self.gen_store(id).get_generation(id).ok(),
             None => None,
@@ -1086,9 +1088,9 @@ impl Engine {
         let id = new_id();
         let now = chrono::Local::now();
         let store = if private { &self.private_store } else { &self.store };
-        let dir = if private { self.private_dir.join("out") } else { cfg.output_dir.join(now.format("%Y-%m-%d").to_string()) };
+        let (dir, time) = if private { (self.private_dir.join("out"), now.format("%H%M%S").to_string()) } else { output_place(&cfg, project, &now) };
         std::fs::create_dir_all(&dir).map_err(|e| AppError::io("create the output folder", &dir, e))?;
-        let file = paths::unique_path(dir.join(format!("{}-layers.png", now.format("%H%M%S"))), &[]);
+        let file = paths::unique_path(dir.join(format!("{time}-layers.png")), &[]);
         let out = img.pixels;
         let mut rec = GenerationRecord {
             id: id.clone(),
@@ -1848,10 +1850,10 @@ impl Engine {
         let id = new_id();
         let now = chrono::Local::now();
         let store = if req.private { &self.private_store } else { &self.store };
-        let dir = if req.private { self.private_dir.join("out") } else { cfg.output_dir.join(now.format("%Y-%m-%d").to_string()) };
+        let (dir, time) = if req.private { (self.private_dir.join("out"), now.format("%H%M%S").to_string()) } else { output_place(&cfg, req.project.as_deref(), &now) };
         std::fs::create_dir_all(&dir).map_err(|e| AppError::io("create the output folder", &dir, e))?;
         let words: Vec<&str> = req.prompt.split_whitespace().take(6).collect();
-        let stem = format!("{}-{}-{seed}", now.format("%H%M%S"), paths::sanitize_file_stem(&words.join(" ")));
+        let stem = format!("{time}-{}-{seed}", paths::sanitize_file_stem(&words.join(" ")));
         // HDR from a HEIC source forces an Ultra HDR JPEG; otherwise the requested format.
         let (hdr, hdr_note) = hdr_for(img, req, plan, inputs);
         let format = if hdr.is_some() { OutputFormat::Jpeg } else { plan.output_format };
@@ -2005,6 +2007,17 @@ fn hdr_for(img: &image::RgbaImage, req: &GenerationRequest, plan: &Plan, inputs:
             tracing::warn!("HDR gain map failed: {e}");
             (None, Some(format!("HDR not kept: {e}.")))
         }
+    }
+}
+
+/// The folder of a result that is not private and the time its file name starts with: one folder
+/// per day (`2026-11-11/143005-...`), or with `project_folders` one per project, where the name
+/// carries the date too (`Holiday photos/2026-11-11-143005-...`). A result with no project, or a
+/// title that leaves no folder name, goes to the day's folder.
+fn output_place(cfg: &AppConfig, project: Option<&str>, now: &chrono::DateTime<chrono::Local>) -> (PathBuf, String) {
+    match project.filter(|_| cfg.project_folders).and_then(paths::folder_name) {
+        Some(folder) => (cfg.output_dir.join(folder), now.format("%Y-%m-%d-%H%M%S").to_string()),
+        None => (cfg.output_dir.join(now.format("%Y-%m-%d").to_string()), now.format("%H%M%S").to_string()),
     }
 }
 
@@ -2454,6 +2467,19 @@ mod tests {
     }
 
     #[test]
+    fn project_folders_are_opt_in() {
+        use chrono::TimeZone;
+        let now = chrono::Local.with_ymd_and_hms(2026, 11, 11, 15, 45, 6).unwrap();
+        let mut cfg = AppConfig { output_dir: PathBuf::from("out"), ..AppConfig::default() };
+        let day = (PathBuf::from("out").join("2026-11-11"), "154506".to_string());
+        assert_eq!(output_place(&cfg, Some("Holiday: Rome"), &now), day, "off by default");
+        cfg.project_folders = true;
+        assert_eq!(output_place(&cfg, Some("Holiday: Rome"), &now), (PathBuf::from("out").join("Holiday Rome"), "2026-11-11-154506".to_string()));
+        assert_eq!(output_place(&cfg, None, &now), day, "MCP and API jobs have no project");
+        assert_eq!(output_place(&cfg, Some("???"), &now), day);
+    }
+
+    #[test]
     fn reviewed_prompts_keep_the_users_words() {
         let dir = tempfile::tempdir().unwrap();
         // SAFETY: test-only env override, single-threaded setup.
@@ -2514,7 +2540,7 @@ mod tests {
         let e = Engine::new(cfg, dir.path()).unwrap();
         let img = image::RgbaImage::from_fn(400, 300, |x, y| image::Rgba([(x / 2) as u8, (y / 2) as u8, 90, 255]));
         let input = e.store.put_input(&imaging::encode_png(&img, &[], None, false).unwrap(), Some("lab.png"), None).unwrap();
-        let rec = e.save_layers(&format!("input:{}", input.id), None, false).unwrap();
+        let rec = e.save_layers(&format!("input:{}", input.id), None, false, None).unwrap();
         let bytes = std::fs::read(&rec.file_path).unwrap();
         assert_eq!(crate::provenance::declared_ai_type(&bytes), Some("compositeWithTrainedAlgorithmicMedia"));
         let saved = imaging::decode_image(&bytes).unwrap().pixels;
@@ -2548,18 +2574,18 @@ mod tests {
         let preview = e.lut_preview(&src, &lut.name, 1024).unwrap();
         assert_eq!(preview.1, "image/jpeg");
 
-        let rec = e.apply_lut(&src, &lut.name, 0.5, false).unwrap();
+        let rec = e.apply_lut(&src, &lut.name, 0.5, false, None).unwrap();
         assert_eq!((rec.mode.as_str(), rec.width, rec.height), ("lut", 16, 8));
         // A LUT of a camera photo is not AI-made (XMP "enhanced", no watermark), nor is a LUT of that.
         assert!(!crate::provenance::is_ai(&rec) && rec.source_type.is_none());
         assert_eq!(crate::provenance::declared_ai_type(&std::fs::read(&rec.file_path).unwrap()), None);
-        let twice = e.apply_lut(&format!("gen:{}", rec.id), &lut.name, 0.5, false).unwrap();
+        let twice = e.apply_lut(&format!("gen:{}", rec.id), &lut.name, 0.5, false, None).unwrap();
         assert_eq!((twice.source_type.as_deref(), crate::provenance::is_ai(&twice)), (Some("algorithmicallyEnhanced"), false));
         // An imported image that says it was AI-made stays marked so (the Code's Measure 1.2).
         let ai_rec = test_record("ai", 1, "ai.jpg");
         let ai = crate::provenance::jpeg_with_xmp(&imaging::encode_jpeg(&image::RgbaImage::from_pixel(16, 8, image::Rgba([9, 9, 9, 255])), 90).unwrap(), &crate::provenance::xmp(&GenerationRecord { mode: "generate".into(), ..ai_rec }));
         let ai_input = e.store.put_input(&ai, Some("from-another-app.jpg"), None).unwrap();
-        let kept = e.apply_lut(&format!("input:{}", ai_input.id), &lut.name, 0.5, false).unwrap();
+        let kept = e.apply_lut(&format!("input:{}", ai_input.id), &lut.name, 0.5, false, None).unwrap();
         assert_eq!(kept.source_type.as_deref(), Some("trainedAlgorithmicMedia"));
         assert_eq!(crate::provenance::declared_ai_type(&std::fs::read(&kept.file_path).unwrap()), Some("trainedAlgorithmicMedia"));
         assert_eq!(rec.request["images"][0], src.as_str(), "made from the source (timeline link)");
@@ -2571,15 +2597,15 @@ mod tests {
         assert!(e.store.get_generation(&rec.id).is_ok());
 
         // A result of a result keeps its format and parent; private sources stay private.
-        let again = e.apply_lut(&format!("gen:{}", rec.id), &lut.name, 1.0, false).unwrap();
+        let again = e.apply_lut(&format!("gen:{}", rec.id), &lut.name, 1.0, false, None).unwrap();
         assert_eq!(again.parent_id.as_deref(), Some(rec.id.as_str()));
         let other = imaging::encode_png(&image::RgbaImage::from_pixel(4, 4, image::Rgba([1, 2, 3, 255])), &[], None, false).unwrap();
         let secret = e.private_store.put_input(&other, Some("secret.png"), None).unwrap();
-        let p = e.apply_lut(&format!("input:{}", secret.id), &lut.name, 1.0, false).unwrap();
+        let p = e.apply_lut(&format!("input:{}", secret.id), &lut.name, 1.0, false, None).unwrap();
         assert!(e.store.get_generation(&p.id).is_err() && e.private_store.get_generation(&p.id).is_ok());
         assert!(Path::new(&p.file_path).starts_with(dir.path().join("private")));
-        assert!(e.apply_lut("C:/x.png", &lut.name, 1.0, false).is_err());
-        assert!(e.apply_lut(&src, "missing", 1.0, false).is_err());
+        assert!(e.apply_lut("C:/x.png", &lut.name, 1.0, false, None).is_err());
+        assert!(e.apply_lut(&src, "missing", 1.0, false, None).is_err());
     }
 
     #[test]

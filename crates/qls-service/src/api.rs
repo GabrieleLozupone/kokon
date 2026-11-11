@@ -1170,6 +1170,9 @@ struct LutApplyBody {
     intensity: f32,
     #[serde(default)]
     private: bool,
+    /// The app's project title (see `GenerationRequest::project`).
+    #[serde(default)]
+    project: Option<String>,
 }
 
 fn default_intensity() -> f32 {
@@ -1179,7 +1182,7 @@ fn default_intensity() -> f32 {
 /// Saves the image with the LUT applied as a new version (the source is kept).
 async fn luts_apply(State(s): St, AxPath(name): AxPath<String>, Json(b): Json<LutApplyBody>) -> ApiResult<Json<Value>> {
     let engine = s.engine.clone();
-    let rec = tokio::task::spawn_blocking(move || engine.apply_lut(&b.source, &name, b.intensity, b.private)).await.map_err(AppError::internal)??;
+    let rec = tokio::task::spawn_blocking(move || engine.apply_lut(&b.source, &name, b.intensity, b.private, b.project.as_deref())).await.map_err(AppError::internal)??;
     Ok(Json(serde_json::to_value(rec).unwrap()))
 }
 
@@ -1255,12 +1258,15 @@ struct LayersBody {
     from: Option<String>,
     #[serde(default)]
     private: bool,
+    /// The app's project title (see `GenerationRequest::project`).
+    #[serde(default)]
+    project: Option<String>,
 }
 
 /// The layers lab's image, saved to the gallery (its steps are hidden there).
 async fn gallery_save_layers(State(s): St, Json(b): Json<LayersBody>) -> ApiResult<Json<GenerationRecord>> {
     let engine = s.engine.clone();
-    let rec = tokio::task::spawn_blocking(move || engine.save_layers(&b.image, b.from.as_deref(), b.private)).await.map_err(AppError::internal)??;
+    let rec = tokio::task::spawn_blocking(move || engine.save_layers(&b.image, b.from.as_deref(), b.private, b.project.as_deref())).await.map_err(AppError::internal)??;
     Ok(Json(rec))
 }
 

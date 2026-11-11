@@ -442,6 +442,11 @@ export function Settings() {
               <SupportCard />
               <AiMarkingCard />
               <PathField label="Save images to" value={cfg.outputDir} folder open onChange={(v) => set({ outputDir: v })} />
+              <div className="field-row">
+                <span>A folder for each project</span>
+                <Switch on={!!cfg.projectFolders} onChange={(v) => set({ projectFolders: v })} />
+              </div>
+              <span className="muted" style={{ marginTop: -10 }}>New images go to a folder named after their project, with the date in the file name, instead of one folder per day. Images already saved stay where they are.</span>
               <div className="field">
                 <span>Appearance</span>
                 <Seg<ThemeChoice>

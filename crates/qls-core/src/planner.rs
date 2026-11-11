@@ -309,6 +309,10 @@ pub struct GenerationRequest {
     /// The result is left out of the gallery list (a layers lab step, see `GenerationRecord::hidden`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hidden: bool,
+    /// The title of the app's project the result joins: its folder when `AppConfig::project_folders`
+    /// is on (sent by the app only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
 }
 
 // ---------------------------------------------------------------------------------------

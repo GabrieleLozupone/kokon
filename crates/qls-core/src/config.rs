@@ -345,6 +345,9 @@ pub struct AppConfig {
     /// the engine on Windows and Linux and on smaller Macs.
     pub mac_engine: bool,
     pub output_dir: PathBuf,
+    /// Results of a project the app sends go to `<output_dir>/<project title>/`, named with the
+    /// date and time, instead of one folder per day. Off by default (Settings → General).
+    pub project_folders: bool,
     pub keep_server_running: bool,
     /// Unload the model after this many minutes without work, also while a window or browser tab is
     /// open, so the GPU is free for other programs; the next job loads it again. 0 disables.
@@ -397,6 +400,7 @@ impl Default for AppConfig {
             extra_server_args: vec![],
             mac_engine: false,
             output_dir: default_output_dir(),
+            project_folders: false,
             keep_server_running: false,
             idle_unload_minutes: 10,
             setup_complete: false,
