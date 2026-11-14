@@ -116,15 +116,22 @@ export const native = {
     window.addEventListener("resize", f);
     return () => window.removeEventListener("resize", f);
   },
-  saveAs: (defaultName: string) =>
-    save({
+  saveAs: (defaultName: string) => {
+    const isVideo = defaultName.toLowerCase().endsWith(".webm") || defaultName.toLowerCase().endsWith(".mp4");
+    return save({
       defaultPath: defaultName,
-      filters: [
-        { name: "PNG", extensions: ["png"] },
-        { name: "JPEG", extensions: ["jpg"] },
-        { name: "WebP", extensions: ["webp"] },
-      ],
-    }),
+      filters: isVideo
+        ? [
+            { name: "WebM Video", extensions: ["webm"] },
+            { name: "MP4 Video", extensions: ["mp4"] },
+          ]
+        : [
+            { name: "PNG", extensions: ["png"] },
+            { name: "JPEG", extensions: ["jpg"] },
+            { name: "WebP", extensions: ["webp"] },
+          ],
+    });
+  },
   /** The Layers lab's .psd: desktop asks where (null: cancelled), a browser downloads it. */
   savePsd: async (psd: Uint8Array): Promise<string | null> => {
     if (!inBrowser) return invoke<string | null>("save_psd", psd);

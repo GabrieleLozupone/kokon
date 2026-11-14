@@ -1882,6 +1882,7 @@ impl Engine {
             ResolvedMode::MultiReference => "multi_reference",
             ResolvedMode::Compose => "compose",
             ResolvedMode::Upscale => "upscale",
+            ResolvedMode::Video => "video",
         };
         let mut rec = GenerationRecord {
             id: id.clone(),
