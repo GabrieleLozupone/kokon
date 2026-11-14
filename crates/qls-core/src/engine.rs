@@ -2825,6 +2825,8 @@ impl Engine {
             client: req.client.clone(),
             request: serde_json::to_value(req).unwrap_or_default(),
             pipeline: None,
+            hidden: req.hidden,
+            source_type: None,
         };
 
         store.insert_generation(&rec)?;

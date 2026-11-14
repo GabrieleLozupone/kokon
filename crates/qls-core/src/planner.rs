@@ -321,6 +321,15 @@ pub struct GenerationRequest {
     /// The result is left out of the gallery list (a layers lab step, see `GenerationRecord::hidden`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hidden: bool,
+    /// Number of video frames for `mode: video` (e.g. 49, 65, 81).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_frames: Option<u32>,
+    /// Frame rate for `mode: video` (default: 24 fps).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fps: Option<u32>,
+    /// Generate a seamlessly looping video (`mode: video`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_loop: Option<bool>,
 }
 
 // ---------------------------------------------------------------------------------------

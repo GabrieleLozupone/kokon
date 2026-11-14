@@ -596,7 +596,7 @@ async fn install_start(State(s): St, Json(b): Json<InstallBody>) -> ApiResult<Js
         e.place_bundled_watermark();
     })
     .await;
-    let label = if user { format!("user:{}", preset.id) } else { preset.id.to_string() };
+    let label = if user { format!("user:{}", b.preset) } else { b.preset.clone() };
     s.engine.installer.start(cfg.sdcpp_dir.clone(), &label, downloads, on_finish)?;
     Ok(Json(serde_json::to_value(s.engine.installer.status()).unwrap()))
 }
@@ -659,7 +659,7 @@ async fn segment_model(State(s): St, AxPath(file): AxPath<String>) -> ApiResult<
     let path = qls_core::matting::sam_file(&s.engine.config().sdcpp_dir, &file)
         .filter(|p| p.is_file())
         .ok_or_else(|| AppError::new(ErrorCode::NotFound, "The selection model is not downloaded."))?;
-    serve_file(&path, Some("application/octet-stream")).await
+    serve_file(&path, Some("application/octet-stream"), None).await
 }
 
 #[derive(Deserialize)]

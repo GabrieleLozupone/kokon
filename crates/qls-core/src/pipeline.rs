@@ -529,13 +529,14 @@ pub fn prepare(
                 / op.working.scale)
                 .round() as u32;
             kind = PostKind::Outpaint { source: src.clone(), feather: feather_final.max(2), match_colors: true };
+        }
         ResolvedMode::Video => {
             if !plan.references.is_empty() && !images.is_empty() {
                 let img = &images[plan.references[0].index].pixels;
                 req.init_image = Some(png_b64(&to_canvas(img, &plan.references[0].canvas))?);
             }
         }
-        }
+        ResolvedMode::Upscale => return Err(AppError::internal("an upscale has no diffusion request")),
     }
 
     Ok(PreparedJob {
