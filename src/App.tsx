@@ -336,7 +336,7 @@ export default function App() {
         ) : (
           <div className="failed">
             <strong>{inBrowser ? "Could not reach Kokon" : "Could not start the local service"}</strong>
-            <span>{boot}</span>
+            <span style={{ whiteSpace: "pre-line" }}>{boot}</span>
             <button className="btn" onClick={() => location.reload()}>
               Try again
             </button>

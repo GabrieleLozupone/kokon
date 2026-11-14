@@ -78,18 +78,67 @@ fn service_exe() -> Option<PathBuf> {
     None
 }
 
-fn spawn_service() -> Result<(), String> {
+/// The service's own output while it runs: a crash before it opens its log (an unsupported
+/// processor, a missing library) leaves its reason here (#53). In the temp folder, not the data
+/// folder, which the service creates (and moves from the old name) itself.
+fn start_log() -> PathBuf {
+    std::env::temp_dir().join("kokon-service-start.log")
+}
+
+const NO_AVX: &str = "This processor does not support AVX instructions, which Kokon needs (most processors made since 2011 have them), so Kokon cannot run on this computer.";
+
+/// Kokon's engine and libraries are built for x86 processors with AVX: one without it (a 2010
+/// Xeon, #53) stopped with "Illegal instruction" before writing anything.
+fn cpu_unsupported() -> Option<&'static str> {
+    #[cfg(target_arch = "x86_64")]
+    if !std::arch::is_x86_feature_detected!("avx") {
+        return Some(NO_AVX);
+    }
+    None
+}
+
+fn spawn_service() -> Result<std::process::Child, String> {
+    if let Some(why) = cpu_unsupported() {
+        return Err(why.into());
+    }
     let exe = service_exe().ok_or("kokon-service was not found next to the application.")?;
     let mut cmd = std::process::Command::new(exe);
-    cmd.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    let err = std::fs::File::create(start_log()).map(std::process::Stdio::from).unwrap_or_else(|_| std::process::Stdio::null());
+    cmd.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(err);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         // CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP: survives independently of this window.
         cmd.creation_flags(0x0800_0000 | 0x0000_0200);
     }
-    cmd.spawn().map_err(|e| format!("Could not start the Kokon service: {e}"))?;
-    Ok(())
+    cmd.spawn().map_err(|e| format!("Could not start the Kokon service: {e}"))
+}
+
+/// Why the service stopped while starting: an illegal instruction means the processor lacks
+/// something it was built for; otherwise the exit status and the last lines it wrote.
+fn start_failure(status: std::process::ExitStatus) -> String {
+    #[cfg(unix)]
+    let illegal = {
+        use std::os::unix::process::ExitStatusExt;
+        status.signal() == Some(4) // SIGILL
+    };
+    #[cfg(windows)]
+    let illegal = status.code() == Some(0xC000_001Du32 as i32); // STATUS_ILLEGAL_INSTRUCTION
+    #[cfg(not(any(unix, windows)))]
+    let illegal = false;
+    if illegal {
+        return "The Kokon service stopped with an illegal instruction: this processor lacks instructions Kokon is built for (AVX or newer).".into();
+    }
+    let text = std::fs::read_to_string(start_log()).unwrap_or_default();
+    let tail: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    let tail = tail[tail.len().saturating_sub(5)..].join("
+");
+    if tail.is_empty() {
+        format!("The Kokon service stopped while starting ({status}).")
+    } else {
+        format!("The Kokon service stopped while starting ({status}):
+{tail}")
+    }
 }
 
 /// Asks the service to exit (it also stops sd-server unless kept loaded) and waits until it
@@ -119,7 +168,7 @@ fn ensure_service(shared: &Shared) -> Result<ServiceInfo, String> {
         // Left running by the previous version (e.g. just updated): replace it.
         stop_service(&i);
     }
-    spawn_service()?;
+    let mut child = spawn_service()?;
     let start = Instant::now();
     while start.elapsed() < Duration::from_secs(20) {
         std::thread::sleep(Duration::from_millis(250));
@@ -128,8 +177,15 @@ fn ensure_service(shared: &Shared) -> Result<ServiceInfo, String> {
         {
             return Ok(i);
         }
+        if let Ok(Some(status)) = child.try_wait() {
+            return Err(start_failure(status));
+        }
     }
-    Err(format!("The Kokon service did not start. See {}.", data_dir().join("logs").join("service.log").display()))
+    Err(format!(
+        "The Kokon service did not start. See {} and {}.",
+        data_dir().join("logs").join("service.log").display(),
+        start_log().display()
+    ))
 }
 
 fn heartbeat(info: &ServiceInfo) -> bool {

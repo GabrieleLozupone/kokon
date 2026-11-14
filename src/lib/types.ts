@@ -83,6 +83,10 @@ export interface GenerationRequest {
   fps?: number | null;
   /** Generate a seamlessly looping video. */
   video_loop?: boolean | null;
+  /** More like this: a new version of image 1 keeping its layout; the share of the steps redrawn (0..1). */
+  vary?: number;
+  /** The open project's title: the result's folder when Settings → "A folder for each project" is on. */
+  project?: string;
 }
 
 export interface WorkingCanvas { source: Size; content: Size; canvas: Size; content_offset: [number, number]; scale: number }
@@ -353,6 +357,8 @@ export interface AppConfig {
   /** Kokon's own engine for Apple Silicon instead of sd.cpp's Metal build (experimental, off by default; Metal only). */
   macEngine?: boolean;
   outputDir: string;
+  /** Results go to a folder named after their project instead of one folder per day. */
+  projectFolders?: boolean;
   keepServerRunning: boolean;
   idleUnloadMinutes: number;
   setupComplete: boolean;

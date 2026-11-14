@@ -281,9 +281,7 @@ from then on.
 > of the same engine, tested so far on an RTX 5070 Ti under WSL. Details in
 > [docs/platforms.md](docs/platforms.md) and [docs/linux.md](docs/linux.md).
 
-<details>
-<summary><b>Model presets: what gets downloaded</b></summary>
-<br>
+#### Model presets: what gets downloaded
 
 The setup screen picks a preset from your VRAM. On a Mac the presets are named by unified
 memory (16–24 GB Mac, 32–36 GB Mac, 48 GB Mac, 64 GB+ Mac), because the graphics part can use
@@ -318,8 +316,6 @@ the setup screen and pick the folder (such as `ComfyUI\models`): Kokon finds the
 text encoder and vision projector by their contents, as GGUF or safetensors in any quantization,
 and downloads only the engine and any piece you don't have. Files stay where they are. Your own
 files are not tested by Kokon; you can switch to the official files at any time in Settings → Models.
-
-</details>
 
 ## What you can do
 
@@ -475,7 +471,8 @@ claude mcp add-json --scope user kokon '{"type":"stdio","command":"C:\\Users\\<y
 - `upscale_image` takes `scale` (default 2) or `width`/`height` (up to 8192 px).
 - Progress is reported through MCP progress notifications. Claude Code's default tool timeout is
   30 minutes (`MCP_TOOL_TIMEOUT`).
-- Without the desktop window open, the model is unloaded after 15 idle minutes (Settings → General).
+- After 10 minutes without work the model is unloaded, so the graphics card is free for other programs, also
+  with the desktop window open; the next call loads it again (Settings → General, 0 keeps it loaded).
 
 </details>
 
@@ -743,9 +740,10 @@ gives the upscaler a smaller image, like the ones it was trained on.
 **Windows:** Settings → Apps → Installed apps → Kokon → Uninstall. The uninstaller asks whether to
 delete the downloaded models and app data too (`%LOCALAPPDATA%\KokonData`).
 
-**Mac:** drag Kokon from Applications to the Trash. To free the model space too, delete
-`~/Library/Application Support/KokonData`.
+**Mac:** drag Kokon from Applications to the Trash. **Linux:** `sudo apt remove kokon` (or `dnf`).
+On both, the models and app data stay in your home folder until you delete them.
 
+Step by step, with every folder to delete on each system: **[kokon.app/uninstall](https://kokon.app/uninstall/)**.
 Your images stay in your Pictures folder.
 
 </details>

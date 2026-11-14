@@ -1,21 +1,30 @@
 # Status
 
-**Updated 2026-11-04.** What is in progress, what comes next, and where help is welcome. Kept current at the end
+**Updated 2026-11-11.** What is in progress, what comes next, and where help is welcome. Kept current at the end
 of every task (see [AGENTS.md](../AGENTS.md#keeping-docsstatusmd-current)); GitHub is the source of truth.
 
-## Current version: [0.12.0](https://github.com/GabrieleLozupone/kokon/releases/tag/v0.12.0) (2026-11-04)
+## Current version: [0.12.1](https://github.com/GabrieleLozupone/kokon/releases/tag/v0.12.1) (2026-11-11)
+
+More like this (Subtle / Strong, [#55](https://github.com/GabrieleLozupone/kokon/issues/55)), Redraw at this size in the
+Layers lab, the GPU freed after 10 idle minutes even with a window open
+([#52](https://github.com/GabrieleLozupone/kokon/discussions/52)), an optional folder for each project, local time in
+image metadata, a clear message when the service cannot start ([#53](https://github.com/GabrieleLozupone/kokon/issues/53)).
 
 Windows, macOS (Apple Silicon, 15+) and Linux (`.deb`, `.rpm`). Installed copies update from the app.
 
 ## Next
 
+- **Edits on edits** ([#44](https://github.com/GabrieleLozupone/kokon/issues/44)): a chain of 4 edits was measured
+  on 2K images; most detail goes at the first edit, and starting from the pre-upscale image does not help. No change
+  yet; next to try: keeping the parts of the image an edit did not touch.
 - **Layers lab** (experimental since 0.12): reports on which images split well or badly are welcome; Blend into scene
   often does not work yet.
 - Next: the desktop app as a client of a Kokon server elsewhere, and a Docker image for AMD and Intel
   (Vulkan) once it can be tested.
 - On the list, no dates yet: a custom upscaler picker
-  ([#34](https://github.com/GabrieleLozupone/kokon/issues/34)), everything in one folder / a portable build
-  ([#26](https://github.com/GabrieleLozupone/kokon/issues/26)), translations (only with contributor help).
+  ([#34](https://github.com/GabrieleLozupone/kokon/issues/34)), translations (only with contributor help).
+- Not planned: a portable build ([#26](https://github.com/GabrieleLozupone/kokon/issues/26)). Kokon removes cleanly
+  instead: [kokon.app/uninstall](https://kokon.app/uninstall/).
 
 ## Known issues
 

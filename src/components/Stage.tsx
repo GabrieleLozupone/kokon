@@ -1,15 +1,15 @@
 import {
-  Brush, Check, ClipboardPaste, Combine, Copy, Download, Ellipsis, Expand, FolderOpen, Heart, ImageUpscale, Info, Layers, Loader2, MousePointerClick, Palette, Pencil, RefreshCw, RotateCcw, SlidersHorizontal, Square, TextCursorInput, Trash2, Video, Wand2, WandSparkles, X,
+  Brush, Check, ClipboardPaste, Combine, Copy, Download, Ellipsis, Expand, FolderOpen, Heart, ImageUpscale, Images, Info, Layers, Loader2, MousePointerClick, Palette, Pencil, RefreshCw, RotateCcw, SlidersHorizontal, Square, TextCursorInput, Trash2, Video, Wand2, WandSparkles, X,
 } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, urls } from "../lib/api";
 import {
   compareBase, composerFromRecord, formatDuration, jobLabel, type JobClock, lutInfo, lutLabel, MAX_UPSCALE_AREA, MAX_UPSCALE_SIDE, MODE_LABEL, pipelineSummary, remainingSeconds, sizeForWidth, upscaleRequest, arcLayout,
-  upscalerLabel, upscaleTargets, variationRequest, imageName, type LinkKind, type TimelineLink,
+  upscalerLabel, upscaleTargets, variationRequest, moreLikeThisRequest, MORE_LIKE_THIS, imageName, type LinkKind, type TimelineLink,
 } from "../lib/logic";
 import { canCopyImage, native } from "../lib/native";
 import {
-  addAsReference, addResult, animateItem, cancelJob, focusPrompt, getState, itemSource, removeSessionItem, removeSessionItems, reusePrompt, selectedItem, selectItem, sessionLabels, sessionLinks, setState, stageImage, submitRequest, toastError, toastInfo, useStore, type SessionItem,
+  addAsReference, addResult, animateItem, cancelJob, focusPrompt, getState, itemSource, projectTitle, removeSessionItem, removeSessionItems, reusePrompt, selectedItem, selectItem, sessionLabels, sessionLinks, setState, stageImage, submitRequest, toastError, toastInfo, useStore, type SessionItem,
 } from "../lib/store";
 import type { GenerationRecord, GenerationRequest, JobView, LutEntry, Mode, Size } from "../lib/types";
 import { Cocoon, Hatch } from "./Cocoon";
@@ -375,6 +375,39 @@ export function UpscaleButton(props: { source: string; size: Size; original?: Si
   );
 }
 
+/** More like this (#55): a new image from this one, a little or more different. */
+function MoreLikeThisButton({ g }: { g: GenerationRecord }) {
+  const run = (strength: number) => {
+    const r = moreLikeThisRequest(g, strength);
+    if (r) submitRequest(r);
+  };
+  const options = [
+    { strength: MORE_LIKE_THIS.subtle, label: "Subtle", hint: "Same picture, new details" },
+    { strength: MORE_LIKE_THIS.strong, label: "Strong", hint: "Same idea, more changes" },
+  ];
+  return (
+    <Popover
+      placement="top-end"
+      trigger={(open, toggle) => <ActionButton title="More like this: a new image that keeps this one's layout and look" icon={<Images size={16} />} label="More like this" onClick={toggle} active={open} />}
+    >
+      {(close) => (
+        <>
+          {options.map((o) => (
+            <button key={o.label} className="opt" onClick={() => (close(), run(o.strength))}>
+              <span>
+                {o.label}
+                <span className="muted" style={{ display: "block" }}>
+                  {o.hint}
+                </span>
+              </span>
+            </button>
+          ))}
+        </>
+      )}
+    </Popover>
+  );
+}
+
 function MoreMenu({ item, path }: { item: SessionItem; path: string | null }) {
   const g = item.gen;
   return (
@@ -464,6 +497,7 @@ function GenActions({ item, g, showOriginal, onLut }: { item: SessionItem; g: Ge
           onClick={() => animateItem(item)}
         />
       )}
+      {moreLikeThisRequest(g) && <MoreLikeThisButton g={g} />}
       {!isVideo && <UpscaleButton source={`gen:${g.id}`} size={{ width: g.width, height: g.height }} original={original} parentId={g.id} />}
       {!isVideo && <LutButton onPick={onLut} />}
       <span className="sep" />
@@ -1148,7 +1182,7 @@ export function Stage() {
       setSaving(true);
       try {
         lastIntensity = lutActive.intensity;
-        const rec = await api.applyLut(lutActive.lut.name, lutActive.source, lutActive.intensity, getState().privateMode);
+        const rec = await api.applyLut(lutActive.lut.name, lutActive.source, lutActive.intensity, getState().privateMode, projectTitle());
         setLut(null);
         addResult(rec);
       } catch (e) {

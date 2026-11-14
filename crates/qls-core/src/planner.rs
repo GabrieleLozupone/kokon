@@ -330,6 +330,15 @@ pub struct GenerationRequest {
     /// Generate a seamlessly looping video (`mode: video`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub video_loop: Option<bool>,
+    /// More like this: a new version of image 1 (the only image) that keeps its layout, look and
+    /// size, drawn again with this share of the steps (0.5 = the last 4 of 8: close; 0.75: freer).
+    /// Text to image started from the image (img2img), not an edit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vary: Option<f32>,
+    /// The title of the app's project the result joins: its folder when `AppConfig::project_folders`
+    /// is on (sent by the app only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
 }
 
 // ---------------------------------------------------------------------------------------
@@ -1037,6 +1046,10 @@ fn detect_mode(
         }
     };
     let explicit = |m: ResolvedMode, why: &str| Ok((m, false, why.to_string()));
+    if req.vary.is_some() {
+        need(n == 1, "More like this starts from one image.")?;
+        return explicit(ResolvedMode::Generate, "More like this");
+    }
     match req.mode {
         Mode::Generate => explicit(ResolvedMode::Generate, "Selected"),
         Mode::Edit => {
@@ -1267,7 +1280,18 @@ pub fn plan(
                     },
                 },
             };
-            if let Some((w, h)) = explicit_dims {
+            if let Some(v) = req.vary {
+                // The image's own size and shape, rendered at the preset's size as an edit is.
+                let src = inputs.image_sizes[0];
+                let wanted = match req.resolution {
+                    ResolutionMode::Auto => tier_area.unwrap_or(rec.area_balanced).min(src.area().max(256 * 256)),
+                    _ => tier_area.unwrap_or(src.area()),
+                };
+                let area = cap(wanted, &mut notes);
+                working = plan_working_canvas(src, &CanvasLimits { min_side: 64, ..limits(area, rec) });
+                output = src;
+                strength = Some(if v.is_finite() { v.clamp(0.1, 1.0) } else { 0.5 });
+            } else if let Some((w, h)) = explicit_dims {
                 if !(64..=rec.max_side).contains(&w) || !(64..=rec.max_side).contains(&h) {
                     return Err(AppError::invalid(format!(
                         "Width and height must be between 64 and {}.",

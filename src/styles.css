@@ -596,6 +596,8 @@ pre.diag { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font
 .layers-opt { display: flex; align-items: center; gap: 8px; color: var(--text-2); }
 .layers-opt input[type="range"] { flex: 1; }
 .layers-help { color: var(--text-3); line-height: 1.45; margin: 4px 0; }
+.layer-pct.doc-stretched { color: var(--okay); font-weight: 600; margin-right: 4px; }
+.layers-help.doc-stretched-help { color: var(--text-2); background: var(--okay-bg); border-radius: 8px; padding: 6px 8px; }
 .layers-split { margin-top: auto; }
 .doc-frame { background: repeating-conic-gradient(var(--checker) 0 25%, var(--bg) 0 50%) 0 0 / 24px 24px; overflow: hidden; }
 .mask-wrap img.doc-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }

@@ -371,7 +371,16 @@ pub fn prepare(
     };
 
     match plan.mode {
-        ResolvedMode::Generate => {}
+        ResolvedMode::Generate => {
+            // More like this (`GenerationRequest::vary`): the steps start from image 1, so the
+            // result keeps its layout and look; `strength` is the share of the steps run.
+            if let (Some(s), Some(src)) = (plan.strength, images.first()) {
+                let c = plan.content;
+                let content = imaging::resize(&src.pixels, c.width, c.height);
+                req.init_image = Some(png_b64(&imaging::pad_edge(&content, plan.working, (c.x, c.y)))?);
+                req.strength = Some(s);
+            }
+        }
         ResolvedMode::Edit | ResolvedMode::MultiReference | ResolvedMode::Compose => {
             need_images(plan.references.len())?;
             for r in &plan.references {
@@ -1043,6 +1052,26 @@ mod tests {
             "Quality renders toward native 2K: {:?}",
             p.working
         );
+    }
+
+    #[test]
+    fn more_like_this_starts_from_the_image() {
+        let img = photo(3000, 2000);
+        let mut r = req("a harbour at dawn");
+        r.vary = Some(0.5);
+        let p = plan(&r, &env(vec![img.size()]), &RecommendedSettings::default()).unwrap();
+        assert_eq!((p.mode, p.output, p.strength), (ResolvedMode::Generate, img.size(), Some(0.5)));
+        assert!(p.references.is_empty() && p.working.area() <= 1_200_000, "Fast's size, enlarged after: {:?}", p.working);
+        let j = prepare(&p, &r.prompt, 3, std::slice::from_ref(&img), None, &esrgan_opts()).unwrap();
+        assert_eq!(j.request.strength, Some(0.5));
+        assert!(j.request.init_image.is_some() && j.request.ref_images.is_empty() && j.request.mask_image.is_none());
+        // Two images, or none: not something to vary.
+        assert!(plan(&r, &env(vec![img.size(), img.size()]), &RecommendedSettings::default()).is_err());
+        assert!(plan(&r, &env(vec![]), &RecommendedSettings::default()).is_err());
+        // Plain text to image is unchanged.
+        r.vary = None;
+        let p = plan(&r, &env(vec![]), &RecommendedSettings::default()).unwrap();
+        assert!(p.strength.is_none() && prepare(&p, &r.prompt, 3, &[], None, &esrgan_opts()).unwrap().request.init_image.is_none());
     }
 
     #[test]

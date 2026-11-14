@@ -1,6 +1,6 @@
 {
   "name": "kokon-mcp",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "mcpName": "io.github.GabrieleLozupone/kokon",
   "license": "AGPL-3.0-only",
   "description": "MCP server for Kokon: generate and edit images offline with Qwen-Image 2.1 on your own GPU. Requires the Kokon desktop app (Windows/macOS).",

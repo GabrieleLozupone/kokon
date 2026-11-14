@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { copiedShare, stoppedScenes, cropFor, expandedRect, extOf, unionRect, docFor, keepLabsIn, labSources, loadLab, saveLab, waitingMarks, jobLayer, labItems, leftovers, putDoc, type LabStore, shadowAlpha, strengthPixels, mapPoint, placed, reconcile, reorder, toLayer, xfOf, type DocLayer, type LayerDoc } from "./layerDoc";
+import { centre, keepSize, redrawCheck, redrawCrop, redrawnSize, showVersion, sizeOf, copiedShare, stoppedScenes, cropFor, expandedRect, extOf, unionRect, docFor, keepLabsIn, labSources, loadLab, saveLab, waitingMarks, jobLayer, labItems, leftovers, putDoc, type LabStore, shadowAlpha, strengthPixels, mapPoint, placed, reconcile, reorder, toLayer, xfOf, type DocLayer, type LayerDoc } from "./layerDoc";
 
 const layer = (id: string, source: string, base = false): DocLayer => ({ id, name: id, source, history: [source], hidden: false, base, dx: 0, dy: 0, s: 1 });
 const doc = (layers: DocLayer[]): LayerDoc => ({ width: 100, height: 100, layers, known: [] });
@@ -276,5 +276,90 @@ describe("stoppedScenes", () => {
   });
   it("keeps edits not sent yet (in the prompt box)", () => {
     expect(stoppedScenes(doc([scene("input:a")]), [])).toEqual([]);
+  });
+});
+
+describe("Redraw at this size", () => {
+  const box = { x0: 40, y0: 40, x1: 60, y1: 70 };
+  const shown = (d: LayerDoc, id: string, boxes: Record<string, typeof box>) => {
+    const l = d.layers.find((x) => x.id === id)!;
+    return xfOf(d.layers, l, (s) => boxes[s], 100, 100);
+  };
+  // A point of the first version, where it shows on screen through version `v`'s pixels.
+  const onScreen = (d: LayerDoc, id: string, boxes: Record<string, typeof box>, q: { x: number; y: number }) => {
+    const l = d.layers.find((x) => x.id === id)!;
+    const z = sizeOf(d, l, l.source);
+    return mapPoint(shown(d, id, boxes), z.k * q.x + z.tx, z.k * q.y + z.ty);
+  };
+
+  it("the redrawn version shows the object where and as large as it was, at scale 1, its shadow put", () => {
+    const obj = { ...layer("cat", "input:v1"), s: 2, dx: 15, dy: -5 };
+    const shadow: DocLayer = { ...layer("sh", "input:sh"), effect: true, follows: "cat", at: { dx: 5, dy: 0, s: 1.5 }, dx: 1, dy: 2 };
+    const d0 = doc([obj, shadow, layer("bg", "input:bg", true)]);
+    const size = redrawnSize(sizeOf(d0, obj, "input:v1"), { dx: 15, dy: -5, s: 2 }, centre(box));
+    // The redraw's content is the placed box (scaled 2x round its centre, then moved).
+    const boxes = { "input:v1": box, "input:v2": placed(obj, box), "input:sh": { x0: 30, y0: 60, x1: 70, y1: 80 } };
+    const d1 = showVersion({ ...d0, sizes: { "input:v2": size } }, "cat", "input:v2", (s) => boxes[s as keyof typeof boxes], 100, 100);
+    const cat = d1.layers[0];
+    expect(cat.source).toBe("input:v2");
+    expect(cat.history).toEqual(["input:v1", "input:v2"]);
+    expect(cat.s).toBeCloseTo(1);
+    expect(cat.dx).toBeCloseTo(0);
+    expect(cat.dy).toBeCloseTo(0);
+    for (const q of [{ x: 40, y: 40 }, { x: 55, y: 66 }]) {
+      const a = onScreen(d0, "cat", boxes, q);
+      const b = onScreen(d1, "cat", boxes, q);
+      expect(b.x).toBeCloseTo(a.x);
+      expect(b.y).toBeCloseTo(a.y);
+      // The shadow (its own pixels) lands where it did.
+      const s0 = mapPoint(shown(d0, "sh", boxes), q.x, q.y);
+      const s1 = mapPoint(shown(d1, "sh", boxes), q.x, q.y);
+      expect(s1.x).toBeCloseTo(s0.x);
+      expect(s1.y).toBeCloseTo(s0.y);
+    }
+    // Back to the stretched version: the same place again.
+    const d2 = showVersion(d1, "cat", "input:v1", (s) => boxes[s as keyof typeof boxes], 100, 100);
+    expect(d2.layers[0]).toMatchObject({ source: "input:v1", s: 2, dx: 15, dy: -5 });
+    expect(d2.layers[1].at!.s).toBeCloseTo(1.5);
+  });
+
+  it("moved or scaled again while it was redrawn: that move is kept", () => {
+    const obj = { ...layer("cat", "input:v1"), s: 2.5, dx: 20, dy: 0 };
+    const size = redrawnSize({ k: 1, tx: 0, ty: 0 }, { dx: 10, dy: 0, s: 2 }, centre(box));
+    const v2box = placed({ ...obj, s: 2, dx: 10 }, box);
+    const d1 = showVersion({ ...doc([obj]), sizes: { "input:v2": size } }, "cat", "input:v2", (s) => (s === "input:v2" ? v2box : box), 100, 100);
+    expect(d1.layers[0].s).toBeCloseTo(1.25);
+    expect(d1.layers[0].dx).toBeCloseTo(10);
+  });
+
+  it("versions at the same size keep the layer's place, as before", () => {
+    const obj = { ...layer("cat", "input:v1"), s: 2, dx: 3, history: ["input:v1", "gen:2"] };
+    const d1 = showVersion(doc([obj]), "cat", "gen:2", () => box, 100, 100);
+    expect(d1.layers[0]).toMatchObject({ source: "gen:2", s: 2, dx: 3, dy: 0 });
+  });
+
+  it("a version's size: its own, else the one before it; an edit of an older version keeps that one's", () => {
+    const l = { ...layer("cat", "input:v1"), history: ["input:v1", "input:v2", "input:v3"] };
+    const z = { k: 2, tx: -50, ty: -40 };
+    const d = { ...doc([l]), sizes: { "input:v2": z } };
+    expect(sizeOf(d, l, "input:v1")).toEqual({ k: 1, tx: 0, ty: 0 });
+    expect(sizeOf(d, l, "input:v3")).toEqual(z);
+    expect(keepSize(d, l, "input:v1", "input:v4")).toEqual({ sizes: { "input:v2": z, "input:v4": { k: 1, tx: 0, ty: 0 } } });
+    expect(keepSize(doc([l]), l, "input:v1", "input:v4")).toEqual({});
+  });
+
+  it("the crop is where the object is drawn, past the frame up to half of it", () => {
+    const { rect, scale } = redrawCrop({ x0: 900, y0: 100, x1: 1300, y1: 500 }, 1000, 1000, 0);
+    expect(rect).toEqual({ x: 900, y: 100, w: 400, h: 400 });
+    expect(scale).toBeCloseTo(2.56);
+    expect(redrawCrop({ x0: -900, y0: 0, x1: 100, y1: 500 }, 1000, 1000, 0).rect.x).toBe(-500);
+  });
+
+  it("checks the result: object kept, background painted round it", () => {
+    // 4 pixels: two of the object, two of room around it.
+    const before = [0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 0, 0, 0, 0, 0];
+    expect(redrawCheck(before, before)).toEqual({ kept: 1, painted: 0 });
+    expect(redrawCheck(before, [0, 0, 0, 255, 0, 0, 0, 0, 0, 0, 0, 255, 0, 0, 0, 255])).toEqual({ kept: 0.5, painted: 1 });
+    expect(redrawCheck([0, 0, 0, 0], [0, 0, 0, 0]).kept).toBe(0);
   });
 });

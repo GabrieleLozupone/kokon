@@ -2,7 +2,7 @@
 
 > Kokon is a free, open-source desktop app for editing and creating photos with AI on your own computer, a free, local alternative to Nano Banana and ChatGPT image editing: photos stay on the user's computer and there is no daily limit. Kokon picks and sets up the model for you. You describe the change in plain words ("remove the scooter", "make it a snowy night") and Qwen-Image 2.1 does it locally on your GPU. There is nothing to set up: one installer detects the hardware, downloads and verifies the right model, and picks the resolution and the VRAM/RAM split for every job. Nothing is uploaded.
 
-Key facts (version 0.12.0, November 2026):
+Key facts (version 0.12.1, November 2026):
 
 - Model: Qwen-Image 2.1 Turbo (official 8-step version, 4-bit GGUF) with Qwen3-VL 8B as the text encoder, run through stable-diffusion.cpp. About 12 GB of models, downloaded once and checked with SHA-256.
 - Platforms: Windows 10/11 with an NVIDIA GPU (12 GB VRAM or more, CUDA; 8 GB in beta, about 1-megapixel images). AMD and Intel Arc (12 GB+) through Vulkan, beta. Apple Silicon Macs on macOS 15 or newer (Metal), beta: 16 GB works slowly, 32 GB recommended. Linux x86-64 (.deb for Ubuntu/Debian/Mint, .rpm for Fedora; CUDA or Vulkan), beta.
@@ -23,6 +23,7 @@ Key facts (version 0.12.0, November 2026):
 - [Simple ComfyUI alternative](https://kokon.app/comfyui-alternative/): what Kokon decides for you (model, files, steps, VRAM), reusing ComfyUI model files, when to stay with ComfyUI
 - [Remove objects from photos offline](https://kokon.app/remove-objects-from-photos-offline/): step-by-step object and people removal on your own GPU
 - [Split an image into layers](https://kokon.app/image-to-layers/): image to layers and a layered PSD, offline: how it works, the filled background, PSD export, FAQ
+- [Uninstall Kokon completely](https://kokon.app/uninstall/): remove the app and every folder it uses, models included, on Windows, Linux and macOS
 - [Press kit](https://kokon.app/press/): one-line and short descriptions, key facts, videos, images, logos
 - [Run Qwen-Image 2.1 locally](https://kokon.app/qwen-image-2-1-local/): step-by-step setup on Windows, Mac and Linux without Python or ComfyUI, speed, troubleshooting
 - [Prompt guide](https://kokon.app/prompt-guide/): how to write prompts for Qwen-Image 2.1, with vague vs clear examples (negative prompts, text in images, edit prompts)

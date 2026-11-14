@@ -23,6 +23,9 @@ export interface Feed {
    * much it was grown (crop px): faint pixels in that ring are dropped (the halo of what was around). */
   clip?: string;
   grow?: number;
+  /** Redraw at this size: `rect` is where the object is drawn now (scaled and moved), and the
+   * result's size (`LayerDoc.sizes`) once it is the layer's version. */
+  size?: Sized;
 }
 
 export interface Rect {
@@ -81,6 +84,123 @@ export function cropFor(box: Box, W: number, H: number, margin: number): { rect:
   }
   const scale = Math.min(4, Math.max(1, Math.sqrt(CROP_AREA / Math.max(1, w * h))));
   return { rect: { x, y, w, h }, scale };
+}
+
+/** Redraw at this size: past this scale an object shows its stretched pixels (soft, a halo; a
+ * report was ~2x). A chosen threshold, not measured. */
+export const STRETCHED = 1.2;
+
+/** The crop for Redraw at this size: `box` is where the object is drawn now (frame px). As cropFor,
+ * with a small margin (the object stays as it is), but the object may reach past the frame (scaled
+ * up near an edge): kept up to half the frame beyond each side, so a later move shows it whole. */
+export function redrawCrop(box: Box, W: number, H: number, margin = 0.06): { rect: Rect; scale: number } {
+  const ox = Math.round(W / 2);
+  const oy = Math.round(H / 2);
+  const { rect, scale } = cropFor({ x0: box.x0 + ox, y0: box.y0 + oy, x1: box.x1 + ox, y1: box.y1 + oy }, W + 2 * ox, H + 2 * oy, margin);
+  return { rect: { ...rect, x: rect.x - ox, y: rect.y - oy }, scale };
+}
+
+/** How a version's pixels lie compared with the layer's first version: a point there is at
+ * `k * p + t` in this one. Every version is 1:1 (SAME) until Redraw at this size makes one
+ * at the size the object was scaled to. */
+export interface Sized {
+  k: number;
+  tx: number;
+  ty: number;
+}
+const SAME: Sized = { k: 1, tx: 0, ty: 0 };
+const sameSized = (a: Sized, b: Sized) => Math.abs(a.k - b.k) < 1e-6 && Math.abs(a.tx - b.tx) < 0.01 && Math.abs(a.ty - b.ty) < 0.01;
+
+/** Version `v`'s size: noted when it was made (`doc.sizes`), else that of the version before it
+ * in the layer's history (an edit, eraser or cut-out of a redrawn version keeps its size). */
+export function sizeOf(doc: Pick<LayerDoc, "sizes">, l: Pick<DocLayer, "history">, v: string): Sized {
+  const own = doc.sizes?.[v];
+  if (own) return own;
+  for (let j = l.history.indexOf(v) - 1; j >= 0; j--) {
+    const s = doc.sizes?.[l.history[j]];
+    if (s) return s;
+  }
+  return SAME;
+}
+
+/** A version made from `from` (an edit of its crop, the eraser...) has its size: noted, so going
+ * back to an older version and editing it is not mistaken for the redrawn size. */
+export function keepSize(doc: LayerDoc, l: DocLayer, from: string, src: string): Partial<Pick<LayerDoc, "sizes">> {
+  if (!doc.sizes) return {};
+  return { sizes: { ...doc.sizes, [src]: sizeOf(doc, l, from) } };
+}
+
+/** The size of a redraw of version `from` (size `f`) cut where it was drawn at `at` (scale around
+ * `c`, the centre of from's box, then the move). */
+export function redrawnSize(f: Sized, at: Place, c: { x: number; y: number }): Sized {
+  return { k: at.s * f.k, tx: at.s * f.tx + (1 - at.s) * c.x + at.dx, ty: at.s * f.ty + (1 - at.s) * c.y + at.dy };
+}
+
+/** A redraw's result (`after`) checked against what was sent (`before`, the object as drawn now;
+ * both RGBA at the same size). `kept`: share of the object's solid pixels still solid (under half:
+ * the model dropped or moved the object, the layer stays as it is). `painted`: share of the
+ * transparent room around it that came back solid (the model drew a background, so the object's
+ * own outline cuts it out). */
+export function redrawCheck(before: ArrayLike<number>, after: ArrayLike<number>): { kept: number; painted: number } {
+  let obj = 0;
+  let still = 0;
+  let room = 0;
+  let filled = 0;
+  for (let j = 3; j < before.length; j += 4) {
+    if (before[j] > 127) {
+      obj++;
+      if (after[j] > 127) still++;
+    } else if (before[j] < 16) {
+      room++;
+      if (after[j] > 200) filled++;
+    }
+  }
+  return { kept: obj ? still / obj : 0, painted: room ? filled / room : 0 };
+}
+
+/** Below this share of its solid pixels kept, a redraw is not the same object (redrawCheck). */
+export const REDRAW_MIN_KEPT = 0.5;
+/** Past this share of the room around the object painted, the redraw drew a background. */
+export const REDRAW_PAINTED = 0.5;
+
+/** Layer `id` shows version `v` (added to its history if new). Versions at the same size keep the
+ * layer's place, as always. Between sizes (a redraw and the version it was made from, either way)
+ * the place is converted so the object stays where and as large as it is on screen, and the
+ * shadows that follow it stay put: after a redraw the scale is back to about 1. `boxOf` as in xfOf. */
+export function showVersion(doc: LayerDoc, id: string, v: string, boxOf: (source: string) => Box | undefined, W: number, H: number): LayerDoc {
+  const l = doc.layers.find((x) => x.id === id);
+  if (!l || l.source === v) return doc;
+  const history = l.history.includes(v) ? l.history : [...l.history, v];
+  const a = sizeOf(doc, l, l.source);
+  const b = sizeOf(doc, { history }, v);
+  if (sameSized(a, b)) return { ...doc, layers: doc.layers.map((x) => (x.id === id ? { ...x, source: v, history } : x)) };
+  const mid = (src: string) => {
+    const bx = boxOf(src);
+    return bx ? centre(bx) : { x: W / 2, y: H / 2 };
+  };
+  const cv = mid(l.source);
+  const cw = mid(v);
+  // Drawn: s * (p - c) + c + d, with p = k * q + t for a point q of the first version; the same
+  // q must land on the same point with either version.
+  const s = (l.s * a.k) / b.k;
+  const dx = l.s * (a.tx - cv.x) + cv.x + l.dx - s * (b.tx - cw.x) - cw.x;
+  const dy = l.s * (a.ty - cv.y) + cv.y + l.dy - s * (b.ty - cw.y) - cw.y;
+  const layers = doc.layers.map((x) => {
+    if (x.id === id) return { ...x, source: v, history, s, dx, dy };
+    if (x.follows !== id || !x.at) return x;
+    // A follower is drawn at scale ks = l.s / at.s around (centre + at.d), moved by d - at.d: kept
+    // the same with the object's new centre, scale and move.
+    const ks = l.s / x.at.s;
+    return {
+      ...x,
+      at: {
+        s: (x.at.s * s) / l.s,
+        dx: x.at.dx + ((1 - ks) * (cw.x - cv.x) + dx - l.dx) / ks,
+        dy: x.at.dy + ((1 - ks) * (cw.y - cv.y) + dy - l.dy) / ks,
+      },
+    };
+  });
+  return { ...doc, layers };
 }
 
 /** An edit of `from` (painted area `mask`) belongs to the layer with feed `f`: any painted edit of an
@@ -189,6 +309,9 @@ export interface LayerDoc {
   /** Versions whose image is not the whole frame (`extOf`): an Expand of an object took it past the
    * frame's edge, so its image covers this rect (frame px) and the part outside shows once moved in. */
   ext?: Record<string, Rect>;
+  /** Versions made by Redraw at this size, at the size the object was scaled to (`Sized`, sizeOf);
+   * the others are 1:1 with the layer's first version. */
+  sizes?: Record<string, Sized>;
 }
 
 /** An object's automatic Clean edges: its job once sent (null: not yet, or it could not be sent). */
@@ -361,7 +484,7 @@ export function labItems(lab: LabStore, items: LabItem[]): Map<string, string | 
 /** Leftovers of labs whose document is gone (a project split before documents were kept per image):
  * images the lab saved, by their names, and the cut-outs saved right after a "Background (holes)". */
 export function leftovers(items: { source: string | null; name: string | null; input: boolean }[]): string[] {
-  const named = /^(Background \(holes\)|Background to fill|Background on grey|Layers for shadows|Layers for the scene|Layers with marks|Shadows)\.png$|\((grey|object size|to clean|brushed|edited)\)\.png$| shadow\.png$/;
+  const named = /^(Background \(holes\)|Background to fill|Background on grey|Layers for shadows|Layers for the scene|Layers with marks|Shadows)\.png$|\((grey|object size|to clean|to redraw|brushed|edited|redrawn)\)\.png$| shadow\.png$/;
   const out: string[] = [];
   let afterSplit = false;
   for (const it of items) {

@@ -49,7 +49,7 @@
       "@type": "FAQPage",
       "mainEntity": [
         { "@type": "Question", "name": "Can Claude Code generate images without an API key?", "acceptedAnswer": { "@type": "Answer", "text": "Yes, with a local MCP server such as Kokon's kokon-mcp: images are made by Qwen-Image 2.1 on your own GPU, so there is no API key and no per-image cost." } },
-        { "@type": "Question", "name": "Does the Kokon app need to be open for the MCP server to work?", "acceptedAnswer": { "@type": "Answer", "text": "No. The MCP server starts the engine on demand. The first call takes about a minute while the model loads; without the desktop window open, the model is unloaded after 15 idle minutes." } },
+        { "@type": "Question", "name": "Does the Kokon app need to be open for the MCP server to work?", "acceptedAnswer": { "@type": "Answer", "text": "No. The MCP server starts the engine on demand. The first call takes about a minute while the model loads; after 10 minutes without work the model is unloaded to free the graphics card, and the next call loads it again." } },
         { "@type": "Question", "name": "Are my images sent to the AI model?", "acceptedAnswer": { "@type": "Answer", "text": "No. Results stay on disk and the tool returns their path. A small JPEG preview is included only if the agent asks for it with include_preview." } }
       ]
     }
@@ -85,6 +85,7 @@
             <li><a href="/prompt-guide/"><b>Prompt guide</b><span>Write prompts that work</span></a></li>
             <li><a href="/remove-objects-from-photos-offline/"><b>Remove objects</b><span>Step by step, offline</span></a></li>
             <li><a href="/image-to-layers/"><b>Image to layers <span class="new">New</span></b><span>Split a photo, export a PSD</span></a></li>
+            <li><a href="/uninstall/"><b>Uninstall</b><span>Remove Kokon and its models</span></a></li>
           </ul></div></li>
         <li class="dd"><button type="button" aria-expanded="false" aria-controls="dd-compare">Compare<svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"/></svg></button>
           <div class="dd-panel" id="dd-compare"><ul>
