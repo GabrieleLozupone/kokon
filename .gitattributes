@@ -1,4 +1,7 @@
 *.sh text eol=lf
+# The patch in tools/ort-portable/patches/ must be applied byte-for-byte: `patch --binary` compares
+# bytes, so a checkout that converts it (Windows with core.autocrlf) makes its hunks fail.
+*.patch text eol=lf
 
 # Keep the language bar about the app: the marketing videos and the website are not counted
 marketing/** linguist-documentation

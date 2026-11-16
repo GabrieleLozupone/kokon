@@ -53,16 +53,22 @@ Studio generator), it retries with Ninja after importing the MSVC environment fr
 PowerShell.
 
 Dependency patches: ONNX Runtime applies them with `patch --binary --ignore-whitespace -p1`, which
-compares bytes, and its `.gitattributes` (`* text=auto`) rewrites a Windows checkout to CRLF, so the
-`.patch` files must be taken from git exactly as the repository stores them. Two things the CI
-showed: a Windows checkout of a LF patch fails (`cmake/patches/onnx/onnx.patch`), and rewriting the
-patches to LF fails too — some are mixed, like
+compares bytes, so the `.patch` files must be the bytes the repository stores — a Windows checkout
+with `core.autocrlf` turns them into CRLF and the hunks fail. Some are mixed, like
 `cmake/patches/cpuinfo/enable_deinit_refcounting.patch`, whose CRLF lines belong to files that have
-CRLF in the pinned zip. `git apply` is not a substitute here: it does not allow the offset and fuzz
-these patches apply with. The script clones with `core.autocrlf=false`, restores the patch files from
-git, and stops if `patch` is missing or if the ONNX patch is not applied in the sources CMake
-downloaded — without those hunks ONNX is different (`ONNX_MINIMAL_BUILD`, `assertions.h`,
-`tensor.h`, `scoped_resource.h`).
+CRLF in the pinned zip, so "convert everything to LF" is not a fix. The scripts clone with
+`core.autocrlf=false` and take the patch files from git as the repository stores them.
+
+The ONNX patch is also not byte-exact against the sources it patches: its context has 4-space
+indentation where the pinned ONNX v1.22.0 has 2, so it only applies with whitespace tolerance and
+fuzz, and `patch` implementations disagree — the CI runner's patch 2.5.9 refused two hunks that GNU
+patch 2.7.6 applies here, and `git apply` (which does not allow the offset and fuzz these patches
+need) rejects the file. So the scripts use `patches/onnx-v1.22.0.patch`: the same hunks written
+against the pinned sources, which any implementation applies; if the pin is another version they keep
+upstream's file and say so. Both stop with a clear message if `patch` is missing (without it ONNX
+Runtime leaves `PATCH_COMMAND` empty and builds ONNX without those changes, which changes ONNX itself:
+`ONNX_MINIMAL_BUILD`, `assertions.h`, `tensor.h`, `scoped_resource.h`), and the Windows script
+verifies before building that the patch is applied in the sources CMake downloaded.
 
 ## Requirements and notes
 

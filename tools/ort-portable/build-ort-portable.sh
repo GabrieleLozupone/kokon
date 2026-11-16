@@ -60,6 +60,27 @@ if [ "$(uname -m)" = "x86_64" ] || [ "$(uname -m)" = "amd64" ]; then
   fi
 fi
 
+# ONNX Runtime applies its own patch with `patch --binary --ignore-whitespace -p1`, which compares
+# bytes: the .patch files must be the bytes the repository stores (that is why the clone is made
+# with core.autocrlf=false and the files are taken from git). And the ONNX patch is not byte-exact
+# against the sources it patches — its context has 4-space indentation where ONNX v1.22.0 has 2 — so
+# it only applies with whitespace tolerance and fuzz, and implementations disagree: the CI runner's
+# patch 2.5.9 refused two hunks that GNU patch 2.7.6 applies. patches/onnx-v1.22.0.patch is the same
+# hunks written against the pinned sources, so any implementation applies them; if the pin is a
+# different version, keep upstream's file and say so.
+ONNX_PIN='onnx;https://github.com/onnx/onnx/archive/refs/tags/v1.22.0.zip;2b2cd58ac7a26df5371266149e0c76776330cdf1'
+DEPS="$SRC/cmake/external/onnxruntime_external_deps.cmake"
+if grep -q "^$ONNX_PIN$" "$SRC/cmake/deps.txt" && [ -f "$HERE/patches/onnx-v1.22.0.patch" ]; then
+  # Only the branch CMake uses when it finds patch; the other one stays empty on purpose.
+  sed -i "s|^\s*set(ONNXRUNTIME_ONNX_PATCH_COMMAND \${Patch_EXECUTABLE} --binary --ignore-whitespace -p1 < \${PROJECT_SOURCE_DIR}/patches/onnx/onnx.patch)|  set(ONNXRUNTIME_ONNX_PATCH_COMMAND \${Patch_EXECUTABLE} --binary --ignore-whitespace -p1 < $HERE/patches/onnx-v1.22.0.patch)|" "$DEPS"
+else
+  echo "  The ONNX patch used is the one in the clone: patches/onnx-v1.22.0.patch was generated for ONNX v1.22.0, and the pin is not that."
+fi
+if ! command -v patch >/dev/null; then
+  echo "✗ patch is not installed: ONNX Runtime would skip its dependency patches and build ONNX without them"
+  exit 1
+fi
+
 GEN=()
 if command -v ninja >/dev/null; then
   GEN=(-G Ninja)

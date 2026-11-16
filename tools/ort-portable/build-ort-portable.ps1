@@ -34,21 +34,34 @@ if (-not (Test-Path (Join-Path $Src '.git'))) {
     if ($LASTEXITCODE) { throw "git clone failed" }
 }
 
-# `patch --binary` compares bytes, so the .patch files must be the bytes the repository stores.
-# ONNX Runtime's .gitattributes sets `* text=auto`, which on Windows rewrites the checkout to CRLF:
-# that is what the first Windows run failed on (cmake/patches/onnx/onnx.patch). Do not "convert
-# everything to LF" either: some of these patches are mixed — enable_deinit_refcounting.patch has
-# CRLF only in the hunks whose target files in the pinned cpuinfo zip have CRLF — so rewriting them
-# breaks those hunks (that is what run 43785443761 failed on). Clone with core.autocrlf=false and
-# take the files from git as they are stored. Stop if patch is missing: without it ONNX Runtime
-# leaves PATCH_COMMAND empty and builds the sources without those hunks, which changes ONNX itself
-# (ONNX_MINIMAL_BUILD, assertions.h, tensor.h, scoped_resource.h).
+# Same rule as the .sh: `patch --binary` compares bytes, so the .patch files must be the bytes the
+# repository stores — the clone is made with core.autocrlf=false and the files are taken from git.
+# The ONNX patch is not byte-exact against the sources it patches (its context has 4-space
+# indentation where ONNX v1.22.0 has 2), so it needs whitespace tolerance and fuzz, and patch
+# implementations disagree: the CI runner's patch 2.5.9 refused two hunks that GNU patch 2.7.6
+# applies. patches/onnx-v1.22.0.patch is the same hunks written against the pinned sources, so any
+# implementation applies them; if the pin is a different version, keep upstream's file and say so.
+$onnxPin = 'onnx;https://github.com/onnx/onnx/archive/refs/tags/v1.22.0.zip;2b2cd58ac7a26df5371266149e0c76776330cdf1'
+$depsCmake = Join-Path $Src 'cmake\external\onnxruntime_external_deps.cmake'
+$exactPatch = Join-Path $Here 'patches\onnx-v1.22.0.patch'
 if (Test-Path (Join-Path $Src '.git')) {
     git -C $Src -c core.autocrlf=false checkout --force -- cmake/patches
     if ($LASTEXITCODE) { throw "git could not restore cmake/patches as the repository stores them" }
 }
 if (-not (Get-Command patch -ErrorAction SilentlyContinue)) {
     throw "patch is not installed; ONNX Runtime would skip its dependency patches and build ONNX without them"
+}
+$text = [IO.File]::ReadAllText($depsCmake)
+$oldLine = '  set(ONNXRUNTIME_ONNX_PATCH_COMMAND ${Patch_EXECUTABLE} --binary --ignore-whitespace -p1 < ${PROJECT_SOURCE_DIR}/patches/onnx/onnx.patch)'
+$oursLine = "  set(ONNXRUNTIME_ONNX_PATCH_COMMAND `${Patch_EXECUTABLE}` --binary --ignore-whitespace -p1 < $exactPatch)"
+$onnxPatch = Join-Path $Src 'cmake\patches\onnx\onnx.patch'
+if ((Get-Content -Raw (Join-Path $Src 'cmake\deps.txt')).Contains($onnxPin) -and (Test-Path $exactPatch)) {
+    $onnxPatch = $exactPatch
+    if (-not $text.Contains($oursLine)) {
+        [IO.File]::WriteAllText($depsCmake, $text.Replace($oldLine, $oursLine))
+    }
+} else {
+    Write-Host "  Using the ONNX patch from the clone: patches/onnx-v1.22.0.patch was generated for ONNX v1.22.0, and the pin is not that." -ForegroundColor Yellow
 }
 
 # A CMake generator name is tied to one Visual Studio major version: "Visual Studio 17 2022"
@@ -142,7 +155,6 @@ if (-not $configured) { throw "CMake configure failed" }
 # equivalent here — it is stricter and rejects them), and the reverse dry-run only succeeds when
 # every hunk is present.
 $onnxSrc = Join-Path $Build '_deps\onnx-src'
-$onnxPatch = Join-Path $Src 'cmake\patches\onnx\onnx.patch'
 if (Test-Path $onnxSrc) {
     Push-Location $onnxSrc
     try {

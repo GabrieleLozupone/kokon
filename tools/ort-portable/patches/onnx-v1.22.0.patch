@@ -1,0 +1,203 @@
+# Same hunks as ONNX Runtime's cmake/patches/onnx/onnx.patch, written byte-exactly against the
+# sources cmake/deps.txt pins (ONNX v1.22.0, SHA1 2b2cd58ac7a26df5371266149e0c76776330cdf1).
+# The upstream file is not byte-exact: its context has 4-space indentation where the pinned
+# sources have 2, so it only applies with whitespace tolerance and fuzz, and patch
+# implementations disagree about that. Generate it with: apply the upstream patch to a clean
+# copy of the pinned sources and run git diff. Keep it as stored: line endings matter.
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 791e24b..5f861a1 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -46,6 +46,7 @@ option(ONNX_DISABLE_EXCEPTIONS "Disable exception handling." OFF)
+ option(ONNX_DISABLE_STATIC_REGISTRATION "Disable static registration for ONNX operator schemas." OFF)
+ option(ONNX_USE_UNITY_BUILD "Enable Unity (Jumbo) build for" OFF)
+ option(ONNX_PYODIDE_BUILD "Build ONNX for Pyodide/Emscripten (wasm32)." OFF)
++option(ONNX_MINIMAL_BUILD "Build only essential ONNX components" OFF)
+ option(ONNX_INSTALL "Install ONNX targets, headers, and CMake config files" ON)
+ if(WIN32)
+   option(ONNX_USE_MSVC_STATIC_RUNTIME "Build with MSVC static runtime. Ignored if CMAKE_MSVC_RUNTIME_LIBRARY is defined." OFF)
+@@ -515,7 +516,22 @@ add_dependencies(onnx_proto onnx_proto_gen)
+ # Core library. Hand-written sources come from target_sources(onnx ...) in the
+ # subdirectories; the protobuf objects are pulled in from onnx_proto.
+ add_library(onnx $<TARGET_OBJECTS:onnx_proto>)
+-add_subdirectory(onnx)
++if(ONNX_MINIMAL_BUILD)
++    message(STATUS "Configuring ONNX minimal build")
++    # ORT's minimal/WebAssembly builds only need ONNX's type utilities and the
++    # generated protobuf sources (linked via onnx_proto above); skip pulling in
++    # the full operator/schema sources via add_subdirectory(onnx).
++    target_sources(onnx PRIVATE
++        "${ONNX_ROOT}/onnx/defs/data_type_utils.cc"
++    )
++    # Ensure ONNX_ML is treated as ON for minimal build consistency with ORT's file
++    set(ONNX_ML ON CACHE BOOL "Enable traditional ML API." FORCE)
++    # Minimal build doesn't need Python or tests
++    set(ONNX_BUILD_PYTHON OFF CACHE BOOL "Build Python binaries" FORCE)
++    set(ONNX_BUILD_TESTS OFF CACHE BOOL "Build ONNX C++ APIs Tests" FORCE)
++else()
++    add_subdirectory(onnx)
++endif()
+ add_dependencies(onnx onnx_proto)
+ set_target_properties(onnx PROPERTIES CXX_VISIBILITY_PRESET hidden)
+ add_onnx_global_defines(onnx)
+diff --git a/onnx/common/assertions.cc b/onnx/common/assertions.cc
+index 0ee039a..548fba9 100644
+--- a/onnx/common/assertions.cc
++++ b/onnx/common/assertions.cc
+@@ -42,11 +42,11 @@ std::string barf(const char* fmt, ...) { // NOLINT(modernize-avoid-variadic-func
+   return std::string(msg.data());
+ }
+ 
+-void throw_assert_error(std::string& msg) {
++void throw_assert_error(const std::string& msg) {
+   ONNX_THROW_EX(assert_error(msg));
+ }
+ 
+-void throw_tensor_error(std::string& msg) {
++void throw_tensor_error(const std::string& msg) {
+   ONNX_THROW_EX(tensor_error(msg));
+ }
+ 
+diff --git a/onnx/common/assertions.h b/onnx/common/assertions.h
+index 0b77d3f..c33120f 100644
+--- a/onnx/common/assertions.h
++++ b/onnx/common/assertions.h
+@@ -27,9 +27,9 @@ __attribute__((format(printf, 1, 2)))
+ #endif
+ std::string barf(const char* fmt, ...);
+ 
+-[[noreturn]] void throw_assert_error(std::string& /*msg*/);
++[[noreturn]] void throw_assert_error(const std::string& /*msg*/);
+ 
+-[[noreturn]] void throw_tensor_error(std::string& /*msg*/);
++[[noreturn]] void throw_tensor_error(const std::string& /*msg*/);
+ 
+ } // namespace ONNX_NAMESPACE
+ 
+diff --git a/onnx/common/scoped_resource.h b/onnx/common/scoped_resource.h
+index 525e4d6..9ef789f 100644
+--- a/onnx/common/scoped_resource.h
++++ b/onnx/common/scoped_resource.h
+@@ -23,19 +23,19 @@ namespace ONNX_NAMESPACE {
+ // a free-function closer.  Non-copyable, non-movable.
+ //
+ // Usage:
+-//   using ScopedFd = ScopedResource<-1, close_fd>;
+-//   ScopedFd guard(fd);          // destructor calls close_fd(fd)
++//   using ScopedFd = ScopedResource<FdTraits>;
++//   ScopedFd guard(fd);          // destructor calls FdTraits::close(fd)
+ //   int raw = guard.release();   // relinquish ownership
+-template <auto Invalid, void (*Close)(decltype(Invalid))>
++template <typename Traits>
+ class ScopedResource {
+-  using T = decltype(Invalid);
++  using T = typename Traits::type;
+   T val_;
+ 
+  public:
+   explicit ScopedResource(T v) : val_(v) {}
+   ~ScopedResource() {
+-    if (val_ != Invalid) {
+-      Close(val_);
++    if (val_ != Traits::invalid()) {
++      Traits::close(val_);
+     }
+   }
+   T get() const {
+@@ -43,7 +43,7 @@ class ScopedResource {
+   }
+   T release() {
+     T tmp = val_;
+-    val_ = Invalid;
++    val_ = Traits::invalid();
+     return tmp;
+   }
+   ScopedResource(const ScopedResource&) = delete;
+@@ -53,20 +53,32 @@ class ScopedResource {
+ // Platform-specific type aliases.
+ 
+ #ifdef _WIN32
+-inline void close_handle(HANDLE h) {
+-  CloseHandle(h);
+-}
+-using ScopedHandle = ScopedResource<INVALID_HANDLE_VALUE, close_handle>;
++struct HandleTraits {
++  using type = HANDLE;
++  static HANDLE invalid() {
++    return INVALID_HANDLE_VALUE;
++  }
++  static void close(HANDLE h) {
++    CloseHandle(h);
++  }
++};
++using ScopedHandle = ScopedResource<HandleTraits>;
+ #endif
+ 
+-inline void close_fd(int fd) {
++struct FdTraits {
++  using type = int;
++  static constexpr int invalid() {
++    return -1;
++  }
++  static void close(int fd) {
+ #ifdef _WIN32
+-  _close(fd);
++    _close(fd);
+ #else
+-  close(fd);
++    ::close(fd);
+ #endif
+-}
+-using ScopedFd = ScopedResource<-1, close_fd>;
++  }
++};
++using ScopedFd = ScopedResource<FdTraits>;
+ 
+ // RAII guard that invokes a callable on destruction (scope exit).
+ template <typename F>
+diff --git a/onnx/common/tensor.h b/onnx/common/tensor.h
+index cb5c736..a942091 100644
+--- a/onnx/common/tensor.h
++++ b/onnx/common/tensor.h
+@@ -51,14 +51,14 @@ struct Tensor final {
+   /// if tensor is a scalar, the sizes is empty, but the element number is actually 1.
+   /// size_from_dim() cannot handle this case, while elem_num() handles it correctly
+   int64_t elem_num() const {
+-    return safe_dim_product(sizes_, [](const char* msg) { throw tensor_error(msg); });
++    return safe_dim_product(sizes_, [](const char* msg) { throw_tensor_error(msg); });
+   }
+   int64_t size_from_dim(int dim) const {
+     if (dim < 0) {
+       dim += static_cast<int>(sizes_.size());
+     }
+     ONNX_ASSERT(dim >= 0 && (size_t)dim < sizes_.size())
+-    return safe_dim_product(sizes_.begin() + dim, sizes_.end(), [](const char* msg) { throw tensor_error(msg); });
++    return safe_dim_product(sizes_.begin() + dim, sizes_.end(), [](const char* msg) { throw_tensor_error(msg); });
+   }
+ 
+   int32_t elem_type() const {
+diff --git a/onnx/defs/nn/defs.cc b/onnx/defs/nn/defs.cc
+index 7338dba..3fc36e9 100644
+--- a/onnx/defs/nn/defs.cc
++++ b/onnx/defs/nn/defs.cc
+@@ -2662,7 +2662,7 @@ ONNX_OPERATOR_SET_SCHEMA(
+             // positive value.
+             axis += input_ndim;
+           }
+-          if (axis < 0) {
++          if (axis < 0 || axis >= input_ndim) {
+             fail_shape_inference(
+                 "Unexpected axis value (",
+                 axis,
+diff --git a/onnx/defs/nn/old.cc b/onnx/defs/nn/old.cc
+index 3887169..8432613 100644
+--- a/onnx/defs/nn/old.cc
++++ b/onnx/defs/nn/old.cc
+@@ -4078,7 +4078,6 @@ ONNX_OPERATOR_SET_SCHEMA(
+     GroupNormalization,
+     18,
+     OpSchema()
+-        .Deprecate()
+         .SetDoc(GroupNormalization_ver18_doc)
+         .Attr("epsilon", "The epsilon value to use to avoid division by zero.", AttributeProto::FLOAT, 1e-5f)
+         .Attr(
