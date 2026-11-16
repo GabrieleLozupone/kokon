@@ -1,5 +1,6 @@
-# Bundles ONNX Runtime's static libraries into one libonnxruntime.a, the layout `ort-sys`
-# expects when `ORT_LIB_LOCATION` points at the install folder's `lib/`.
+# Bundles ONNX Runtime's static libraries (and the object files of its object libraries) into one
+# libonnxruntime.a, the layout `ort-sys` expects when `ORT_LIB_LOCATION` points at the install
+# folder's `lib/`.
 #
 # Based on pykeio/ort-artifacts `src/static-build/CMakeLists.txt` (Apache-2.0). The difference
 # is in how this directory is configured: the build script passes `-march=x86-64-v2` and
@@ -58,6 +59,19 @@ function(bundle_static_library bundled_target_name)
         if(${input_type} STREQUAL "STATIC_LIBRARY")
             list(APPEND static_libs "$<TARGET_FILE:${input_target}>")
             get_target_property(dependencies ${input_target} LINK_LIBRARIES)
+        elseif(${input_type} STREQUAL "OBJECT_LIBRARY")
+            # An object library is not an archive, so it is bundled as its object files. They are
+            # joined with spaces, not with the semicolons a generator-expression list expands to,
+            # because the ar script below and a Windows response file read the names that way.
+            # This is what the Windows build needs: onnxruntime_providers_cpu.cmake makes
+            # onnxruntime_providers_obj an object library when MSVC builds the shared target, so
+            # without this the CPU provider is not in the bundle, and the Rust link fails with 17
+            # unresolved externals from core/providers/ (CPUExecutionProvider, the control-flow
+            # kernels, OrtApis::CreateCpuMemoryInfo). On Linux the same sources are a static
+            # archive, which is why that build links.
+            list(APPEND object_files "$<JOIN:$<TARGET_OBJECTS:${input_target}>, >")
+            list(APPEND object_targets "${input_target}")
+            get_target_property(dependencies ${input_target} LINK_LIBRARIES)
         elseif(${input_type} STREQUAL "INTERFACE_LIBRARY")
             get_target_property(dependencies ${input_target} INTERFACE_LINK_LIBRARIES)
         else()
@@ -71,6 +85,8 @@ function(bundle_static_library bundled_target_name)
         endif()
 
         set(static_libs ${static_libs} PARENT_SCOPE)
+        set(object_files ${object_files} PARENT_SCOPE)
+        set(object_targets ${object_targets} PARENT_SCOPE)
     endfunction()
 
     foreach(target_name IN ITEMS ${ARGN})
@@ -78,16 +94,18 @@ function(bundle_static_library bundled_target_name)
     endforeach()
 
     list(REMOVE_DUPLICATES static_libs)
+    list(REMOVE_DUPLICATES object_files)
     set(static_libs ${static_libs} PARENT_SCOPE)
+    set(object_files ${object_files} PARENT_SCOPE)
 
     file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/static_libs.txt.in)
 
-    foreach(static_lib IN LISTS static_libs)
-        file(APPEND ${CMAKE_CURRENT_BINARY_DIR}/static_libs.txt.in "${static_lib}\n")
+    foreach(bundle_input IN LISTS static_libs object_files)
+        file(APPEND ${CMAKE_CURRENT_BINARY_DIR}/static_libs.txt.in "${bundle_input}\n")
     endforeach()
 
     file(GENERATE
-        OUTPUT static_libs.txt
+        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/static_libs.txt
         INPUT ${CMAKE_CURRENT_BINARY_DIR}/static_libs.txt.in)
 
     set(bundled_target_full_name
@@ -95,15 +113,18 @@ function(bundle_static_library bundled_target_name)
 
     if(MSVC)
         set(lib ${CMAKE_AR})
+        # The inputs go through the response file above rather than the command line: a CPU-only
+        # build of ONNX Runtime has ~230 object files in the CPU provider's object library, and a
+        # Windows command line is limited to 32767 characters.
         add_custom_command(
-            COMMAND ${lib} /NOLOGO /OUT:${bundled_target_full_name} ${static_libs}
+            COMMAND ${lib} /NOLOGO /OUT:${bundled_target_full_name} @${CMAKE_CURRENT_BINARY_DIR}/static_libs.txt
             OUTPUT ${bundled_target_full_name}
             COMMENT "Bundling ${bundled_target_name}"
             VERBATIM)
     elseif(APPLE)
         find_program(libtool libtool)
         add_custom_command(
-            COMMAND ${libtool} -static -o ${bundled_target_full_name} ${static_libs}
+            COMMAND ${libtool} -static -o ${bundled_target_full_name} ${static_libs} ${object_files}
             OUTPUT ${bundled_target_full_name}
             COMMENT "Bundling ${bundled_target_name}"
             VERBATIM)
@@ -114,6 +135,13 @@ function(bundle_static_library bundled_target_name)
         foreach(static_lib IN LISTS static_libs)
             file(APPEND ${CMAKE_CURRENT_BINARY_DIR}/${bundled_target_name}.ar.in
                 "ADDLIB ${static_lib}\n")
+        endforeach()
+
+        # GNU ar's script language adds a plain object file with ADDMOD (ADDLIB only takes an
+        # archive), so the two kinds of input are written as two kinds of command.
+        foreach(object_file IN LISTS object_files)
+            file(APPEND ${CMAKE_CURRENT_BINARY_DIR}/${bundled_target_name}.ar.in
+                "ADDMOD ${object_file}\n")
         endforeach()
 
         file(APPEND ${CMAKE_CURRENT_BINARY_DIR}/${bundled_target_name}.ar.in "SAVE\n")
@@ -138,7 +166,8 @@ function(bundle_static_library bundled_target_name)
 
     add_custom_target(bundling_${bundled_target_name} ALL DEPENDS ${bundled_target_full_name})
 
-    foreach(target_name IN ITEMS ${ARGN})
+    # The object files have to exist before the bundling command runs.
+    foreach(target_name IN ITEMS ${ARGN} ${object_targets})
         if(TARGET ${target_name})
             add_dependencies(bundling_${bundled_target_name} ${target_name})
         endif()

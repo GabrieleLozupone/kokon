@@ -22,7 +22,9 @@ The CMake wrapper bundles ONNX Runtime's static libraries into one archive
 (`libonnxruntime.a` / `onnxruntime.lib`), the layout `ort-sys` expects when `ORT_LIB_LOCATION`
 points at the folder. It is based on
 [pykeio/ort-artifacts `src/static-build/CMakeLists.txt`](https://github.com/pykeio/ort-artifacts/blob/main/src/static-build/CMakeLists.txt)
-(Apache-2.0).
+(Apache-2.0), with one difference: an object library is not an archive, so its object files are
+bundled as well. On MSVC the CPU provider is an object library (`onnxruntime_providers_obj`), so
+without this the Rust link on Windows has no `CPUExecutionProvider` and no CPU kernels.
 
 ## Linux
 
