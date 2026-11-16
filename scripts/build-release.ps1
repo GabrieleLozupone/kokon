@@ -31,6 +31,9 @@ if ($LASTEXITCODE) { throw "Frontend tests failed" }
 Write-Host "2/5 kokon-service (release)" -ForegroundColor Cyan
 cargo build -p qls-service --release
 if ($LASTEXITCODE) { throw "service build failed" }
+# src-tauri\binaries is not in the repository (it is gitignored), so a clean checkout has no
+# folder to copy into — which is what the CI failed on. The Mac and Linux scripts do the same.
+New-Item -ItemType Directory -Force src-tauri\binaries | Out-Null
 Copy-Item target\release\kokon-service.exe src-tauri\binaries\kokon-service-x86_64-pc-windows-msvc.exe -Force
 
 Write-Host "3/5 kokon-mcp + MCP tests (they drive the bundle and the service built above)" -ForegroundColor Cyan
