@@ -144,9 +144,9 @@ jobs:
           cmake --version | Select-Object -First 1
           if (Get-Command ninja -ErrorAction SilentlyContinue) { ninja --version }
           else { Write-Host "ninja: not installed (fine: the ORT script uses the Visual Studio generator)" }
-          # Which patch implementation CMake would find. It is not strict the same way everywhere:
-          # the runner's patch (Strawberry) rejected two hunks of onnx.patch that GNU patch 2.7.6
-          # applies, so the ORT script patches ONNX with git apply instead.
+          # Which patch implementation the runner has, and that git is there too. `patch --binary`
+          # compares bytes, so the .patch files must stay exactly as the repository stores them;
+          # that is what the ORT script guarantees.
           if (Get-Command patch -ErrorAction SilentlyContinue) { patch --version | Select-Object -First 1 }
           else { Write-Host "patch: not installed (ONNX Runtime would skip its dependency patches)" }
           git --version

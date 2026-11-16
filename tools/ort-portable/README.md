@@ -52,16 +52,17 @@ Studio generator), it retries with Ninja after importing the MSVC environment fr
 `vcvarsall.bat`. `KOKON_CMAKE_GENERATOR` overrides the choice, e.g. `Ninja` from a Developer
 PowerShell.
 
-Dependency patches: ONNX Runtime runs them with `patch --binary --ignore-whitespace -p1`, which
-compares bytes, and its `.gitattributes` (`* text=auto`) makes a Windows checkout CRLF while the
-dependency sources come from zip archives with LF. Two things the CI showed: a CRLF copy of a
-patch file is refused by every patch tool, and the same `onnx.patch` that GNU patch 2.7.6 applies
-failed in two hunks with the runner's patch (Strawberry) — no line-ending rule controls that. So
-the script clones with `core.autocrlf=false`, keeps the `.patch` files as LF, and patches ONNX
-with `git apply -p1 --ignore-whitespace`, which compares lines and behaves the same everywhere.
-It stops with the file named if the patch is not applied in the sources CMake downloaded: without
-those hunks ONNX is different (`ONNX_MINIMAL_BUILD`, `assertions.h`, `tensor.h`,
-`scoped_resource.h`).
+Dependency patches: ONNX Runtime applies them with `patch --binary --ignore-whitespace -p1`, which
+compares bytes, and its `.gitattributes` (`* text=auto`) rewrites a Windows checkout to CRLF, so the
+`.patch` files must be taken from git exactly as the repository stores them. Two things the CI
+showed: a Windows checkout of a LF patch fails (`cmake/patches/onnx/onnx.patch`), and rewriting the
+patches to LF fails too — some are mixed, like
+`cmake/patches/cpuinfo/enable_deinit_refcounting.patch`, whose CRLF lines belong to files that have
+CRLF in the pinned zip. `git apply` is not a substitute here: it does not allow the offset and fuzz
+these patches apply with. The script clones with `core.autocrlf=false`, restores the patch files from
+git, and stops if `patch` is missing or if the ONNX patch is not applied in the sources CMake
+downloaded — without those hunks ONNX is different (`ONNX_MINIMAL_BUILD`, `assertions.h`,
+`tensor.h`, `scoped_resource.h`).
 
 ## Requirements and notes
 

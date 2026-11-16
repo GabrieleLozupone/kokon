@@ -34,38 +34,21 @@ if (-not (Test-Path (Join-Path $Src '.git'))) {
     if ($LASTEXITCODE) { throw "git clone failed" }
 }
 
-# ONNX Runtime's .gitattributes sets `* text=auto`, so a Windows checkout writes the .patch files
-# as CRLF while the dependency sources come from zip archives with LF. Both `patch --binary` and
-# `git apply` compare line endings and refuse a CRLF patch (tested here on the ONNX v1.22.0 sources
-# that cmake/deps.txt pins). Write the patch files back as the repository stores them; source
-# files are fine with CRLF. Unconditional: an existing clone needs it, and Windows PowerShell 5.1
-# has no $IsWindows, so the same check there would not run.
-Get-ChildItem -Recurse -Path (Join-Path $Src 'cmake\patches') -Filter '*.patch' -ErrorAction SilentlyContinue |
-    ForEach-Object {
-        $text = [IO.File]::ReadAllText($_.FullName)
-        if ($text.Contains("`r`n")) {
-            [IO.File]::WriteAllText($_.FullName, $text.Replace("`r`n", "`n"))
-        }
-    }
-
-# `patch --binary` compares bytes, so a hunk that needs whitespace tolerance fails on some patch
-# builds: the runner's patch (Strawberry perl) rejected two hunks of cmake/patches/onnx/onnx.patch
-# while GNU patch 2.7.6 applies the same file cleanly, so no line-ending rule controls it.
-# `git apply` compares lines and behaves the same everywhere, so use it for the ONNX patch.
-# The patch command can only be changed here, in the clone; the pattern is for ONNX Runtime
-# $OrtVersion, and we say when it does not match instead of silently keeping the old tool.
-$depsCmake = Join-Path $Src 'cmake\external\onnxruntime_external_deps.cmake'
-if (Get-Command git -ErrorAction SilentlyContinue) {
-    $text = [IO.File]::ReadAllText($depsCmake)
-    $old = 'set(ONNXRUNTIME_ONNX_PATCH_COMMAND ${Patch_EXECUTABLE} --binary --ignore-whitespace -p1 < ${PROJECT_SOURCE_DIR}/patches/onnx/onnx.patch)'
-    $new = 'set(ONNXRUNTIME_ONNX_PATCH_COMMAND git apply -p1 --ignore-whitespace ${PROJECT_SOURCE_DIR}/patches/onnx/onnx.patch)'
-    if ($text.Contains($new)) {
-        # already rewritten by a previous run of this script
-    } elseif ($text.Contains($old)) {
-        [IO.File]::WriteAllText($depsCmake, $text.Replace($old, $new))
-    } else {
-        Write-Host "  This pattern is for ONNX Runtime $OrtVersion; it did not match, so the ONNX patch still runs with the patch tool CMake finds." -ForegroundColor Yellow
-    }
+# `patch --binary` compares bytes, so the .patch files must be the bytes the repository stores.
+# ONNX Runtime's .gitattributes sets `* text=auto`, which on Windows rewrites the checkout to CRLF:
+# that is what the first Windows run failed on (cmake/patches/onnx/onnx.patch). Do not "convert
+# everything to LF" either: some of these patches are mixed — enable_deinit_refcounting.patch has
+# CRLF only in the hunks whose target files in the pinned cpuinfo zip have CRLF — so rewriting them
+# breaks those hunks (that is what run 43785443761 failed on). Clone with core.autocrlf=false and
+# take the files from git as they are stored. Stop if patch is missing: without it ONNX Runtime
+# leaves PATCH_COMMAND empty and builds the sources without those hunks, which changes ONNX itself
+# (ONNX_MINIMAL_BUILD, assertions.h, tensor.h, scoped_resource.h).
+if (Test-Path (Join-Path $Src '.git')) {
+    git -C $Src -c core.autocrlf=false checkout --force -- cmake/patches
+    if ($LASTEXITCODE) { throw "git could not restore cmake/patches as the repository stores them" }
+}
+if (-not (Get-Command patch -ErrorAction SilentlyContinue)) {
+    throw "patch is not installed; ONNX Runtime would skip its dependency patches and build ONNX without them"
 }
 
 # A CMake generator name is tied to one Visual Studio major version: "Visual Studio 17 2022"
@@ -153,17 +136,17 @@ if (-not $configured -and -not $env:KOKON_CMAKE_GENERATOR -and $generator.Name -
 }
 if (-not $configured) { throw "CMake configure failed" }
 
-# ONNX Runtime leaves PATCH_COMMAND empty when it does not find `patch`, so a build can continue
-# with ONNX half-patched or not patched at all, and that changes ONNX itself: the parts of
-# cmake/patches/onnx/onnx.patch are ONNX_MINIMAL_BUILD, assertions.h, tensor.h and
-# scoped_resource.h. Stop here instead of building those sources: git apply -R --check only
-# succeeds when every hunk of the patch is present in the sources CMake downloaded.
+# CMake stops when a hunk does not apply, which is what the CI showed. The quiet case is a
+# dependency that is never patched, so check the ONNX sources before building: the same tool and
+# flags CMake uses (offset and fuzz are part of how these patches apply, so git apply is not
+# equivalent here — it is stricter and rejects them), and the reverse dry-run only succeeds when
+# every hunk is present.
 $onnxSrc = Join-Path $Build '_deps\onnx-src'
 $onnxPatch = Join-Path $Src 'cmake\patches\onnx\onnx.patch'
 if (Test-Path $onnxSrc) {
     Push-Location $onnxSrc
     try {
-        git apply -R --check -p1 --ignore-whitespace $onnxPatch
+        Get-Content $onnxPatch | patch --ignore-whitespace -R --dry-run -p1 | Out-Null
         $patched = ($LASTEXITCODE -eq 0)
     } finally { Pop-Location }
     if (-not $patched) { throw "$onnxPatch did not apply in $onnxSrc; the build would use ONNX without those changes" }
