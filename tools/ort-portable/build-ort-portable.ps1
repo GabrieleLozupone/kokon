@@ -53,7 +53,10 @@ if (-not (Get-Command patch -ErrorAction SilentlyContinue)) {
 }
 $text = [IO.File]::ReadAllText($depsCmake)
 $oldLine = '  set(ONNXRUNTIME_ONNX_PATCH_COMMAND ${Patch_EXECUTABLE} --binary --ignore-whitespace -p1 < ${PROJECT_SOURCE_DIR}/patches/onnx/onnx.patch)'
-$oursLine = "  set(ONNXRUNTIME_ONNX_PATCH_COMMAND `${Patch_EXECUTABLE}` --binary --ignore-whitespace -p1 < $exactPatch)"
+# Forward slashes: this is CMake code, and a Windows path inside a CMake string is parsed as
+# escapes ("Invalid character escape '\a'", which is what the CI failed on).
+$cmakePath = $exactPatch.Replace('\', '/')
+$oursLine = "  set(ONNXRUNTIME_ONNX_PATCH_COMMAND `${Patch_EXECUTABLE}` --binary --ignore-whitespace -p1 < $cmakePath)"
 $onnxPatch = Join-Path $Src 'cmake\patches\onnx\onnx.patch'
 if ((Get-Content -Raw (Join-Path $Src 'cmake\deps.txt')).Contains($onnxPin) -and (Test-Path $exactPatch)) {
     $onnxPatch = $exactPatch
