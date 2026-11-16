@@ -59,8 +59,9 @@ Windows, macOS (Apple Silicon, 15+) and Linux (`.deb`, `.rpm`). Installed copies
 
 ## Recently shipped
 
-- **0.12.2** (not released yet): runs on x86-64 processors with **SSE4.2 and no AVX**,
-  such as a Xeon X5670 ([#53](https://github.com/GabrieleLozupone/kokon/issues/53)). The AI watermark and
+- **0.12.2** (not released yet, [PR #58](https://github.com/GabrieleLozupone/kokon/pull/58)):
+  runs on x86-64 processors with **SSE4.2 and no AVX**, such as a Xeon X5670
+  ([#53](https://github.com/GabrieleLozupone/kokon/issues/53)). The AI watermark and
   fast stickers link a portable ONNX Runtime built with an SSE4.2 baseline
   ([tools/ort-portable](../tools/ort-portable/README.md)); MLAS still dispatches AVX/AVX2/AVX-512 at
   runtime, so one binary serves old and new CPUs. The app, service and MCP server are built for
