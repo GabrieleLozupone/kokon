@@ -19,29 +19,27 @@ if (-not (Test-Path (Join-Path $env:ORT_LIB_LOCATION 'onnxruntime.lib'))) {
     throw "Portable ONNX Runtime not found: $env:ORT_LIB_LOCATION\onnxruntime.lib. Build it first: powershell -ExecutionPolicy Bypass -File tools\ort-portable\build-ort-portable.ps1"
 }
 
-Write-Host "1/5 Tests (Rust core + frontend + MCP)" -ForegroundColor Cyan
+Write-Host "1/5 Tests (Rust core + frontend)" -ForegroundColor Cyan
 cargo test -p qls-core -p qls-service --release --quiet
 if ($LASTEXITCODE) { throw "Rust tests failed" }
 # kokon-service embeds the built UI (dist\) for browsers on other devices: build it first.
 npm run build
 if ($LASTEXITCODE) { throw "UI build failed" }
-# The MCP protocol test runs the newest target\*\kokon-service.exe, which Tauri overwrites with
-# the bundled sidecar of the previous release: build this version's service first.
-cargo build -p qls-service --release
-if ($LASTEXITCODE) { throw "service build failed" }
 npx vitest run
 if ($LASTEXITCODE) { throw "Frontend tests failed" }
-Push-Location mcp; npx vitest run; $rc = $LASTEXITCODE; Pop-Location
-if ($rc) { throw "MCP tests failed" }
 
 Write-Host "2/5 kokon-service (release)" -ForegroundColor Cyan
 cargo build -p qls-service --release
 if ($LASTEXITCODE) { throw "service build failed" }
 Copy-Item target\release\kokon-service.exe src-tauri\binaries\kokon-service-x86_64-pc-windows-msvc.exe -Force
 
-Write-Host "3/5 kokon-mcp.exe" -ForegroundColor Cyan
+Write-Host "3/5 kokon-mcp + MCP tests (they drive the bundle and the service built above)" -ForegroundColor Cyan
 Push-Location mcp; npm run build:exe; $rc = $LASTEXITCODE; Pop-Location
 if ($rc) { throw "MCP build failed" }
+# The protocol test runs the bundle above against the service built in step 2, not the sidecar Tauri
+# copies here from the previous release, so it has to run after both.
+Push-Location mcp; npx vitest run; $rc = $LASTEXITCODE; Pop-Location
+if ($rc) { throw "MCP tests failed" }
 
 Write-Host "4/5 Desktop app + NSIS installer (signed for the in-app updater)" -ForegroundColor Cyan
 # Updates are verified against the public key in tauri.conf.json; the private key never
