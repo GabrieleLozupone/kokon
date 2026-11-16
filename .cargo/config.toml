@@ -1,0 +1,6 @@
+# Kokon runs on x86-64 CPUs with SSE4.2 and POPCNT (x86-64-v2; e.g. the 2010 Xeon X5670).
+# This is the floor for our own Rust code; AVX/AVX2/AVX-512 stay runtime-dispatched by the
+# engine and ONNX Runtime. Never use target-cpu=native here: release builds must run on other
+# machines (docs/linux.md).
+[target.'cfg(all(target_arch = "x86_64", not(target_os = "macos")))']
+rustflags = ["-C", "target-cpu=x86-64-v2"]

@@ -32,6 +32,8 @@ if (mac) {
 }
 
 const triple = mac ? "aarch64-apple-darwin" : win ? "x86_64-pc-windows-msvc" : "x86_64-unknown-linux-gnu";
-const sidecar = path.resolve(root, "..", "src-tauri", "binaries", `kokon-mcp-${triple}${win ? ".exe" : ""}`);
+const sidecarDir = path.resolve(root, "..", "src-tauri", "binaries");
+fs.mkdirSync(sidecarDir, { recursive: true }); // gitignored, so a clean checkout has no folder
+const sidecar = path.join(sidecarDir, `kokon-mcp-${triple}${win ? ".exe" : ""}`);
 fs.copyFileSync(exe, sidecar);
 console.log(`built ${exe} (${(fs.statSync(exe).size / 1e6).toFixed(1)} MB) -> ${sidecar}`);

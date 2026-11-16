@@ -1,6 +1,6 @@
 # Status
 
-**Updated 2026-11-11.** What is in progress, what comes next, and where help is welcome. Kept current at the end
+**Updated 2026-11-16.** What is in progress, what comes next, and where help is welcome. Kept current at the end
 of every task (see [AGENTS.md](../AGENTS.md#keeping-docsstatusmd-current)); GitHub is the source of truth.
 
 ## Current version: [0.12.1](https://github.com/GabrieleLozupone/kokon/releases/tag/v0.12.1) (2026-11-11)
@@ -59,6 +59,17 @@ Windows, macOS (Apple Silicon, 15+) and Linux (`.deb`, `.rpm`). Installed copies
 
 ## Recently shipped
 
+- **0.12.2** (not released yet, [PR #58](https://github.com/GabrieleLozupone/kokon/pull/58)):
+  runs on x86-64 processors with **SSE4.2 and no AVX**, such as a Xeon X5670
+  ([#53](https://github.com/GabrieleLozupone/kokon/issues/53)). The AI watermark and
+  fast stickers link a portable ONNX Runtime built with an SSE4.2 baseline
+  ([tools/ort-portable](../tools/ort-portable/README.md)); MLAS still dispatches AVX/AVX2/AVX-512 at
+  runtime, so one binary serves old and new CPUs. The app, service and MCP server are built for
+  x86-64-v2, the Windows and Linux release scripts require the portable runtime, and the
+  [Portable CPU release workflow](../.github/workflows/portable-cpu.yml) builds the runtime and the
+  packages on a clean runner on both platforms and runs the release binaries on an emulated CPU
+  without AVX (passing on Windows and Linux since 2026-11-16). Measured on a Xeon X5670 and a Quadro
+  P6000: generate 1024² in ~73 s, edit in ~106 s, stickers in ~18 s.
 - **0.12.0** (2026-11-04): the Layers lab (experimental: click the objects, each on its own layer with the
   background filled behind them, move/hide/edit/expand any layer, Blend into scene, Export PSD), paint with colours
   and one-click Select (its model downloaded on first use), Prompt+ for brushed areas and Expand with a Detail level,

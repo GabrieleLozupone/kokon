@@ -54,6 +54,11 @@ Details and the reasoning are in [platforms.md](platforms.md); the short version
 
 - `GpuBackend` in `config.rs` picks the engine, its folder, device name and flags. Each engine
   is a pinned download in `catalog.rs`, so both Windows engines can stay installed.
+- CPU floor: x86-64 with **SSE4.2 + POPCNT** (x86-64-v2; reference: Xeon X5670, 2010). Engine
+  zips are built with `GGML_NATIVE=OFF` + `GGML_CPU_ALL_VARIANTS=ON`, so ggml loads
+  `ggml-cpu-sse42` / `sandybridge` / `haswell` at runtime. Rust targets `x86-64-v2`, and ONNX
+  Runtime is rebuilt from source with its baseline AVX options off (`tools/ort-portable`);
+  MLAS still dispatches AVX/AVX2/AVX-512 at runtime. One binary serves both old and new CPUs.
 - GPU detection: `nvidia-smi`, then DXGI for other cards (name, vendor, dedicated VRAM), then
   `sysctl` on a Mac (chip, unified memory). A Mac's memory becomes the "VRAM" the planner uses
   through `planner::unified_memory_planning_mib`: Metal's share (~2/3, ~3/4 from 64 GB) minus

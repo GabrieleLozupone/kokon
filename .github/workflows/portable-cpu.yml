@@ -1,0 +1,197 @@
+# Builds the release packages with a portable ONNX Runtime, so they run on SSE4.2 CPUs
+# (Xeon X5670) as well as on AVX2/AVX-512 machines:
+#   linux   -> .deb + .rpm on Ubuntu 22.04 (glibc 2.35)
+#   windows -> NSIS setup.exe on windows-2022 (MSVC)
+# Both link tools/ort-portable; MLAS still picks its AVX/AVX2/AVX-512 kernels at runtime.
+#
+# Manual run only: Actions -> "Portable CPU release" -> Run workflow.
+name: Portable CPU release
+
+on:
+  workflow_dispatch:
+    inputs:
+      ort_version:
+        description: "ONNX Runtime tag (must match ort's api-* feature)"
+        default: "v1.31.0"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    env:
+      ORT_VERSION: ${{ inputs.ort_version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # Same packages, Rust and Node the documented release flow uses (g++-13 for ONNX
+      # Runtime's libstdc++, WebKitGTK 4.1, Node 22, rustup).
+      - name: System dependencies
+        run: bash scripts/build-release-linux.sh --setup
+
+      - name: Install packages
+        run: npm ci --no-audit --no-fund
+
+      - name: Cache portable ONNX Runtime
+        id: ort-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/kokon-deps/ort-portable
+          key: ort-portable-${{ inputs.ort_version }}-linux-x86_64-v2-r2
+
+      - name: Build portable ONNX Runtime
+        if: steps.ort-cache.outputs.cache-hit != 'true'
+        run: bash tools/ort-portable/build-ort-portable.sh
+
+      # The in-app updater verifies signatures. Use the maintainer's key when the secret is
+      # set; otherwise generate a throwaway key so the test artifacts can be built and the
+      # limitation is explicit (they will not update official installs).
+      - name: Updater signing key
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -n "$KEY" ]; then
+            printf '%s' "$KEY" > "$RUNNER_TEMP/kokon-updater.key"
+            echo "TAURI_SIGNING_PRIVATE_KEY=$RUNNER_TEMP/kokon-updater.key" >> "$GITHUB_ENV"
+            echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}" >> "$GITHUB_ENV"
+          else
+            mkdir -p "$HOME/.tauri"
+            npx tauri signer generate -w "$HOME/.tauri/kokon-updater.key" --ci -p ""
+            echo "TAURI_SIGNING_PRIVATE_KEY=$HOME/.tauri/kokon-updater.key" >> "$GITHUB_ENV"
+            echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=" >> "$GITHUB_ENV"
+            echo "::warning::No TAURI_SIGNING_PRIVATE_KEY secret: these packages are signed with a throwaway key and cannot update official installs."
+          fi
+
+      - name: Build Kokon (.deb + .rpm)
+        env:
+          ORT_LIB_LOCATION: /home/runner/kokon-deps/ort-portable/lib
+        run: bash scripts/build-release-linux.sh
+
+      - name: glibc report
+        run: |
+          for f in target/release/kokon target/release/kokon-service; do
+            printf '%s needs ' "$f"
+            objdump -T "$f" | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1
+          done
+
+      # Westmere/Nehalem = SSE4.2 + POPCNT, no AVX: the floor Kokon promises (Xeon X5670,
+      # #53). Running the release binaries there proves no AVX slipped into an initializer.
+      - name: Runs on a CPU without AVX (QEMU Nehalem)
+        run: |
+          sudo apt-get install -y qemu-user
+          qemu-x86_64 -cpu Nehalem target/release/kokon-service --version
+          qemu-x86_64 -cpu Nehalem mcp/build/kokon-mcp --version
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: kokon-linux-ubuntu-22.04
+          path: |
+            dist-release/*.deb
+            dist-release/*.rpm
+            dist-release/*.json
+          if-no-files-found: error
+
+  # The normal Windows path is the maintainer's machine (docs/releasing.md); this job makes a
+  # portable build reproducible on a clean runner. First run: the ONNX Runtime build is ~1 h.
+  # windows-2022 on purpose: it ships the Visual Studio 2022 C++ toolchain that ONNX Runtime
+  # v1.31 is tested with (windows-latest has moved to a newer Visual Studio; the ORT script
+  # detects it, but the known-good image keeps release builds reproducible).
+  windows:
+    runs-on: windows-2022
+    env:
+      ORT_VERSION: ${{ inputs.ort_version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            mcp/package-lock.json
+
+      # mcp/ is not an npm workspace: it has its own lockfile and dev dependencies (esbuild,
+      # postject, vitest) that scripts\build-release.ps1 only assumes are installed.
+      - name: Install packages
+        shell: pwsh
+        run: |
+          npm ci --no-audit --no-fund
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Push-Location mcp
+          npm ci --no-audit --no-fund
+
+      - name: Cache portable ONNX Runtime
+        id: ort-cache
+        uses: actions/cache@v6
+        with:
+          path: ~\kokon-deps\ort-portable
+          key: ort-portable-${{ inputs.ort_version }}-windows-x86_64-msvc-r2
+
+      # One line that makes a failed dependency build diagnosable without a second run.
+      - name: Toolchain report
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          if (Test-Path $vswhere) {
+            $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationVersion
+            Write-Host "Visual Studio: $vs"
+          } else {
+            Write-Host "Visual Studio: vswhere not found"
+          }
+          cmake --version | Select-Object -First 1
+          if (Get-Command ninja -ErrorAction SilentlyContinue) { ninja --version }
+          else { Write-Host "ninja: not installed (fine: the ORT script uses the Visual Studio generator)" }
+          # Which patch implementation the runner has, and that git is there too. `patch --binary`
+          # compares bytes, so the .patch files must stay exactly as the repository stores them;
+          # that is what the ORT script guarantees.
+          if (Get-Command patch -ErrorAction SilentlyContinue) { patch --version | Select-Object -First 1 }
+          else { Write-Host "patch: not installed (ONNX Runtime would skip its dependency patches)" }
+          git --version
+          cargo --version
+          rustc --version
+          Get-PSDrive -PSProvider FileSystem |
+            Format-Table Name, @{n = 'FreeGB'; e = { [math]::Round($_.Free / 1GB, 1) } } -AutoSize |
+            Out-String | Write-Host
+
+      - name: Build portable ONNX Runtime (MSVC)
+        if: steps.ort-cache.outputs.cache-hit != 'true'
+        run: powershell -ExecutionPolicy Bypass -File tools\ort-portable\build-ort-portable.ps1
+
+      # Same rule as Linux: the maintainer's key when the secret exists, otherwise a
+      # throwaway key with a warning. Written with .NET so the file keeps the secret's
+      # line endings exactly (Tauri parses the key text).
+      - name: Updater signing key
+        shell: pwsh
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if ($env:KEY) {
+            $path = Join-Path $env:RUNNER_TEMP "kokon-updater.key"
+            [System.IO.File]::WriteAllText($path, $env:KEY)
+            "TAURI_SIGNING_PRIVATE_KEY=$path" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$env:PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          } else {
+            New-Item -ItemType Directory -Force "$env:USERPROFILE\.tauri" | Out-Null
+            npx tauri signer generate -w "$env:USERPROFILE\.tauri\kokon-updater.key" --ci -p ""
+            "TAURI_SIGNING_PRIVATE_KEY=$env:USERPROFILE\.tauri\kokon-updater.key" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            Write-Host "::warning::No TAURI_SIGNING_PRIVATE_KEY secret: these packages are signed with a throwaway key and cannot update official installs."
+          }
+
+      - name: Build Kokon (NSIS setup.exe)
+        run: powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
+
+      - name: Binaries answer --version
+        run: |
+          .\target\release\kokon-service.exe --version
+          .\mcp\build\kokon-mcp.exe --version
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: kokon-windows
+          path: dist-release\*
+          if-no-files-found: error

@@ -1,42 +1,20 @@
-import { CircleAlert, CirclePlay, Cpu, FolderTree, Images, Layers } from "lucide-react";
+import { CircleAlert, CirclePlay, Cpu, Layers } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { formatBytes, installProgress, installStep, installTimeLeft, modelChoiceUi, modelOfferDue, whatsNewDue as due } from "../lib/logic";
 import { afterStartScreens, refreshStatus, setState, toastError, useStore } from "../lib/store";
 import type { GpuBackend, InstallItem, InstallStatus, ModelsStatus } from "../lib/types";
 import { native } from "../lib/native";
-import { VIDEOS } from "../lib/videos";
 import { KokonMark } from "./Welcome";
 
 /** The release these notes describe. Shown once to people updating from an earlier version. */
-export const WHATS_NEW_VERSION = "0.12.1";
+export const WHATS_NEW_VERSION = "0.12.2";
 
 const NEWS = [
   {
-    icon: Images,
-    title: "More like this",
-    text: "Under a new image, More like this makes another one from it: Subtle keeps the picture and changes the details, Strong keeps the idea and changes more. Regenerate still starts from scratch.",
-  },
-  {
-    icon: Layers,
-    title: "Redraw at this size",
-    text: "In the Layers lab, an object made bigger with the corner handle can be drawn again at its new size, so it stays sharp. The stretched version stays under Versions.",
-    video: VIDEOS.update012.url,
-  },
-  {
     icon: Cpu,
-    title: "The GPU is freed when Kokon is idle",
-    text: "After 10 idle minutes the model leaves the GPU even with a Kokon window or browser tab open, so other programs can use it. It loads again with the next image.",
-  },
-  {
-    icon: FolderTree,
-    title: "A folder for each project",
-    text: "Settings → General → A folder for each project: new images are saved in a folder named after their project instead of one folder per day. Off unless you turn it on.",
-  },
-  {
-    icon: CircleAlert,
-    title: "Smaller fixes",
-    text: "The time saved in an image's file is local time (it was an hour early in Europe), and when Kokon cannot start its service it says why, for example a processor without AVX.",
+    title: "Runs on older processors",
+    text: "Kokon now starts on x86-64 machines with SSE4.2 but no AVX, such as a Xeon X5670. The AI watermark and fast stickers use a portable ONNX Runtime, and the app, service and MCP server share the same floor. Newer processors still use AVX2 and AVX-512.",
   },
 ];
 

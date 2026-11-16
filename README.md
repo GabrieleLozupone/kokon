@@ -243,6 +243,7 @@ whole thing takes a few minutes, and the setup screen shows what Kokon can do wh
 | | Minimum | Recommended |
 | --- | --- | --- |
 | **OS** | Windows 10 64-bit | Windows 11 |
+| **CPU** | x86-64 with SSE4.2 and POPCNT (e.g. Xeon X5670, 2010) | any recent x86-64 (AVX2/AVX-512 used at runtime) |
 | **GPU** | NVIDIA, 12 GB VRAM (RTX 3060 12 GB, 4070); 8 GB in beta (RTX 3060 Ti, RTX 5050 Laptop) · AMD / Intel 12 GB+ through Vulkan (beta) | NVIDIA, 16 GB+ VRAM (RTX 4080, 5070 Ti, 5080, 4090, 5090) |
 | **RAM** | 16 GB | 32 GB |
 | **Disk** | 15 GB free | 25 GB free on an SSD |
@@ -263,6 +264,7 @@ whole thing takes a few minutes, and the setup screen shows what Kokon can do wh
 | | Minimum | Recommended |
 | --- | --- | --- |
 | **Distribution** | x86-64: Ubuntu 22.04, Debian 12, Mint 21, Fedora 40 (or newer) | the latest Ubuntu LTS or Fedora |
+| **CPU** | x86-64 with SSE4.2 and POPCNT (e.g. Xeon X5670, 2010) | any recent x86-64 (AVX2/AVX-512 used at runtime) |
 | **GPU** | As on Windows: NVIDIA 12 GB (8 GB in beta) with the proprietary driver · AMD / Intel 12 GB+ through Vulkan (beta) | NVIDIA, 16 GB+ VRAM |
 | **RAM** | 16 GB | 32 GB |
 | **Disk** | 15 GB free | 25 GB free on an SSD |

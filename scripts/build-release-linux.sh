@@ -43,6 +43,15 @@ for c in cargo node npm pkg-config; do command -v "$c" >/dev/null || { echo "✗
 pkg-config --exists webkit2gtk-4.1 || { echo "✗ webkit2gtk-4.1 not found: run with --setup first."; exit 1; }
 command -v g++-13 >/dev/null || { echo "✗ g++-13 not found (ONNX Runtime needs its libstdc++): run with --setup first."; exit 1; }
 
+# ort's prebuilt ONNX Runtime is built for AVX2 and stops with SIGILL on an SSE4.2 CPU (Xeon
+# X5670, #53). Release builds link the portable one instead (tools/ort-portable, docs/linux.md).
+export ORT_LIB_LOCATION="${ORT_LIB_LOCATION:-$HOME/kokon-deps/ort-portable/lib}"
+if [ ! -f "$ORT_LIB_LOCATION/libonnxruntime.a" ]; then
+  echo "✗ Portable ONNX Runtime not found: $ORT_LIB_LOCATION/libonnxruntime.a"
+  echo "  Build it first: bash tools/ort-portable/build-ort-portable.sh"
+  exit 1
+fi
+
 echo "1/5 Packages"
 npm ci --no-audit --no-fund
 (cd mcp && npm ci --no-audit --no-fund)
