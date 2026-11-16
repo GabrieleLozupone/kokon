@@ -52,11 +52,16 @@ Studio generator), it retries with Ninja after importing the MSVC environment fr
 `vcvarsall.bat`. `KOKON_CMAKE_GENERATOR` overrides the choice, e.g. `Ninja` from a Developer
 PowerShell.
 
-ONNX Runtime applies its dependency patches with `patch --binary -p1 < cmake/patches/...`, and its
-`.gitattributes` (`* text=auto`) converts a Windows checkout to CRLF while the dependency sources
-come from zip archives with LF. `patch` compares line endings, so a CRLF copy of a patch file
-fails with "different line endings" (the CI hit this with `cmake/patches/onnx/onnx.patch`). The
-script writes the `.patch` files back with LF before configuring.
+Dependency patches: ONNX Runtime runs them with `patch --binary --ignore-whitespace -p1`, which
+compares bytes, and its `.gitattributes` (`* text=auto`) makes a Windows checkout CRLF while the
+dependency sources come from zip archives with LF. Two things the CI showed: a CRLF copy of a
+patch file is refused by every patch tool, and the same `onnx.patch` that GNU patch 2.7.6 applies
+failed in two hunks with the runner's patch (Strawberry) — no line-ending rule controls that. So
+the script clones with `core.autocrlf=false`, keeps the `.patch` files as LF, and patches ONNX
+with `git apply -p1 --ignore-whitespace`, which compares lines and behaves the same everywhere.
+It stops with the file named if the patch is not applied in the sources CMake downloaded: without
+those hunks ONNX is different (`ONNX_MINIMAL_BUILD`, `assertions.h`, `tensor.h`,
+`scoped_resource.h`).
 
 ## Requirements and notes
 

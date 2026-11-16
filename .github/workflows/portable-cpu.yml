@@ -24,7 +24,7 @@ jobs:
     env:
       ORT_VERSION: ${{ inputs.ort_version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Same packages, Rust and Node the documented release flow uses (g++-13 for ONNX
       # Runtime's libstdc++, WebKitGTK 4.1, Node 22, rustup).
@@ -36,7 +36,7 @@ jobs:
 
       - name: Cache portable ONNX Runtime
         id: ort-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/kokon-deps/ort-portable
           key: ort-portable-${{ inputs.ort_version }}-linux-x86_64-v2-r2
@@ -84,7 +84,7 @@ jobs:
           qemu-x86_64 -cpu Nehalem target/release/kokon-service --version
           qemu-x86_64 -cpu Nehalem mcp/build/kokon-mcp --version
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: kokon-linux-ubuntu-22.04
           path: |
@@ -103,9 +103,9 @@ jobs:
     env:
       ORT_VERSION: ${{ inputs.ort_version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -125,10 +125,10 @@ jobs:
 
       - name: Cache portable ONNX Runtime
         id: ort-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~\kokon-deps\ort-portable
-          key: ort-portable-${{ inputs.ort_version }}-windows-x86_64-msvc-r1
+          key: ort-portable-${{ inputs.ort_version }}-windows-x86_64-msvc-r2
 
       # One line that makes a failed dependency build diagnosable without a second run.
       - name: Toolchain report
@@ -144,6 +144,12 @@ jobs:
           cmake --version | Select-Object -First 1
           if (Get-Command ninja -ErrorAction SilentlyContinue) { ninja --version }
           else { Write-Host "ninja: not installed (fine: the ORT script uses the Visual Studio generator)" }
+          # Which patch implementation CMake would find. It is not strict the same way everywhere:
+          # the runner's patch (Strawberry) rejected two hunks of onnx.patch that GNU patch 2.7.6
+          # applies, so the ORT script patches ONNX with git apply instead.
+          if (Get-Command patch -ErrorAction SilentlyContinue) { patch --version | Select-Object -First 1 }
+          else { Write-Host "patch: not installed (ONNX Runtime would skip its dependency patches)" }
+          git --version
           cargo --version
           rustc --version
           Get-PSDrive -PSProvider FileSystem |
@@ -184,7 +190,7 @@ jobs:
           .\target\release\kokon-service.exe --version
           .\mcp\build\kokon-mcp.exe --version
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: kokon-windows
           path: dist-release\*
