@@ -389,15 +389,17 @@ VRAM than an RTX 3050 6 GB), every job completed and nothing ran out of memory:
 | Edit 1024² + one 896² reference | 86 s, 13.1 s/step, peak 11.2 GiB | 92 s, 16.8 s/step, peak 5.5 GiB |
 
 Sampling ran 10–28 % slower under the budget (the graph cut splits more), 7–9 % more total time
-because the steps are only part of a job; the DiT never had to be split across steps. What does
-fail every time is the VAE decode at the launch's 768 px tiles ("need 5369 MB / budget 4608"):
-sd-server retries at 384 px automatically and succeeds in ~10 s, so a 6 GB preset could skip
-that first attempt by starting the server with smaller tiles. Below 8 GB the planner already
-picks the 8 GB preset (`planner::recommended_preset`), plans 1 MP for Fast and about 1.29 MP
-for Balanced and Quality (`planner::token_budget`), and marks the size as memory optimized;
-`planner::tests::six_gb_card_gets_the_8gb_preset_and_the_smallest_sizes` pins that. Still to
-confirm on real hardware: a 6 GB RTX card (RTX 3050 6 GB, RTX 2060) and the Prompt+ enhancer,
-whose text-encoder pass moves the DiT/VAE out of VRAM.
+because the steps are only part of a job; the DiT never had to be split across steps. A decode
+at the launch's 768 px tiles fails ("need 5369 MB / budget 4608") and sd-server's retry at
+384 px succeeds in ~10 s. Cards below 7 GiB now get that 384 px tile with every job
+(`planner::SMALL_CARD_VAE_TILE`, between the 6 GB and 8 GB classes): the failed attempt and its
+retry are gone (1024² text to image: 85 s, 9.3 s decode, no warning), and the decode never
+depends on sd-server retrying, which a CUDA out-of-memory during execution would not reach.
+Below 8 GB the planner already picks the 8 GB preset (`planner::recommended_preset`), plans 1 MP
+for Fast and about 1.29 MP for Balanced and Quality (`planner::token_budget`), and marks the
+size as memory optimized; `planner::tests::six_gb_card_gets_the_8gb_preset_and_the_smallest_sizes`
+pins that. Still to confirm on real hardware: a 6 GB RTX card (RTX 3050 6 GB, RTX 2060) and the
+Prompt+ enhancer, whose text-encoder pass moves the DiT/VAE out of VRAM.
 
 Real RTX 5070 12 GB (a friend's diagnostics, 2026-10-11; 12gb preset, Turbo Q4_K, text encoder on
 the CPU, text to image only): 1376×768 at 1.24 s/step (10 s sampling, 1.9 s decode); ~3.2 MP
