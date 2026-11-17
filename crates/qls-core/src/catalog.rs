@@ -688,8 +688,11 @@ pub struct Preset {
 pub const PRESETS: &[Preset] = &[
     // Beta (0.9.3): the 12 GB files, with the planner's smaller working sizes. Emulated 8 GB on a
     // 5070 Ti ran every mode without running out of memory (2026-10-14); users report it works
-    // on an RTX 3060 Ti and an RTX 5050 Laptop (1–2 min per edit). Not offered on Macs, whose
-    // 16 GB models plan below this and stay on the 12 GB preset's Mac name.
+    // on an RTX 3060 Ti and an RTX 5050 Laptop (1–2 min per edit). A 6 GB card (6143 MiB) keeps
+    // this preset: giving it this reserve as a hard budget on a 24 GB card (2026-11-17) ran
+    // text to image, the Balanced size and an edit with a reference at a peak of 5.5 GiB, 10–28 %
+    // slower per step, and only the VAE decode fell back to 384 px tiles. Not offered on Macs,
+    // whose 16 GB models plan below this and stay on the 12 GB preset's Mac name.
     Preset {
         id: "8gb",
         label: "8 GB (beta)",

@@ -1,6 +1,6 @@
 # Status
 
-**Updated 2026-11-16.** What is in progress, what comes next, and where help is welcome. Kept current at the end
+**Updated 2026-11-17.** What is in progress, what comes next, and where help is welcome. Kept current at the end
 of every task (see [AGENTS.md](../AGENTS.md#keeping-docsstatusmd-current)); GitHub is the source of truth.
 
 ## Current version: [0.12.1](https://github.com/GabrieleLozupone/kokon/releases/tag/v0.12.1) (2026-11-11)
@@ -53,6 +53,10 @@ Windows, macOS (Apple Silicon, 15+) and Linux (`.deb`, `.rpm`). Installed copies
   `bash engine-mac/tools/bench.sh` there, gives a report to paste in
   [Discussion #43](https://github.com/GabrieleLozupone/kokon/discussions/43) (M1, M3, M4 and M5 Macs are the most
   useful; see [engine-mac/README.md](../engine-mac/README.md#testing-on-your-mac-bench)).
+- A real 6 GB card (RTX 3050 6 GB, RTX 2060): the 8 GB preset ran every mode emulated on a 24 GB card
+  (`--max-vram 4.5`, [engineering notes](engineering-notes.md#testing-smaller-cards-on-a-bigger-one)), and the
+  planner has a test for it, but no 6 GB card has confirmed it and the Prompt+ enhancer was not tested.
+  Settings → Performance → Diagnostics from one settles it.
 - Mac engine optimizations for your own Mac (the chip you develop on, nothing changed on the others): rules,
   measuring and the pull request report in [engine-mac/AGENTS.md](../engine-mac/AGENTS.md).
 - Model proposals that meet the switch rule: [Discussion #35](https://github.com/GabrieleLozupone/kokon/discussions/35).

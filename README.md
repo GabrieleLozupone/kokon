@@ -292,7 +292,7 @@ preset later from Settings → Models → **Set up models…**
 
 | Preset | Diffusion model | Text encoder (in RAM) | Download | Tested on real hardware |
 | --- | --- | --- | --- | --- |
-| 8 GB (beta) | Qwen-Image 2.1 Turbo Q4_K_M (4.2 GB) | Qwen3-VL 8B Q4_K_M | ~12 GB | by users: RTX 3060 Ti, RTX 5050 Laptop |
+| 8 GB (beta) | Qwen-Image 2.1 Turbo Q4_K_M (4.2 GB) | Qwen3-VL 8B Q4_K_M | ~12 GB | by users: RTX 3060 Ti, RTX 5050 Laptop; 6 GB emulated |
 | 12 GB | Qwen-Image 2.1 Turbo Q4_K_M | Qwen3-VL 8B Q4_K_M | ~12 GB | ✅ RTX 5070 (12 GB) |
 | 16 GB | Qwen-Image 2.1 Turbo Q4_K_M | Qwen3-VL 8B Q4_K_M | ~12 GB | ✅ RTX 5070 Ti |
 | 24 GB | Qwen-Image 2.1 Turbo Q4_K_M | Qwen3-VL 8B Q4_K_M | ~12 GB | by users: RX 7900 XTX (Vulkan) |

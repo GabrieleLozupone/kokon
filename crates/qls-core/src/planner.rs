@@ -1360,6 +1360,39 @@ mod tests {
         assert!(p.references.is_empty());
     }
 
+    /// A 6 GB card (an RTX 3050 6 GB reports 6143 MiB) is below every preset threshold, so it
+    /// gets the 8 GB preset and the smallest sizes. Measured on 2026-11-17 by giving sd-server
+    /// that preset's 1.5 GiB reserve as a hard budget (`--max-vram 4.5`) on a 24 GB card: text to
+    /// image at 1 MP and at Balanced's capped area, and an edit with one reference, all
+    /// completed with a peak of 5.5 GiB (the decode fell back from 768 px tiles to 384); sampling
+    /// ran 10–28 % slower than on the full card.
+    #[test]
+    fn six_gb_card_gets_the_8gb_preset_and_the_smallest_sizes() {
+        use crate::catalog::recommended_preset;
+        let preset = recommended_preset(Some(6143), false);
+        assert_eq!(preset.id, "8gb");
+        assert_eq!(preset.vram_reserve_gib, 1.5, "kernel code loads outside the budget on any card");
+        let budget_area = token_budget(Some(6143)) * PIXELS_PER_TOKEN;
+        assert!(budget_area > 1_250_000 && budget_area < 1_350_000, "about 1.29 MP on 6 GB: {budget_area}");
+        let six = PlanInputs { vram_total_mib: Some(6143), server_vae_tiling: true, ..Default::default() };
+        let plan_at = |quality| {
+            let r = GenerationRequest { prompt: "a lighthouse at dusk".into(), quality, ..Default::default() };
+            plan(&r, &six, &rec()).unwrap()
+        };
+        assert_eq!(plan_at(Quality::Fast).working, Size::new(1024, 1024), "Fast is 1 MP on 6 GB");
+        let balanced = plan_at(Quality::Balanced);
+        assert!(balanced.optimized_for_vram, "1.5K does not fit 6 GB");
+        assert!(balanced.working.area() > 1_000_000, "as much as fits, not 1 MP: {:?}", balanced.working);
+        assert!(balanced.working.area() <= budget_area);
+        assert_eq!(plan_at(Quality::Quality).working, balanced.working, "the budget caps both");
+        // An edit shares its budget with the reference.
+        let edit = plan(&GenerationRequest { prompt: "change the sky".into(), quality: Quality::Fast, ..Default::default() },
+            &PlanInputs { image_sizes: vec![Size::new(1200, 800)], ..six.clone() }, &rec()).unwrap();
+        let target = edit.working.area();
+        let refs: u64 = edit.references.iter().map(|r| r.canvas.canvas.area().min(target)).sum();
+        assert!(target + refs <= budget_area, "{target} + {refs}");
+    }
+
     #[test]
     fn every_job_runs_turbos_schedule() {
         assert_eq!(GenerationRequest::default().quality, Quality::Fast, "the default");
