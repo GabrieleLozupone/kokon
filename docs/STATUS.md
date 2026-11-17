@@ -53,10 +53,10 @@ Windows, macOS (Apple Silicon, 15+) and Linux (`.deb`, `.rpm`). Installed copies
   `bash engine-mac/tools/bench.sh` there, gives a report to paste in
   [Discussion #43](https://github.com/GabrieleLozupone/kokon/discussions/43) (M1, M3, M4 and M5 Macs are the most
   useful; see [engine-mac/README.md](../engine-mac/README.md#testing-on-your-mac-bench)).
-- A real 6 GB card (RTX 3050 6 GB, RTX 2060): the 8 GB preset ran every mode emulated on a 24 GB card
-  (`--max-vram 4.5`, [engineering notes](engineering-notes.md#testing-smaller-cards-on-a-bigger-one)), and the
-  planner has a test for it, but no 6 GB card has confirmed it and the Prompt+ enhancer was not tested.
-  Settings → Performance → Diagnostics from one settles it.
+- Prompt+ on a 6 GB card, and a 6 GB RTX 2060 at all: the 8 GB preset ran every mode on a real
+  RTX 3050 6 GB (Windows, 2026-11-17) with no out-of-memory, and emulated on a 24 GB card before
+  that (`--max-vram 4.5`, [engineering notes](engineering-notes.md#testing-smaller-cards-on-a-bigger-one)).
+  Settings → Performance → Diagnostics from a 2060, or from a 3050 running Prompt+, settles the rest.
 - Mac engine optimizations for your own Mac (the chip you develop on, nothing changed on the others): rules,
   measuring and the pull request report in [engine-mac/AGENTS.md](../engine-mac/AGENTS.md).
 - Model proposals that meet the switch rule: [Discussion #35](https://github.com/GabrieleLozupone/kokon/discussions/35).

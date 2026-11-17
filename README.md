@@ -21,7 +21,7 @@
   <img src="assets/readme/badges/macos.svg" alt="macOS 15 or newer">
   <img src="assets/readme/badges/linux.svg" alt="Linux, .deb and .rpm">
   <br>
-  <img src="assets/readme/badges/nvidia.svg" alt="NVIDIA, 8 GB of VRAM or more (8 GB in beta)">
+  <img src="assets/readme/badges/nvidia.svg" alt="NVIDIA, 6 GB of VRAM or more (6–8 GB in beta)">
   <img src="assets/readme/badges/amd.svg" alt="AMD, 8 GB of VRAM or more, beta">
   <img src="assets/readme/badges/intel.svg" alt="Intel Arc, 12 GB of VRAM or more, beta">
   <img src="assets/readme/badges/apple.svg" alt="Apple Silicon, 16 GB of unified memory or more, beta">
@@ -138,7 +138,7 @@ we make the technical choices (model, files, steps, memory), you make the edits.
 
 Fair to say: cloud models run on data-center GPUs, so they can be faster and stronger on some edits. Kokon runs
 Qwen-Image 2.1, which leads the open-weights image-editing rankings, on the computer you already have. You need
-a 12 GB graphics card (8 GB in beta) or an Apple Silicon Mac, and the images are for non-commercial use because
+a 12 GB graphics card (6–8 GB in beta) or an Apple Silicon Mac, and the images are for non-commercial use because
 of the model's license.
 
 ## Why Kokon
@@ -244,7 +244,7 @@ whole thing takes a few minutes, and the setup screen shows what Kokon can do wh
 | --- | --- | --- |
 | **OS** | Windows 10 64-bit | Windows 11 |
 | **CPU** | x86-64 with SSE4.2 and POPCNT (e.g. Xeon X5670, 2010) | any recent x86-64 (AVX2/AVX-512 used at runtime) |
-| **GPU** | NVIDIA, 12 GB VRAM (RTX 3060 12 GB, 4070); 8 GB in beta (RTX 3060 Ti, RTX 5050 Laptop) · AMD / Intel 12 GB+ through Vulkan (beta) | NVIDIA, 16 GB+ VRAM (RTX 4080, 5070 Ti, 5080, 4090, 5090) |
+| **GPU** | NVIDIA, 12 GB VRAM (RTX 3060 12 GB, 4070); 6–8 GB in beta (RTX 3050 6 GB, RTX 3060 Ti, RTX 5050 Laptop) · AMD / Intel 12 GB+ through Vulkan (beta) | NVIDIA, 16 GB+ VRAM (RTX 4080, 5070 Ti, 5080, 4090, 5090) |
 | **RAM** | 16 GB | 32 GB |
 | **Disk** | 15 GB free | 25 GB free on an SSD |
 | **Time per image** <!-- RTX 5070 edit time not measured yet (text to image only, 10-11) --> | RTX 5070 12 GB: ~12 s per 1 MP image, ~42 s at native 2K (text to image) | RTX 5070 Ti 16 GB: ~24 s per edit at Balanced (1.5K), ~36 s for a new image at native 2K |
@@ -292,7 +292,7 @@ preset later from Settings → Models → **Set up models…**
 
 | Preset | Diffusion model | Text encoder (in RAM) | Download | Tested on real hardware |
 | --- | --- | --- | --- | --- |
-| 8 GB (beta) | Qwen-Image 2.1 Turbo Q4_K_M (4.2 GB) | Qwen3-VL 8B Q4_K_M | ~12 GB | by users: RTX 3060 Ti, RTX 5050 Laptop; 6 GB emulated |
+| 8 GB (beta) | Qwen-Image 2.1 Turbo Q4_K_M (4.2 GB) | Qwen3-VL 8B Q4_K_M | ~12 GB | ✅ RTX 3050 6 GB; by users: RTX 3060 Ti, RTX 5050 Laptop |
 | 12 GB | Qwen-Image 2.1 Turbo Q4_K_M | Qwen3-VL 8B Q4_K_M | ~12 GB | ✅ RTX 5070 (12 GB) |
 | 16 GB | Qwen-Image 2.1 Turbo Q4_K_M | Qwen3-VL 8B Q4_K_M | ~12 GB | ✅ RTX 5070 Ti |
 | 24 GB | Qwen-Image 2.1 Turbo Q4_K_M | Qwen3-VL 8B Q4_K_M | ~12 GB | by users: RX 7900 XTX (Vulkan) |
@@ -656,11 +656,12 @@ If the Kokon window stays blank on Linux, start it with `WEBKIT_DISABLE_DMABUF_R
 <summary><b>My GPU has 8 GB. Can I still use it?</b></summary>
 <br>
 
-Yes, in beta since 0.9.3. Setup picks the 8 GB preset: the same files as the 12 GB one, with
-smaller working sizes, so images are made at about 1 megapixel (then enlarged). Users report it
+Yes, in beta since 0.9.3, down to 6 GB of VRAM. Setup picks the 8 GB preset: the same files as
+the 12 GB one, with smaller working sizes, so images are made at about 1 megapixel (then
+enlarged). An RTX 3050 6 GB runs every mode with no out-of-memory; users also report the preset
 works on an RTX 3060 Ti and on an RTX 5050 Laptop, where an edit takes 1–2 minutes. The text
-encoder runs from system RAM, so 16 GB of RAM or more is recommended. If you try it, please tell us
-how it runs in an issue.
+encoder runs from system RAM, so 16 GB of RAM or more is recommended. If you try it on another
+card, please tell us how it runs in an issue.
 
 </details>
 

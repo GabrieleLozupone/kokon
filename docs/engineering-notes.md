@@ -398,8 +398,10 @@ depends on sd-server retrying, which a CUDA out-of-memory during execution would
 Below 8 GB the planner already picks the 8 GB preset (`planner::recommended_preset`), plans 1 MP
 for Fast and about 1.29 MP for Balanced and Quality (`planner::token_budget`), and marks the
 size as memory optimized; `planner::tests::six_gb_card_gets_the_8gb_preset_and_the_smallest_sizes`
-pins that. Still to confirm on real hardware: a 6 GB RTX card (RTX 3050 6 GB, RTX 2060) and the
-Prompt+ enhancer, whose text-encoder pass moves the DiT/VAE out of VRAM.
+pins that. On a real RTX 3050 6 GB (Windows, a build of `feat/low-vram-6gb` from 2026-11-17) the
+user ran text to image, the larger sizes and edits with no out-of-memory; timings and the peak
+were not recorded, so the emulated row above stays the reference. Still to test on real hardware:
+a 6 GB RTX 2060 and the Prompt+ enhancer, whose text-encoder pass moves the DiT/VAE out of VRAM.
 
 Real RTX 5070 12 GB (a friend's diagnostics, 2026-10-11; 12gb preset, Turbo Q4_K, text encoder on
 the CPU, text to image only): 1376×768 at 1.24 s/step (10 s sampling, 1.9 s decode); ~3.2 MP

@@ -691,8 +691,9 @@ pub const PRESETS: &[Preset] = &[
     // on an RTX 3060 Ti and an RTX 5050 Laptop (1–2 min per edit). A 6 GB card (6143 MiB) keeps
     // this preset: giving it this reserve as a hard budget on a 24 GB card (2026-11-17) ran
     // text to image, the Balanced size and an edit with a reference at a peak of 5.5 GiB, 10–28 %
-    // slower per step, and only the VAE decode fell back to 384 px tiles. Not offered on Macs,
-    // whose 16 GB models plan below this and stay on the 12 GB preset's Mac name.
+    // slower per step, and only the VAE decode fell back to 384 px tiles. A real RTX 3050 6 GB
+    // (Windows, this branch's build, 2026-11-17) then ran every mode with no out-of-memory. Not
+    // offered on Macs, whose 16 GB models plan below this and stay on the 12 GB preset's Mac name.
     Preset {
         id: "8gb",
         label: "8 GB (beta)",
@@ -703,7 +704,7 @@ pub const PRESETS: &[Preset] = &[
         text_encoder: TEXT_ENCODER_Q4_K_M,
         text_encoder_placement: TextEncoderPlacement::Ram,
         vram_reserve_gib: 1.5,
-        verified: false,
+        verified: true,
         summary: "4-bit model; text encoder in system RAM; images of about 1 megapixel",
     },
     Preset {
