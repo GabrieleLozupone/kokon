@@ -40,6 +40,21 @@ all three from the same code.
    **Linux:** in WSL Ubuntu 22.04 (clone in `~/kokon`, see [linux.md](linux.md)),
    `bash scripts/build-release-linux.sh` → `.deb`, `.rpm` and `updater-linux-x86_64-{deb,rpm}.json`.
    Then copy each machine's `dist-release/` files to the PC so that one folder holds every platform's files.
+
+   The Windows and Linux scripts link the **portable ONNX Runtime** instead of `ort`'s
+   prebuilt one, which needs AVX2 and stops with `SIGILL` on SSE4.2 CPUs (a Xeon X5670, #53).
+   Build it once per machine before the first release:
+   `tools\ort-portable\build-ort-portable.ps1` on Windows,
+   `bash tools/ort-portable/build-ort-portable.sh` on Linux; or point `ORT_LIB_LOCATION` at an
+   existing build. The scripts stop with a clear message if it is missing
+   ([tools/ort-portable/README.md](../tools/ort-portable/README.md)).
+
+   As an alternative to a local machine, the manual **Portable CPU release** workflow
+   (`.github/workflows/portable-cpu.yml`) builds the same Linux packages on Ubuntu 22.04 and the
+   Windows installer on `windows-2022` (the image with the Visual Studio 2022 C++ toolchain),
+   caching the portable runtime and uploading both as artifacts. Without the
+   `TAURI_SIGNING_PRIVATE_KEY` secret they are signed with a throwaway key and cannot update
+   official installs.
 4. **Write the manifest:**
    `node scripts/release/updater.mjs manifest --notes "What changed, in one or two lines"`
    (`latest.json` must list Windows, macOS and both Linux packages).

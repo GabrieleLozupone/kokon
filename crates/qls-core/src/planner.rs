@@ -658,6 +658,16 @@ pub fn max_untiled_vae_area(vram_total_mib: Option<u64>) -> u64 {
         }
     }
 }
+/// Cards below this reported VRAM (MiB) get a per-job decode tile: on 2026-11-17 a 6 GB card
+/// (6143 MiB) with the 8 GB preset's 1.5 GiB reserve as a budget needed 5369 MB for one 768 px
+/// tile, failed in weight preparation, and only decoded at 384 px (~10 s). 8 GB cards keep the
+/// server's 768, which the 8 GB emulation ran (2026-10-14). Sending the tile avoids the failed
+/// attempt on every decode; sd.cpp retries a decode only when allocating it fails, and a CUDA
+/// out-of-memory during the decode aborts sd-server. Between the classes, like the presets: 8 GB
+/// cards report 8188 MiB, 6 GB cards 6143.
+const SMALL_CARD_VAE_TILE_MIB: u64 = 7 * 1024;
+/// Decode tile of those cards: the size the server's own fallback picked (512 px was not measured).
+const SMALL_CARD_VAE_TILE: u32 = 384;
 /// Decode tile side on Vulkan, whatever the card's memory. AMD's driver allows at most 2 GiB per
 /// buffer, and a decode's largest tensor passes that at about 0.5 MP per tile: an RX 9070 XT
 /// logged "Requested buffer size exceeds device buffer size limit" with 0.55-0.72 MP tiles and
@@ -1226,6 +1236,9 @@ pub fn plan(req: &GenerationRequest, inputs: &PlanInputs, rec: &RecommendedSetti
     let large_gpu = !inputs.unified_memory && inputs.vram_total_mib.map(|m| m as f64 / 1024.0 >= 15.0).unwrap_or(false);
     let vae_tile = if inputs.vulkan {
         (vae_tiling && !quick_upscale).then_some((VULKAN_VAE_TILE, VULKAN_VAE_TILE))
+    } else if !inputs.unified_memory && inputs.vram_total_mib.is_some_and(|mib| mib < SMALL_CARD_VAE_TILE_MIB) {
+        // 6 GB cards cannot decode the server's 768 px tiles on the preset's budget.
+        (vae_tiling && !quick_upscale).then_some((SMALL_CARD_VAE_TILE, SMALL_CARD_VAE_TILE))
     } else {
         (vae_tiling && large_gpu && !quick_upscale && total_area > LARGE_GPU_VAE_TILE_AREA)
             .then(|| vae_decode_tile(working.canvas, LARGE_GPU_VAE_TILE_AREA))
@@ -1358,6 +1371,46 @@ mod tests {
         assert_eq!((p.steps, p.cfg, p.sampler.as_str()), (8, 1.0, "euler"), "Turbo: 8 steps, no CFG (official)");
         assert!(p.vae_tiling, "1.5K is above a 16 GB card's untiled budget");
         assert!(p.references.is_empty());
+    }
+
+    /// A 6 GB card (an RTX 3050 6 GB reports 6143 MiB) is below every preset threshold, so it
+    /// gets the 8 GB preset and the smallest sizes. Measured on 2026-11-17 by giving sd-server
+    /// that preset's 1.5 GiB reserve as a hard budget (`--max-vram 4.5`) on a 24 GB card: text to
+    /// image at 1 MP and at Balanced's capped area, and an edit with one reference, all
+    /// completed with a peak of 5.5 GiB (the decode fell back from 768 px tiles to 384); sampling
+    /// ran 10–28 % slower than on the full card.
+    #[test]
+    fn six_gb_card_gets_the_8gb_preset_and_the_smallest_sizes() {
+        use crate::catalog::recommended_preset;
+        let preset = recommended_preset(Some(6143), false);
+        assert_eq!(preset.id, "8gb");
+        assert_eq!(preset.vram_reserve_gib, 1.5, "kernel code loads outside the budget on any card");
+        let budget_area = token_budget(Some(6143)) * PIXELS_PER_TOKEN;
+        assert!(budget_area > 1_250_000 && budget_area < 1_350_000, "about 1.29 MP on 6 GB: {budget_area}");
+        let six = PlanInputs { vram_total_mib: Some(6143), server_vae_tiling: true, ..Default::default() };
+        let plan_at = |quality| {
+            let r = GenerationRequest { prompt: "a lighthouse at dusk".into(), quality, ..Default::default() };
+            plan(&r, &six, &rec()).unwrap()
+        };
+        let fast = plan_at(Quality::Fast);
+        assert_eq!(fast.working, Size::new(1024, 1024), "Fast is 1 MP on 6 GB");
+        assert_eq!(fast.vae_tile, Some((384, 384)), "the server's 768 px tiles do not fit the budget");
+        let balanced = plan_at(Quality::Balanced);
+        assert!(balanced.optimized_for_vram, "1.5K does not fit 6 GB");
+        assert!(balanced.working.area() > 1_000_000, "as much as fits, not 1 MP: {:?}", balanced.working);
+        // Alignment rounds 1136 up to 1152 (32 px sides): +2.9 %, inside the planner's usual margin.
+        assert!((balanced.working.area() as f64) <= budget_area as f64 * 1.05, "{:?}", balanced.working);
+        assert_eq!(plan_at(Quality::Quality).working, balanced.working, "the budget caps both");
+        // An edit shares its budget with the reference.
+        let edit = plan(&GenerationRequest { prompt: "change the sky".into(), quality: Quality::Fast, ..Default::default() },
+            &PlanInputs { image_sizes: vec![Size::new(1200, 800)], ..six.clone() }, &rec()).unwrap();
+        let target = edit.working.area();
+        let refs: u64 = edit.references.iter().map(|r| r.canvas.canvas.area().min(target)).sum();
+        assert!(((target + refs) as f64) <= budget_area as f64 * 1.05, "{target} + {refs}");
+        // 8 GB keeps the server's own 768 px tiles: its budget fits them.
+        let eight = PlanInputs { vram_total_mib: Some(8188), server_vae_tiling: true, ..Default::default() };
+        let at_eight = plan(&GenerationRequest { prompt: "a lighthouse at dusk".into(), ..Default::default() }, &eight, &rec()).unwrap();
+        assert_eq!(at_eight.vae_tile, None, "8 GB decodes the server's tiles");
     }
 
     #[test]

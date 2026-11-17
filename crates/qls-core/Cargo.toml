@@ -14,7 +14,9 @@ futures-util = "0.3.34"
 hex = "0.4.3"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp", "bmp", "gif", "tiff"] }
 png = "0.18.1"
-# Fast stickers (matting.rs): ONNX Runtime on the CPU, linked in from pyke's prebuilt binaries.
+# Fast stickers (matting.rs) and the AI watermark: ONNX Runtime on the CPU. Release builds link
+# the portable build from tools/ort-portable through ORT_LIB_LOCATION (the prebuilt binaries this
+# feature would download need AVX2 and crash on an SSE4.2 CPU); it stays for plain `cargo build`.
 ort = { version = "=2.0.0-rc.14", default-features = false, features = ["std", "download-binaries", "tls-native", "api-31"] }
 
 regex = "1.13.1"

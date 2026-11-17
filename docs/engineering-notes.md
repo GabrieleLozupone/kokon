@@ -54,6 +54,11 @@ Details and the reasoning are in [platforms.md](platforms.md); the short version
 
 - `GpuBackend` in `config.rs` picks the engine, its folder, device name and flags. Each engine
   is a pinned download in `catalog.rs`, so both Windows engines can stay installed.
+- CPU floor: x86-64 with **SSE4.2 + POPCNT** (x86-64-v2; reference: Xeon X5670, 2010). Engine
+  zips are built with `GGML_NATIVE=OFF` + `GGML_CPU_ALL_VARIANTS=ON`, so ggml loads
+  `ggml-cpu-sse42` / `sandybridge` / `haswell` at runtime. Rust targets `x86-64-v2`, and ONNX
+  Runtime is rebuilt from source with its baseline AVX options off (`tools/ort-portable`);
+  MLAS still dispatches AVX/AVX2/AVX-512 at runtime. One binary serves both old and new CPUs.
 - GPU detection: `nvidia-smi`, then DXGI for other cards (name, vendor, dedicated VRAM), then
   `sysctl` on a Mac (chip, unified memory). A Mac's memory becomes the "VRAM" the planner uses
   through `planner::unified_memory_planning_mib`: Metal's share (~2/3, ~3/4 from 64 GB) minus
@@ -369,6 +374,34 @@ edit, inpaint, outpaint, multi-reference and upscale through an isolated service
 time, working size, peak VRAM, memory spilled to shared GPU memory and out-of-memory retries
 into `docs\test-results\`. Bandwidth and compute stay those of the bigger card, so times are
 optimistic: a real 12 GB card (RTX 3060/4070) has to confirm them.
+
+**6 GB (2026-11-17).** Below 8 GB the ceiling can be set inside the engine instead of with
+ballast: `--max-vram <GiB>` is sd-server's own budget for managed weights and runner buffers,
+so a 6 GB card is the 8 GB preset's 1.5 GiB reserve subtracted from 6143 MiB, i.e.
+`--max-vram 4.5`. Run with the preset's exact launch flags (text encoder in RAM, 768 px VAE
+tiles) on a 24 GB Quadro P6000 (Pascal: fp32 compute and fp32 activations, so it needs *more*
+VRAM than an RTX 3050 6 GB), every job completed and nothing ran out of memory:
+
+| Job (Turbo, 8 steps) | Full card (22 GiB budget) | 6 GB budget (4.5 GiB) |
+| --- | --- | --- |
+| Text to image 1024² | 82 s, 7.7 s/step, peak 9.9 GiB | 89 s, 9.4 s/step, peak 5.0 GiB |
+| Text to image 1280×1024 (Balanced's cap) | — | 108 s, 11.6 s/step, peak 5.5 GiB |
+| Edit 1024² + one 896² reference | 86 s, 13.1 s/step, peak 11.2 GiB | 92 s, 16.8 s/step, peak 5.5 GiB |
+
+Sampling ran 10–28 % slower under the budget (the graph cut splits more), 7–9 % more total time
+because the steps are only part of a job; the DiT never had to be split across steps. A decode
+at the launch's 768 px tiles fails ("need 5369 MB / budget 4608") and sd-server's retry at
+384 px succeeds in ~10 s. Cards below 7 GiB now get that 384 px tile with every job
+(`planner::SMALL_CARD_VAE_TILE`, between the 6 GB and 8 GB classes): the failed attempt and its
+retry are gone (1024² text to image: 85 s, 9.3 s decode, no warning), and the decode never
+depends on sd-server retrying, which a CUDA out-of-memory during execution would not reach.
+Below 8 GB the planner already picks the 8 GB preset (`planner::recommended_preset`), plans 1 MP
+for Fast and about 1.29 MP for Balanced and Quality (`planner::token_budget`), and marks the
+size as memory optimized; `planner::tests::six_gb_card_gets_the_8gb_preset_and_the_smallest_sizes`
+pins that. On a real RTX 3050 6 GB (Windows, a build of `feat/low-vram-6gb` from 2026-11-17) the
+user ran text to image, the larger sizes and edits with no out-of-memory; timings and the peak
+were not recorded, so the emulated row above stays the reference. Still to test on real hardware:
+a 6 GB RTX 2060 and the Prompt+ enhancer, whose text-encoder pass moves the DiT/VAE out of VRAM.
 
 Real RTX 5070 12 GB (a friend's diagnostics, 2026-10-11; 12gb preset, Turbo Q4_K, text encoder on
 the CPU, text to image only): 1376×768 at 1.24 s/step (10 s sampling, 1.9 s decode); ~3.2 MP

@@ -534,7 +534,7 @@ export function Setup() {
                   {chosen && !own && (
                     <span className="muted">
                       {chosen.summary}.{chosen.id === hw.recommended ? " Recommended for your GPU." : ""}
-                      {hw.gpu?.unified ? " Not yet tested on a Mac." : chosen.verified ? "" : chosen.id === "8gb" ? " Beta: tested by users, not yet by us." : " Not yet tested on a real card of this size."}
+                      {hw.gpu?.unified ? " Not yet tested on a Mac." : chosen.verified ? "" : " Not yet tested on a real card of this size."}
                     </span>
                   )}
                   {hw.gpu?.unified && (

@@ -85,14 +85,15 @@ fn start_log() -> PathBuf {
     std::env::temp_dir().join("kokon-service-start.log")
 }
 
-const NO_AVX: &str = "This processor does not support AVX instructions, which Kokon needs (most processors made since 2011 have them), so Kokon cannot run on this computer.";
+const NO_SSE42: &str = "This processor does not support SSE4.2 instructions, which Kokon needs (most processors made since 2008 have them), so Kokon cannot run on this computer.";
 
-/// Kokon's engine and libraries are built for x86 processors with AVX: one without it (a 2010
-/// Xeon, #53) stopped with "Illegal instruction" before writing anything.
+/// Kokon is built for x86-64 with SSE4.2 as its floor (the Rust code targets `x86-64-v2`);
+/// AVX, AVX2 and AVX-512 are chosen at runtime by the engine and ONNX Runtime. A processor
+/// without SSE4.2 stopped with "Illegal instruction" before writing anything (#53).
 fn cpu_unsupported() -> Option<&'static str> {
     #[cfg(target_arch = "x86_64")]
-    if !std::arch::is_x86_feature_detected!("avx") {
-        return Some(NO_AVX);
+    if !(std::arch::is_x86_feature_detected!("sse4.2") && std::arch::is_x86_feature_detected!("popcnt")) {
+        return Some(NO_SSE42);
     }
     None
 }
@@ -127,7 +128,7 @@ fn start_failure(status: std::process::ExitStatus) -> String {
     #[cfg(not(any(unix, windows)))]
     let illegal = false;
     if illegal {
-        return "The Kokon service stopped with an illegal instruction: this processor lacks instructions Kokon is built for (AVX or newer).".into();
+        return "The Kokon service stopped with an illegal instruction: this processor lacks instructions Kokon is built for (SSE4.2 or newer).".into();
     }
     let text = std::fs::read_to_string(start_log()).unwrap_or_default();
     let tail: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();

@@ -1,0 +1,89 @@
+# Portable ONNX Runtime for Kokon
+
+`ort`'s prebuilt ONNX Runtime binaries are built with an **AVX2 baseline**
+(`-march=x86-64-v3` on Linux, `/arch:AVX2` on Windows). On a CPU without AVX2 — a Xeon X5670
+(SSE4.2, no AVX) or any pre-2011 processor — `kokon-service` stops with `SIGILL` in a static
+initializer before `main`, so the app cannot start. See [docs/linux.md](../../docs/linux.md).
+
+This folder builds ONNX Runtime from source with the **lowest baseline Kokon supports** while
+keeping MLAS's AVX/AVX2/AVX-512 kernels, which ONNX Runtime chooses **at runtime**:
+
+| Platform | Baseline | Why |
+|---|---|---|
+| Linux x86-64 | `-march=x86-64-v2` (SSE4.2 + POPCNT) | same floor as the Rust code |
+| Windows x64 | MSVC default (SSE2) + no `/arch:AVX*` | runs on every supported CPU |
+
+`onnxruntime_USE_AVX`, `onnxruntime_USE_AVX2` and `onnxruntime_USE_AVX512` are **OFF**: they
+change the baseline of the non-MLAS code. MLAS still compiles the fast kernels with their own
+per-file flags (`-mavx2`, …) and picks one with `GetMlasPlatform()` at runtime, so a modern CPU
+keeps AVX2/AVX-512 performance.
+
+The CMake wrapper bundles ONNX Runtime's static libraries into one archive
+(`libonnxruntime.a` / `onnxruntime.lib`), the layout `ort-sys` expects when `ORT_LIB_LOCATION`
+points at the folder. It is based on
+[pykeio/ort-artifacts `src/static-build/CMakeLists.txt`](https://github.com/pykeio/ort-artifacts/blob/main/src/static-build/CMakeLists.txt)
+(Apache-2.0), with one difference: an object library is not an archive, so its object files are
+bundled as well. On MSVC the CPU provider is an object library (`onnxruntime_providers_obj`), so
+without this the Rust link on Windows has no `CPUExecutionProvider` and no CPU kernels.
+
+## Linux
+
+```bash
+bash tools/ort-portable/build-ort-portable.sh          # add --clean to rebuild from scratch
+export ORT_LIB_LOCATION=$HOME/kokon-deps/ort-portable/lib
+cargo build -p qls-service --release
+./target/release/kokon-service --version                # must not SIGILL on SSE4.2
+```
+
+The release script (`scripts/build-release-linux.sh`) defaults to
+`$HOME/kokon-deps/ort-portable/lib` and stops with a clear message if it is missing.
+
+## Windows
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\ort-portable\build-ort-portable.ps1
+$env:ORT_LIB_LOCATION = "$env:USERPROFILE\kokon-deps\ort-portable\lib"
+powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
+```
+
+Needs Visual Studio 2022 or newer (Desktop C++), CMake ≥ 3.26, Python 3 and Git.
+
+The script asks `vswhere` which Visual Studio is installed and picks the matching CMake
+generator; if CMake cannot use it (a newer Visual Studio, a runner image without the Visual
+Studio generator), it retries with Ninja after importing the MSVC environment from
+`vcvarsall.bat`. `KOKON_CMAKE_GENERATOR` overrides the choice, e.g. `Ninja` from a Developer
+PowerShell.
+
+Dependency patches: ONNX Runtime applies them with `patch --binary --ignore-whitespace -p1`, which
+compares bytes, so the `.patch` files must be the bytes the repository stores — a Windows checkout
+with `core.autocrlf` turns them into CRLF and the hunks fail. Some are mixed, like
+`cmake/patches/cpuinfo/enable_deinit_refcounting.patch`, whose CRLF lines belong to files that have
+CRLF in the pinned zip, so "convert everything to LF" is not a fix. The scripts clone with
+`core.autocrlf=false` and take the patch files from git as the repository stores them.
+
+The ONNX patch is also not byte-exact against the sources it patches: its context has 4-space
+indentation where the pinned ONNX v1.22.0 has 2, so it only applies with whitespace tolerance and
+fuzz, and `patch` implementations disagree — the CI runner's patch 2.5.9 refused two hunks that GNU
+patch 2.7.6 applies here, and `git apply` (which does not allow the offset and fuzz these patches
+need) rejects the file. So the scripts use `patches/onnx-v1.22.0.patch`: the same hunks written
+against the pinned sources, which any implementation applies; if the pin is another version they keep
+upstream's file and say so. Both stop with a clear message if `patch` is missing (without it ONNX
+Runtime leaves `PATCH_COMMAND` empty and builds ONNX without those changes, which changes ONNX itself:
+`ONNX_MINIMAL_BUILD`, `assertions.h`, `tensor.h`, `scoped_resource.h`), and the Windows script
+verifies before building that the patch is applied in the sources CMake downloaded.
+
+## Requirements and notes
+
+- ONNX Runtime **v1.31.0** is the version `ort = 2.0.0-rc.14` (feature `api-31`) expects.
+  Change `ORT_VERSION` and `ort` together.
+- The build is large: a few GB of disk and ~30–90 minutes depending on the machine.
+- The assembler must know the **AVX512-FP16** mnemonics for MLAS's `x86_64/cvtfp16Avx.S`; CMake
+  forwards no `-m` flags to it. GNU as 2.38 (Ubuntu 22.04, the CI image) does not, as 2.42 does.
+  `build-ort-portable.sh` checks this and skips the file and the reference to its kernel when the
+  assembler cannot assemble it: that kernel is only chosen on an AVX512-FP16 CPU, so the library
+  behaves the same on every CPU Kokon supports.
+- Build Linux releases on **Ubuntu 22.04** (glibc 2.35) so the static archive and the app match
+  the supported floor. The local Mint 24.04 build is for validation only.
+- Do not add `-march=native`, `/arch:AVX`, `/arch:AVX2`, or turn `USE_AVX2` back on: that
+  reintroduces the crash on SSE4.2/AVX-only CPUs.
+- Verify the result on the oldest CPU available (this repository's target is a Xeon X5670).
