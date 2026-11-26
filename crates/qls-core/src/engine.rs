@@ -309,6 +309,11 @@ impl Engine {
         let cur = self.config();
         if new.gpu_backend != cur.gpu_backend {
             (new.device_name, new.device_nth) = (String::new(), 0);
+        } else if (new.device_name.as_str(), new.device_nth) != (cur.device_name.as_str(), cur.device_nth) {
+            // Sent from a config read before `pin_device` found the card again (Settings opened
+            // right after startup): its device number is stale, keep the current one.
+            new.device = cur.device.clone();
+            (new.device_name, new.device_nth) = (cur.device_name.clone(), cur.device_nth);
         } else if new.effective_device() != cur.effective_device() {
             let prefix = new.gpu_backend.device_prefix();
             let dev = new.effective_device();

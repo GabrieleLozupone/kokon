@@ -313,6 +313,9 @@ export interface AppConfig {
   activeProfile: string;
   profiles: ModelProfile[];
   device: string;
+  /** The engine's name for the chosen card, and which one of that name (#61): the service finds its number again at start. */
+  deviceName?: string;
+  deviceNth?: number;
   textEncoderPlacement: TextEncoderPlacement;
   vramReserveGib: number;
   flashAttention: boolean;
