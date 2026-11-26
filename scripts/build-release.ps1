@@ -10,29 +10,29 @@ $root = Resolve-Path "$PSScriptRoot\.."
 Set-Location $root
 $env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"
 
-Write-Host "1/5 Tests (Rust core + frontend + MCP)" -ForegroundColor Cyan
+Write-Host "1/5 Tests (Rust core + frontend)" -ForegroundColor Cyan
 cargo test -p qls-core -p qls-service --release --quiet
 if ($LASTEXITCODE) { throw "Rust tests failed" }
 # kokon-service embeds the built UI (dist\) for browsers on other devices: build it first.
 npm run build
 if ($LASTEXITCODE) { throw "UI build failed" }
-# The MCP protocol test runs the newest target\*\kokon-service.exe, which Tauri overwrites with
-# the bundled sidecar of the previous release: build this version's service first.
-cargo build -p qls-service --release
-if ($LASTEXITCODE) { throw "service build failed" }
 npx vitest run
 if ($LASTEXITCODE) { throw "Frontend tests failed" }
-Push-Location mcp; npx vitest run; $rc = $LASTEXITCODE; Pop-Location
-if ($rc) { throw "MCP tests failed" }
 
 Write-Host "2/5 kokon-service (release)" -ForegroundColor Cyan
 cargo build -p qls-service --release
 if ($LASTEXITCODE) { throw "service build failed" }
+# src-tauri\binaries is git-ignored, so a clean checkout has no folder to copy into.
+New-Item -ItemType Directory -Force src-tauri\binaries | Out-Null
 Copy-Item target\release\kokon-service.exe src-tauri\binaries\kokon-service-x86_64-pc-windows-msvc.exe -Force
 
-Write-Host "3/5 kokon-mcp.exe" -ForegroundColor Cyan
+Write-Host "3/5 kokon-mcp.exe + MCP tests (they drive the bundle and the service built above)" -ForegroundColor Cyan
 Push-Location mcp; npm run build:exe; $rc = $LASTEXITCODE; Pop-Location
 if ($rc) { throw "MCP build failed" }
+# The protocol test runs mcp\build\kokon-mcp.cjs against this version's service (step 2), so it comes
+# after both; on a clean checkout the bundle did not exist yet. Same order as the Linux and Mac scripts.
+Push-Location mcp; npx vitest run; $rc = $LASTEXITCODE; Pop-Location
+if ($rc) { throw "MCP tests failed" }
 
 Write-Host "4/5 Desktop app + NSIS installer (signed for the in-app updater)" -ForegroundColor Cyan
 # Updates are verified against the public key in tauri.conf.json; the private key never
