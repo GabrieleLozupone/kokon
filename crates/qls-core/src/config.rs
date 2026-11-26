@@ -298,6 +298,13 @@ pub struct AppConfig {
     /// ggml device name for diffusion + VAE, e.g. "cuda0" (see `sd-server --list-devices`).
     /// A name of another engine (e.g. "cuda0" with Vulkan) means device 0 of the active one.
     pub device: String,
+    /// The card `device` was chosen as, by the engine's own name for it ("AMD Radeon RX 7700 XT"),
+    /// and which one of that name (0 = the first). Engines number cards in an order that can change
+    /// between boots (#61: on Vulkan the card driving the monitor comes first), so the number is
+    /// found again from the name before the engine starts (`diagnostics::pin_device`). Empty: not
+    /// recorded yet (configs from before 0.12.2); recorded on the next start.
+    pub device_name: String,
+    pub device_nth: usize,
     pub text_encoder_placement: TextEncoderPlacement,
     /// VRAM kept free, in GiB (passed as a negative `--max-vram`).
     pub vram_reserve_gib: f32,
@@ -385,6 +392,8 @@ impl Default for AppConfig {
             remote_access: false,
             remote_port: DEFAULT_REMOTE_PORT,
             device: "cuda0".into(),
+            device_name: String::new(),
+            device_nth: 0,
             text_encoder_placement: TextEncoderPlacement::Ram,
             vram_reserve_gib: 1.0,
             flash_attention: true,

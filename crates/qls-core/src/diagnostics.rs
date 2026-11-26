@@ -84,6 +84,62 @@ pub fn card_for_device(devices: &[(String, String)], cards: &[GpuInfo], device: 
     cards.iter().enumerate().filter(|(_, c)| same_gpu(&c.name, desc)).nth(k).map(|(j, _)| j)
 }
 
+/// The engine device to run on, found again from the card's name (#61).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DevicePin {
+    pub device: String,
+    pub name: String,
+    pub nth: usize,
+    /// The chosen card is not among the engine's devices now: `device` is the largest card instead,
+    /// and `name` still names the chosen one, so Kokon goes back to it when it reappears.
+    pub missing: bool,
+}
+
+/// The card with the most memory, preferring one with its own memory over an integrated one.
+fn largest_card(cards: &[GpuInfo]) -> Option<usize> {
+    cards.iter().enumerate().max_by_key(|(_, c)| (!c.unified, c.memory_total_mib)).map(|(i, _)| i)
+}
+
+/// Which engine device to run on, given what was chosen. Engines number their devices in an order
+/// that can change between boots (Vulkan puts the card driving the monitor first), so the choice is
+/// kept as the engine's own name for the card plus which one of that name (`nth`), and its number
+/// is looked up again here before each start.
+///
+/// - `name` set: the `nth` device with that name; if it is gone, the largest card (`missing`).
+/// - `name` empty (never recorded): a device other than the first was picked by number before names
+///   were kept, so that pick is kept and its name recorded; the first device was the old default,
+///   not a choice, so the largest card is used instead (an integrated GPU can be listed first).
+///
+/// None when the engine lists no device of its kind (not installed, or the probe failed): keep what is set.
+pub fn pin_device(devices: &[(String, String)], cards: &[GpuInfo], prefix: &str, device: &str, name: &str, nth: usize) -> Option<DevicePin> {
+    let gpus: Vec<_> = engine_gpus(devices, prefix).collect();
+    if gpus.is_empty() {
+        return None;
+    }
+    let identity = |i: usize| {
+        let desc = &gpus[i].1;
+        DevicePin { device: gpus[i].0.to_ascii_lowercase(), name: desc.clone(), nth: gpus[..i].iter().filter(|(_, d)| d.eq_ignore_ascii_case(desc)).count(), missing: false }
+    };
+    let largest = || {
+        largest_card(cards)
+            .and_then(|c| device_for_card(devices, cards, c, prefix))
+            .and_then(|d| gpus.iter().position(|(n, _)| n.eq_ignore_ascii_case(&d)))
+            .unwrap_or(0)
+    };
+    if !name.trim().is_empty() {
+        let found = gpus.iter().enumerate().filter(|(_, (_, d))| d.eq_ignore_ascii_case(name.trim())).nth(nth).map(|(i, _)| i);
+        return Some(match found {
+            Some(i) => identity(i),
+            None => DevicePin { device: identity(largest()).device, name: name.to_string(), nth, missing: true },
+        });
+    }
+    let picked = gpus.iter().position(|(n, _)| n.eq_ignore_ascii_case(device.trim()));
+    Some(match picked {
+        Some(i) if i > 0 => identity(i),
+        _ => identity(largest()),
+    })
+}
+
 /// Apple Silicon: chip name and unified memory from sysctl (they never change, so read once).
 #[cfg(target_os = "macos")]
 fn query_apple() -> Option<Vec<GpuInfo>> {
@@ -318,12 +374,15 @@ pub fn setup_checks_with(cfg: &AppConfig, server_ok: Option<bool>, devices: Vec<
     }
     let wanted = cfg.effective_device();
     let dev = devices.iter().find(|(n, _)| n.to_ascii_lowercase() == wanted);
-    let gpu_ok = dev.is_some();
+    // The card chosen in Settings is not there now (#61): Kokon runs on the largest one meanwhile.
+    let chosen_missing = dev.is_some_and(|(_, d)| !cfg.device_name.is_empty() && !d.eq_ignore_ascii_case(&cfg.device_name));
+    let gpu_ok = dev.is_some() && !chosen_missing;
     checks.push(Check {
         id: "device",
         label: "GPU device".into(),
         ok: gpu_ok,
         detail: match dev {
+            Some((n, d)) if chosen_missing => format!("The card chosen in Settings, {}, is not found. Running on {n} — {d} until it is back.", cfg.device_name),
             Some((n, d)) => format!("{n} — {d}"),
             None if devices.is_empty() => "No devices reported by sd-server".into(),
             None => format!("{wanted} not found. Available: {}", devices.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>().join(", ")),
@@ -429,6 +488,39 @@ mod tests {
             assert_eq!(card_for_device(&devs, &cards, &dev, "cuda"), Some(i));
         }
         assert_eq!(card_for_device(&devs, &cards, "cuda7", "cuda"), None);
+    }
+
+    #[test]
+    fn chosen_card_is_found_again_by_name() {
+        // #61: a 7700 XT and a Ryzen iGPU; Vulkan lists first the one driving the monitor.
+        let card = |n: &str, mib| GpuInfo { name: n.into(), memory_total_mib: mib, ..Default::default() };
+        let cards = vec![card("AMD Radeon RX 7700 XT", 12272), card("AMD Radeon(TM) Graphics", 512)];
+        let list = |a: &str, b: &str| -> Vec<(String, String)> { vec![("Vulkan0".into(), a.into()), ("Vulkan1".into(), b.into()), ("CPU".into(), "AMD Ryzen 5 7600".into())] };
+        let igpu_first = list("AMD Radeon(TM) Graphics", "AMD Radeon RX 7700 XT");
+        let dgpu_first = list("AMD Radeon RX 7700 XT", "AMD Radeon(TM) Graphics");
+        let xt = "AMD Radeon RX 7700 XT";
+
+        // Never recorded, default device 0 (the iGPU here): the largest card instead.
+        let p = pin_device(&igpu_first, &cards, "vulkan", "vulkan0", "", 0).unwrap();
+        assert_eq!((p.device.as_str(), p.name.as_str(), p.nth, p.missing), ("vulkan1", xt, 0, false));
+        // Picked by number before names were kept: kept, and its name recorded.
+        let p = pin_device(&igpu_first, &cards, "vulkan", "vulkan1", "", 0).unwrap();
+        assert_eq!((p.device.as_str(), p.name.as_str()), ("vulkan1", xt));
+        // The monitor moved: the same card has another number.
+        let p = pin_device(&dgpu_first, &cards, "vulkan", "vulkan1", xt, 0).unwrap();
+        assert_eq!((p.device.as_str(), p.missing), ("vulkan0", false));
+        // A choice of the smaller card is respected too.
+        let p = pin_device(&dgpu_first, &cards, "vulkan", "vulkan0", "AMD Radeon(TM) Graphics", 0).unwrap();
+        assert_eq!(p.device, "vulkan1");
+        // The chosen card is gone: the largest one, keeping the choice for when it is back.
+        let p = pin_device(&dgpu_first, &cards, "vulkan", "vulkan0", "AMD Radeon RX 9070", 0).unwrap();
+        assert_eq!((p.device.as_str(), p.name.as_str(), p.missing), ("vulkan0", "AMD Radeon RX 9070", true));
+        // Two cards of one name: the second stays the second.
+        let twins: Vec<(String, String)> = vec![("CUDA0".into(), "NVIDIA GeForce RTX 3060".into()), ("CUDA1".into(), "NVIDIA GeForce RTX 3060".into())];
+        let p = pin_device(&twins, &[], "cuda", "cuda0", "NVIDIA GeForce RTX 3060", 1).unwrap();
+        assert_eq!((p.device.as_str(), p.nth), ("cuda1", 1));
+        // The engine lists nothing of its kind: leave the config alone.
+        assert_eq!(pin_device(&twins, &cards, "vulkan", "vulkan0", xt, 0), None);
     }
 
     #[test]

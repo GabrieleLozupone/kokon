@@ -300,6 +300,10 @@ async fn run(args: Vec<String>) {
         e.place_bundled_watermark();
     })
     .await;
+    // The chosen graphics card may have another number since the last boot (#61). In the background:
+    // the first probe of the engine's devices takes seconds.
+    let e = engine.clone();
+    tokio::task::spawn_blocking(move || e.pin_device());
     // The original VAE or Q4_K model left behind when a busy server held it open during the update.
     engine.remove_unused_original_vae();
     engine.remove_unused_old_dit();
