@@ -304,6 +304,23 @@ impl Engine {
             new.remote_access = cur.remote_access;
             new.remote_port = cur.remote_port;
         }
+        // The card behind the device, by name (#61): recorded when the choice changes, kept otherwise
+        // (a Settings save may carry older values). Looked up before taking the config lock below.
+        let cur = self.config();
+        if new.gpu_backend != cur.gpu_backend {
+            (new.device_name, new.device_nth) = (String::new(), 0);
+        } else if new.effective_device() != cur.effective_device() {
+            let prefix = new.gpu_backend.device_prefix();
+            let dev = new.effective_device();
+            let devices = self.devices();
+            let gpus: Vec<_> = devices.iter().filter(|(n, _)| n.to_ascii_lowercase().starts_with(prefix)).collect();
+            (new.device_name, new.device_nth) = match gpus.iter().position(|(n, _)| n.eq_ignore_ascii_case(&dev)) {
+                Some(i) => (gpus[i].1.clone(), gpus[..i].iter().filter(|(_, d)| d.eq_ignore_ascii_case(&gpus[i].1)).count()),
+                None => (String::new(), 0),
+            };
+        } else {
+            (new.device_name, new.device_nth) = (cur.device_name.clone(), cur.device_nth);
+        }
         // The official profile follows the folder and preset; see `AppConfig::normalize`.
         new.normalize();
         new.validate()?;
@@ -671,6 +688,33 @@ impl Engine {
         }
         cfg.device = dev;
         self.set_config(cfg).map(Some)
+    }
+
+    /// Finds the chosen card again among the engine's devices and saves its current number (#61):
+    /// call before the engine starts. Probes the engine the first time (seconds): not on the async runtime.
+    pub fn pin_device(&self) -> Option<crate::diagnostics::DevicePin> {
+        let cfg = self.config();
+        if cfg.uses_mac_engine() {
+            return None;
+        }
+        let prefix = cfg.gpu_backend.device_prefix();
+        let pin = crate::diagnostics::pin_device(&self.devices(), &self.gpus(), prefix, &cfg.effective_device(), &cfg.device_name, cfg.device_nth)?;
+        if pin.missing {
+            tracing::warn!("the chosen graphics card ({} #{}) is not listed by the engine now; using {} until it is back", pin.name, pin.nth, pin.device);
+        }
+        if (pin.device.as_str(), pin.name.as_str(), pin.nth) != (cfg.effective_device().as_str(), cfg.device_name.as_str(), cfg.device_nth) {
+            if pin.device != cfg.effective_device() {
+                tracing::info!("graphics card {} ({}) is now {} (was {})", pin.name, pin.nth, pin.device, cfg.effective_device());
+            }
+            let mut g = self.cfg.write().unwrap();
+            g.device = pin.device.clone();
+            g.device_name = pin.name.clone();
+            g.device_nth = pin.nth;
+            if let Err(e) = g.save() {
+                tracing::error!("could not save the graphics card: {}", e.message);
+            }
+        }
+        Some(pin)
     }
 
     pub fn backend_version(&self) -> Option<String> {
@@ -1216,6 +1260,11 @@ impl Engine {
         self.check_cancel(id)?;
 
         // 2. Plan.
+        // The engine is about to start: run it on the chosen card, wherever it is numbered now (#61).
+        if self.server.status().state != ServerState::Ready || self.server.owned_alive() == Some(false) {
+            let this = self.clone();
+            let _ = tokio::task::spawn_blocking(move || this.pin_device()).await;
+        }
         let cfg = self.config();
         let profile = cfg.profile().clone();
         let vram = self.planning_vram(&cfg);
