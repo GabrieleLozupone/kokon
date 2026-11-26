@@ -2,6 +2,7 @@ import { Check, ExternalLink, Lightbulb, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { native } from "../lib/native";
 import { focusPrompt, setState, toastError, updateComposer, useStore } from "../lib/store";
+import { t } from "../lib/i18n";
 import bikePlain from "../assets/prompt-tips/bike-plain.webp";
 import bikeRich from "../assets/prompt-tips/bike-rich.webp";
 import deskBad from "../assets/prompt-tips/desk-bad.webp";
@@ -26,82 +27,82 @@ interface Side { kind: "bad" | "ok" | "good" | "src"; label: string; prompt: str
 interface Rule { title: string; why: string; before?: string; sides: Side[]; lesson: string }
 
 // Every image is a real Kokon result (Qwen-Image 2.1 Turbo, Fast, same seed on both sides).
-const RULES: Record<Tab, Rule[]> = {
+const rules = (): Record<Tab, Rule[]> => ({
   create: [
     {
-      title: "Say what's happening, and where",
-      why: "With a short prompt the model draws the subject and fills the rest with the most ordinary choice.",
+      title: t("promptTips.actionTitle"),
+      why: t("promptTips.actionWhy"),
       sides: [
-        { kind: "bad", label: "Vague", prompt: "a monkey playing basketball", img: monkeyBad, note: "Sitting on a post, with a football." },
-        { kind: "good", label: "Clear", prompt: "Photograph of a monkey dribbling a basketball on an outdoor court, full body, sunny afternoon", img: monkeyGood, note: "Now it plays." },
+        { kind: "bad", label: t("promptTips.actionLabel1"), prompt: t("promptTips.actionPrompt1"), img: monkeyBad, note: t("promptTips.actionNote1") },
+        { kind: "good", label: t("promptTips.actionLabel2"), prompt: t("promptTips.actionPrompt2"), img: monkeyGood, note: t("promptTips.actionNote2") },
       ],
-      lesson: "Who, doing what, where, in what light.",
+      lesson: t("promptTips.actionLesson"),
     },
     {
-      title: "Never write “no”",
-      why: "The model reads the words, not the grammar: “no laptop” puts a laptop in its head.",
+      title: t("promptTips.negativeTitle"),
+      why: t("promptTips.negativeWhy"),
       sides: [
-        { kind: "bad", label: "Negative", prompt: "Photograph of a minimalist wooden desk by a window, no laptop, no computer", img: deskBad, note: "There's the laptop." },
-        { kind: "good", label: "Positive", prompt: "Photograph of a minimalist wooden desk by a window, the desk is clean and empty except for a small potted plant and a ceramic cup", img: deskGood },
+        { kind: "bad", label: t("promptTips.negativeLabel1"), prompt: t("promptTips.negativePrompt1"), img: deskBad, note: t("promptTips.negativeNote1") },
+        { kind: "good", label: t("promptTips.negativeLabel2"), prompt: t("promptTips.negativePrompt2"), img: deskGood },
       ],
-      lesson: "Say what is there. “An empty beach”, not “no people”.",
+      lesson: t("promptTips.negativeLesson"),
     },
     {
-      title: "Text goes in quotes, and short",
-      why: "Big titles come out right almost every time. Long lines of small text are where it slips.",
+      title: t("promptTips.textTitle"),
+      why: t("promptTips.textWhy"),
       sides: [
-        { kind: "bad", label: "Too much small text", prompt: 'Minimal concert poster, a white crescent moon, title "NIGHT JAZZ", below it smaller text "Friday 24 October · Teatro Verdi · 21:00"', img: posterBad, note: "The small line appears twice, with a typo." },
-        { kind: "good", label: "Short and placed", prompt: 'Minimal concert poster, dark blue background, a large white crescent moon in the center. Only two lines of text: the title "NIGHT JAZZ" in big bold letters at the top, and "24 OCTOBER" in small letters at the bottom. Flat graphic style.', img: posterGood },
+        { kind: "bad", label: t("promptTips.textLabel1"), prompt: t("promptTips.textPrompt1"), img: posterBad, note: t("promptTips.textNote1") },
+        { kind: "good", label: t("promptTips.textLabel2"), prompt: t("promptTips.textPrompt2"), img: posterGood },
       ],
-      lesson: "Lots of small text? Switch Quality to Quality (native 2K).",
+      lesson: t("promptTips.textLesson"),
     },
     {
-      title: "Details make it your picture",
-      why: "A short prompt isn't wrong, just generic. Every detail is a choice you make instead of the model.",
+      title: t("promptTips.detailsTitle"),
+      why: t("promptTips.detailsWhy"),
       sides: [
-        { kind: "ok", label: "Fine", prompt: "a girl riding a bicycle", img: bikePlain },
-        { kind: "good", label: "Yours", prompt: "Photograph of a young woman riding a vintage blue bicycle along a seaside promenade, her hair blowing in the wind, a basket of flowers on the handlebar, late afternoon golden light, shot from the side, full body", img: bikeRich },
+        { kind: "ok", label: t("promptTips.detailsLabel1"), prompt: t("promptTips.detailsPrompt1"), img: bikePlain },
+        { kind: "good", label: t("promptTips.detailsLabel2"), prompt: t("promptTips.detailsPrompt2"), img: bikeRich },
       ],
-      lesson: "Long prompts are fine. Plain sentences, most important things first.",
+      lesson: t("promptTips.detailsLesson"),
     },
   ],
   edit: [
     {
-      title: "“Better” means nothing",
-      why: "Ask to “improve” a photo and you get it back almost unchanged.",
+      title: t("promptTips.betterTitle"),
+      why: t("promptTips.betterWhy"),
       before: room,
       sides: [
-        { kind: "bad", label: "Vague", prompt: "make it better", img: roomBetter, note: "Same room." },
-        { kind: "good", label: "Clear", prompt: "Make the room cozy for a winter evening: dusk outside the window, the floor lamp turned on with warm light, a knitted cream blanket on the armchair, a stack of books and a mug of tea on the rug", img: roomCozy },
+        { kind: "bad", label: t("promptTips.betterLabel1"), prompt: t("promptTips.betterPrompt1"), img: roomBetter, note: t("promptTips.betterNote1") },
+        { kind: "good", label: t("promptTips.betterLabel2"), prompt: t("promptTips.betterPrompt2"), img: roomCozy },
       ],
-      lesson: "Turn “better” into things you can see: warmer light, tidier, a sunset.",
+      lesson: t("promptTips.betterLesson"),
     },
     {
-      title: "Name the thing you want changed",
-      why: "Without a name, the model picks the most eye-catching thing in the photo.",
+      title: t("promptTips.nameTitle"),
+      why: t("promptTips.nameWhy"),
       before: room,
       sides: [
-        { kind: "bad", label: "Ambiguous", prompt: "make it blue", img: roomBlueChair, note: "You meant the wall." },
-        { kind: "good", label: "Named", prompt: "Paint the wall behind the armchair a dusty blue. Keep the yellow armchair and everything else unchanged.", img: roomBlueWall },
+        { kind: "bad", label: t("promptTips.nameLabel1"), prompt: t("promptTips.namePrompt1"), img: roomBlueChair, note: t("promptTips.nameNote1") },
+        { kind: "good", label: t("promptTips.nameLabel2"), prompt: t("promptTips.namePrompt2"), img: roomBlueWall },
       ],
-      lesson: "Many similar things? Use Paint area and write only the change.",
+      lesson: t("promptTips.nameLesson"),
     },
     {
-      title: "Ask for several changes at once",
-      why: "One clear sentence can carry many edits. If one doesn't happen, edit the result again.",
+      title: t("promptTips.severalTitle"),
+      why: t("promptTips.severalWhy"),
       before: street,
       sides: [
-        { kind: "good", label: "Five changes", prompt: "Remove the red scooter, make it a rainy evening with wet reflective cobblestones, turn on the café lights, add a ginger cat sitting on a chair, and add an old man with an umbrella walking on the right", img: streetMulti },
+        { kind: "good", label: t("promptTips.severalLabel1"), prompt: t("promptTips.severalPrompt1"), img: streetMulti },
       ],
-      lesson: "Add “keep everything else unchanged” when an edit changes too much.",
+      lesson: t("promptTips.severalLesson"),
     },
   ],
-};
+});
 
-const CHECKLIST: Record<Tab, string[]> = {
-  create: ["Subject, action, place, light, framing", "Words in quotes for text", "Describe what is there, never “no…”", "Not right? Regenerate before rewriting"],
-  edit: ["Verb + the exact thing + the new look", "Left, right, corner: positions work", "“Image 1, image 2…” to combine photos", "Paint an area for small or repeated things"],
-};
+const checklist = (): Record<Tab, string[]> => ({
+  create: [t("promptTips.checkCreateSubject"), t("promptTips.checkCreateQuotes"), t("promptTips.checkCreatePositive"), t("promptTips.checkCreateRegenerate")],
+  edit: [t("promptTips.checkEditVerb"), t("promptTips.checkEditPositions"), t("promptTips.checkEditCombine"), t("promptTips.checkEditPaint")],
+});
 
 /** The prompt guide inside the app: the same examples as kokon.app/prompt-guide, smaller,
  * bundled so it works offline. "Try it" copies an example into the prompt box. */
@@ -122,27 +123,27 @@ export function PromptTips() {
 
   return (
     <div className="modal-scrim" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div className="tips" role="dialog" aria-label="Prompt tips">
+      <div className="tips" role="dialog" aria-label={t("promptTips.dialogLabel")}>
         <div className="tips-head">
           <Lightbulb size={20} />
-          <h1>Write better prompts</h1>
+          <h1>{t("promptTips.title")}</h1>
           <span className="spacer" />
-          <button className="icon-btn" onClick={close} aria-label="Close">
+          <button className="icon-btn" onClick={close} aria-label={t("common.close")}>
             <X size={18} />
           </button>
         </div>
-        <p className="tips-lead">The model does what you write, quite literally. Real results, same seed on both sides.</p>
+        <p className="tips-lead">{t("promptTips.lead")}</p>
         <div className="seg tips-tabs" role="tablist">
           <button className={tab === "create" ? "on" : ""} role="tab" aria-selected={tab === "create"} onClick={() => setTab("create")}>
-            New image
+            {t("promptTips.tabCreate")}
           </button>
           <button className={tab === "edit" ? "on" : ""} role="tab" aria-selected={tab === "edit"} onClick={() => setTab("edit")}>
-            Edit a photo
+            {t("promptTips.tabEdit")}
           </button>
         </div>
 
         <div className="tips-body">
-          {RULES[tab].map((r, i) => (
+          {rules()[tab].map((r, i) => (
             <section className="tips-rule" key={r.title}>
               <h2>
                 <span className="tips-num">{String(i + 1).padStart(2, "0")}</span>
@@ -150,7 +151,7 @@ export function PromptTips() {
               </h2>
               <p className="tips-why">{r.why}</p>
               <div className="tips-pair" style={{ gridTemplateColumns: `repeat(${r.sides.length + (r.before ? 1 : 0)}, minmax(0, 1fr))` }}>
-                {[...(r.before ? [{ kind: "src", label: "Original", prompt: "", img: r.before } as Side] : []), ...r.sides].map((s) => (
+                {[...(r.before ? [{ kind: "src", label: t("promptTips.original"), prompt: "", img: r.before } as Side] : []), ...r.sides].map((s) => (
                   <div className="tips-side" key={s.label}>
                     <span className={`tips-tag ${s.kind}`}>
                       {s.kind === "bad" ? <X size={12} /> : s.kind === "good" ? <Check size={12} /> : null}
@@ -161,7 +162,7 @@ export function PromptTips() {
                     {s.note && <span className="tips-note">{s.note}</span>}
                     {s.kind === "good" && s.prompt && tab === "create" && (
                       <button className="btn tips-try" onClick={() => tryIt(s.prompt)}>
-                        Try it
+                        {t("promptTips.tryIt")}
                       </button>
                     )}
                   </div>
@@ -172,9 +173,9 @@ export function PromptTips() {
           ))}
 
           <section className="tips-rule">
-            <h2>Checklist</h2>
+            <h2>{t("promptTips.checklist")}</h2>
             <ul className="tips-check">
-              {CHECKLIST[tab].map((c) => (
+              {checklist()[tab].map((c) => (
                 <li key={c}>
                   <Check size={14} /> {c}
                 </li>
@@ -184,7 +185,7 @@ export function PromptTips() {
         </div>
 
         <button className="btn tips-more" onClick={() => native.openLink(PROMPT_GUIDE_URL).catch(toastError)}>
-          More examples in the full guide <ExternalLink size={13} />
+          {t("promptTips.moreExamples")} <ExternalLink size={13} />
         </button>
       </div>
     </div>

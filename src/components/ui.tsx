@@ -1,6 +1,7 @@
 import { Check } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { t } from "../lib/i18n";
 import { isNarrow } from "../lib/platform";
 
 /** Largest w×h box with the given aspect that fits the container. */
@@ -40,8 +41,8 @@ export function Popover(props: {
     // pointerdown, not mousedown: iOS sends no mouse events for a tap on the sheet's scrim. In the
     // capture phase: the image stops its own pointerdown (press to compare, the slider).
     const onDown = (e: PointerEvent) => {
-      const t = e.target as Node;
-      if (ref.current && !ref.current.contains(t) && !sheetRef.current?.contains(t)) setOpen(false);
+      const target = e.target as Node;
+      if (ref.current && !ref.current.contains(target) && !sheetRef.current?.contains(target)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
     document.addEventListener("pointerdown", onDown, true);
@@ -155,7 +156,7 @@ export function NameField(props: { value: string; onSave: (v: string) => void; o
       onBlur={() => finish(true)}
       maxLength={120}
       spellCheck={false}
-      aria-label="Project name"
+      aria-label={t("ui.projectName")}
     />
   );
 }

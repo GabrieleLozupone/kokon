@@ -9,6 +9,7 @@ import { Brush, ChevronDown, ChevronUp, Eraser, Eye, EyeOff, Hand, Layers, Loade
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, urls } from "../lib/api";
 import { addTo, area, dilate, fileSafe, fromLogits, maskOrder, refineEdges, removeFrom, samSelection, union, type Mask } from "../lib/layers";
+import { formatNumber, t } from "../lib/i18n";
 import { shortcut } from "../lib/platform";
 import { cancelSamDownload, Segmenter, type SamResult } from "../lib/sam";
 import type { DocLayer, LayerDoc } from "../lib/layerDoc";
@@ -55,7 +56,7 @@ type View = "layers" | "background" | "layer";
 type SamState = "loading" | "encoding" | "ready" | "missing" | "error";
 
 let nextId = 1;
-const newLayer = (n: number): LayerInfo => ({ id: `l${nextId++}`, name: `Layer ${n}`, color: COLORS[(n - 1) % COLORS.length], hidden: false });
+const newLayer = (n: number): LayerInfo => ({ id: `l${nextId++}`, name: t("layerSplit.layerName", { n }), color: COLORS[(n - 1) % COLORS.length], hidden: false });
 
 const rgb = (hex: string) => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
 
@@ -64,7 +65,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => res(img);
-    img.onerror = () => rej(new Error("The image could not be loaded."));
+    img.onerror = () => rej(new Error(t("layerSplit.imageLoadFailed")));
     img.src = src;
   });
 }
@@ -84,7 +85,7 @@ function maskCanvas(m: Mask, w: number, h: number): HTMLCanvasElement {
   return c;
 }
 
-const toBlob = (c: HTMLCanvasElement) => new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error("export failed"))), "image/png"));
+const toBlob = (c: HTMLCanvasElement) => new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error(t("layerSplit.exportFailed")))), "image/png"));
 
 /** `onSplit`: the new layer document; `onBack`: back to the open document (none: close). */
 export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => void; onBack?: () => void }) {
@@ -283,7 +284,7 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
   const select = async (x: number, y: number, remove: boolean) => {
     const s = segmenter.current;
     if (!s) {
-      toastInfo(sam === "missing" ? "The selection model could not be downloaded: paint with the brush." : "The selection model is still getting ready.");
+      toastInfo(sam === "missing" ? t("layerSplit.samMissingToast") : t("layerSplit.samNotReadyToast"));
       return;
     }
     const layer = activeRef.current;
@@ -299,7 +300,7 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
       last.current = change ? { ...prev, pos, change } : null;
       return;
     }
-    setBusy("Selecting…");
+    setBusy(t("layerSplit.selecting"));
     try {
       const result = await s.predict([{ x, y, label: 1 }], mw, mh);
       const order = maskOrder(
@@ -433,7 +434,7 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
   /** Split pressed: how to cut the objects out is asked first (SplitChoice). */
   const askSplit = () => {
     if (!layers.some((l) => area(maskOf(l.id)) > 0)) {
-      toastInfo("Put something in a layer first: click an object, or paint it.");
+      toastInfo(t("layerSplit.nothingToSplit"));
       return;
     }
     setAsking(true);
@@ -446,7 +447,7 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
     setStickers(mode);
     const used = layers.filter((l) => area(maskOf(l.id)) > 0);
     if (!used.length) return;
-    setBusy(`Splitting · the background (1 of ${used.length + 1})`);
+    setBusy(t("layerSplit.splittingBackground", { total: used.length + 1 }));
     try {
       const img = await full.current!;
       const W = img.naturalWidth;
@@ -486,7 +487,7 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
       const docLayers: DocLayer[] = [];
 
       for (const [k, l] of used.entries()) {
-        setBusy(`Splitting · ${l.name} (${k + 2} of ${used.length + 1})`);
+        setBusy(t("layerSplit.splittingLayer", { name: l.name, n: k + 2, total: used.length + 1 }));
         cut(refined.get(l.id)!, "destination-in");
         const name = fileSafe(l.name);
         await save(out, `${name}.png`);
@@ -505,7 +506,7 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
         }
       }
       const bg = `input:${base.id}`;
-      docLayers.push({ id: "background", name: "Background", source: bg, history: [bg], hidden: false, base: true, dx: 0, dy: 0, s: 1 });
+      docLayers.push({ id: "background", name: t("layerSplit.background"), source: bg, history: [bg], hidden: false, base: true, dx: 0, dy: 0, s: 1 });
       addVersions(made, 0);
       onSplit({ width: W, height: H, photo: ref0?.source, layers: docLayers, known: made.map((r) => `input:${r.id}`), ...(mode !== "off" && docLayers.some((l) => !l.base) ? { autoClean: mode } : {}) });
     } catch (e) {
@@ -559,20 +560,20 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
   const status =
     busy ??
     {
-      loading: samPct != null ? `Downloading the selection model (44 MB, once)… ${samPct}%` : "Loading the selection model…",
-      encoding: "Reading the image…",
-      ready: tool === "select" ? `Click an object to add it to “${activeName}” · again on the same spot: bigger part · right-click: take it out` : `Painting “${activeName}”`,
+      loading: samPct != null ? t("layerSplit.samDownloading", { pct: samPct }) : t("layerSplit.samLoading"),
+      encoding: t("layerSplit.readingImage"),
+      ready: tool === "select" ? t("layerSplit.selectHelp", { name: activeName }) : t("layerSplit.painting", { name: activeName }),
       missing: samStopped
-        ? "Download stopped: paint the layers with the brush (open the lab again to download the selection model)"
-        : "The selection model could not be downloaded: paint the layers with the brush (open the lab again to retry)",
-      error: "The selection model failed to start (see the console): paint the layers with the brush",
+        ? t("layerSplit.samStopped")
+        : t("layerSplit.samMissing"),
+      error: t("layerSplit.samError"),
     }[sam];
   const brushCursor = tool === "brush" || tool === "eraser";
 
   return (
     <div className="overlay">
       <div className="overlay-head">
-        <h2>Split into layers (lab)</h2>
+        <h2>{t("layerSplit.title")}</h2>
         <span className="layers-status">
           {(busy || sam === "loading" || sam === "encoding") && <Loader2 size={13} className="spin" />} {status}
         </span>
@@ -583,18 +584,18 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
               setSamStopped(true);
               cancelSamDownload().catch(toastError);
             }}
-            title="Stop the download: the layers can still be painted with the brush"
+            title={t("layerSplit.cancelDownloadTooltip")}
           >
-            Cancel download
+            {t("layerSplit.cancelDownload")}
           </button>
         )}
         <span className="spacer" />
         {onBack && (
           <button className="btn" onClick={onBack}>
-            Back to the layers
+            {t("layerSplit.backToLayers")}
           </button>
         )}
-        <IconButton title="Close (Esc)" onClick={() => setState({ overlay: null })}>
+        <IconButton title={t("layerSplit.closeEsc")} onClick={() => setState({ overlay: null })}>
           <X size={18} />
         </IconButton>
       </div>
@@ -628,92 +629,90 @@ export function LayerSplit({ onSplit, onBack }: { onSplit: (doc: LayerDoc) => vo
 
         <aside className="layers-panel">
           <div className="layers-title">
-            <Layers size={15} /> Layers
+            <Layers size={15} /> {t("layerSplit.layers")}
             <span className="spacer" />
-            <button className="btn" onClick={addLayer} title="A new layer on top">
-              <Plus size={14} /> New layer
+            <button className="btn" onClick={addLayer} title={t("layerSplit.newLayerTooltip")}>
+              <Plus size={14} /> {t("layerSplit.newLayer")}
             </button>
           </div>
           {layers.map((l, i) => (
             <div key={l.id} className={`layer-row ${l.id === active ? "on" : ""}`} onClick={() => setActive(l.id)}>
               <span className="swatch" style={{ background: l.color }} />
               <input value={l.name} onChange={(e) => patch(l.id, { name: e.target.value })} spellCheck={false} />
-              <span className="layer-pct">{areas[l.id] ? `${Math.max(0.1, areas[l.id] * 100).toFixed(1)}%` : "empty"}</span>
-              <IconButton title={l.hidden ? "Show" : "Hide"} onClick={() => patch(l.id, { hidden: !l.hidden })}>
+              <span className="layer-pct">{areas[l.id] ? t("layerSplit.layerPercent", { pct: formatNumber(Math.max(0.1, areas[l.id] * 100), { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }) : t("layerSplit.empty")}</span>
+              <IconButton title={l.hidden ? t("layerSplit.show") : t("layerSplit.hide")} onClick={() => patch(l.id, { hidden: !l.hidden })}>
                 {l.hidden ? <EyeOff size={14} /> : <Eye size={14} />}
               </IconButton>
-              <IconButton title="Up" disabled={i === 0} onClick={() => move(l.id, -1)}>
+              <IconButton title={t("layerSplit.up")} disabled={i === 0} onClick={() => move(l.id, -1)}>
                 <ChevronUp size={14} />
               </IconButton>
-              <IconButton title="Down" disabled={i === layers.length - 1} onClick={() => move(l.id, 1)}>
+              <IconButton title={t("layerSplit.down")} disabled={i === layers.length - 1} onClick={() => move(l.id, 1)}>
                 <ChevronDown size={14} />
               </IconButton>
-              <IconButton title="Delete layer" disabled={layers.length < 2} onClick={() => removeLayer(l.id)}>
+              <IconButton title={t("layerSplit.deleteLayer")} disabled={layers.length < 2} onClick={() => removeLayer(l.id)}>
                 <Trash2 size={14} />
               </IconButton>
             </div>
           ))}
           <div className="layer-row bg">
             <span className="swatch" />
-            <span>Background: everything else, transparent where the layers are</span>
+            <span>{t("layerSplit.backgroundRow")}</span>
           </div>
 
           <div className="layers-view">
-            <span>Show</span>
+            <span>{t("layerSplit.show")}</span>
             {(["layers", "background", "layer"] as const).map((v) => (
               <button key={v} className={`btn ${view === v ? "primary" : ""}`} onClick={() => setView(v)}>
-                {{ layers: "Layers", background: "Background", layer: "Active" }[v]}
+                {v === "layers" ? t("layerSplit.layers") : v === "background" ? t("layerSplit.background") : t("layerSplit.viewActive")}
               </button>
             ))}
           </div>
-          <label className="layers-opt" title="Grow the background's holes so no edge of the objects stays on it">
-            Hole margin
+          <label className="layers-opt" title={t("layerSplit.holeMarginTooltip")}>
+            {t("layerSplit.holeMargin")}
             <input type="range" min={0} max={20} value={margin} onChange={(e) => setMargin(Number(e.target.value))} />
             <span>{margin}</span>
           </label>
           <label className="layers-opt">
             <input type="checkbox" checked={grey} onChange={(e) => setGrey(e.target.checked)} />
-            Also save each layer on grey, as extra versions (for "complete the object" edits)
+            {t("layerSplit.saveOnGrey")}
           </label>
           <p className="layers-help">
-            A click adds the object to the active layer (never pixels another layer has: right-click it out of that layer first); the brush
-            (B) and eraser (E) fix edges and can move pixels between layers. Split saves the background and each layer as new versions and
-            opens them as layers: move them, hide them, edit them one by one.
+            {t("layerSplit.help")}
           </p>
         </aside>
       </div>
 
       <div className="editor-tools">
         <div className="group">
-          <IconButton title="Select objects (S) · right-click takes out" active={tool === "select" && !spacePressed} onClick={() => setTool("select")}>
+          <IconButton title={t("layerSplit.toolSelect")} active={tool === "select" && !spacePressed} onClick={() => setTool("select")}>
             <MousePointerClick size={17} />
           </IconButton>
-          <IconButton title="Brush (B) · right-click erases" active={tool === "brush" && !spacePressed} onClick={() => setTool("brush")}>
+          <IconButton title={t("layerSplit.toolBrush")} active={tool === "brush" && !spacePressed} onClick={() => setTool("brush")}>
             <Brush size={17} />
           </IconButton>
-          <IconButton title="Eraser (E) · right-click paints" active={tool === "eraser" && !spacePressed} onClick={() => setTool("eraser")}>
+          <IconButton title={t("layerSplit.toolEraser")} active={tool === "eraser" && !spacePressed} onClick={() => setTool("eraser")}>
             <Eraser size={17} />
           </IconButton>
-          <IconButton title="Move (H) · or hold Space" active={tool === "pan" || spacePressed} onClick={() => setTool((t) => (t === "pan" ? "select" : "pan"))}>
+          <IconButton title={t("layerSplit.toolMove")} active={tool === "pan" || spacePressed} onClick={() => setTool((t) => (t === "pan" ? "select" : "pan"))}>
             <Hand size={17} />
           </IconButton>
         </div>
         <div className="group">
-          <label className="slider" title="Brush size ( [ and ] )">
-            Size
+          <label className="slider" title={t("layerSplit.brushSizeTooltip")}>
+            {t("layerSplit.size")}
             <input type="range" min={4} max={400} value={brush} onChange={(e) => setBrush(Number(e.target.value))} />
           </label>
         </div>
         <div className="group">
-          <IconButton title={`Undo (${shortcut("Z")})`} onClick={undo} disabled={!undoStack.current.length}>
+          <IconButton title={t("layerSplit.undo", { shortcut: shortcut("Z") })} onClick={undo} disabled={!undoStack.current.length}>
             <Undo2 size={17} />
           </IconButton>
-          <IconButton title={`Redo (${shortcut("Y")})`} onClick={redo} disabled={!redoStack.current.length}>
+          <IconButton title={t("layerSplit.redo", { shortcut: shortcut("Y") })} onClick={redo} disabled={!redoStack.current.length}>
             <Redo2 size={17} />
           </IconButton>
         </div>
-        <button className="btn primary layers-split-go" onClick={askSplit} disabled={!!busy || !usedCount} title={usedCount ? "Make each layer its own image, then clean the objects' edges" : "Click an object first: it goes into the active layer"}>
-          <Layers size={15} /> Split into layers{usedCount ? ` · ${usedCount}` : ""}
+        <button className="btn primary layers-split-go" onClick={askSplit} disabled={!!busy || !usedCount} title={usedCount ? t("layerSplit.splitTooltip") : t("layerSplit.splitDisabledTooltip")}>
+          <Layers size={15} /> {usedCount ? t("layerSplit.splitIntoLayersCount", { n: usedCount }) : t("layerSplit.splitIntoLayers")}
         </button>
       </div>
       {asking && <SplitChoice count={usedCount} last={stickers} onPick={(m) => void split(m)} onCancel={() => setAsking(false)} />}

@@ -8,6 +8,7 @@ import { MODE_LABEL, neighbourAfterRemoval, previewIndex } from "../lib/logic";
 import type { GenerationRecord } from "../lib/types";
 import { DevelopImg } from "./Develop";
 import { IconButton, Seg } from "./ui";
+import { t } from "../lib/i18n";
 import { Fullscreen, isTyping, NavArrows, navKey, SwipeNav, useMouseActive, ZoomImage, type ViewerNav } from "./Viewer";
 
 const PAGE = 60;
@@ -148,7 +149,7 @@ export function Gallery() {
   const removePicked = async () => {
     if (!picked?.size || deleting) return;
     const n = picked.size;
-    if (!(await native.confirm(`Delete ${n} ${n === 1 ? "image" : "images"} from the gallery and disk? This cannot be undone.`, "Delete images"))) return;
+    if (!(await native.confirm(t("gallery.deleteManyConfirm", { count: n }), t("gallery.deleteManyTitle")))) return;
     setDeleting(true);
     const gone: string[] = [];
     let failed: unknown = null;
@@ -173,39 +174,39 @@ export function Gallery() {
   return (
     <div className={`overlay ${selecting ? "selecting" : ""}`}>
       <div className="overlay-head">
-        <IconButton title="Back (Esc)" onClick={() => setState({ overlay: null })}>
+        <IconButton title={t("gallery.backEsc")} onClick={() => setState({ overlay: null })}>
           <ArrowLeft size={18} />
         </IconButton>
-        <h2>Gallery</h2>
+        <h2>{t("gallery.title")}</h2>
         <span className="muted">{total}</span>
       </div>
       <div className="gallery-bar">
         <label className="search">
           <Search size={15} />
-          <input type="text" placeholder="Search prompts" value={q} onChange={(e) => setQ(e.target.value)} autoFocus={!isNarrow()} />
+          <input type="text" placeholder={t("gallery.searchPlaceholder")} value={q} onChange={(e) => setQ(e.target.value)} autoFocus={!isNarrow()} />
         </label>
-        <IconButton title={favorites ? "Show all" : "Favorites only"} active={favorites} onClick={() => setFavorites((f) => !f)}>
+        <IconButton title={favorites ? t("gallery.showAll") : t("gallery.favoritesOnly")} active={favorites} onClick={() => setFavorites((f) => !f)}>
           <Heart size={17} fill={favorites ? "currentColor" : "none"} />
         </IconButton>
         <div style={{ width: 170 }}>
           <Seg
             value={sort}
             options={[
-              { value: "recent", label: "Recent" },
-              { value: "oldest", label: "Oldest" },
+              { value: "recent", label: t("gallery.sortRecent") },
+              { value: "oldest", label: t("gallery.sortOldest") },
             ]}
             onChange={setSort}
           />
         </div>
         {!inBrowser && (
-          <IconButton title="Open the images folder" onClick={() => api.config().then((c) => native.openFolder(c.outputDir)).catch(toastError)}>
+          <IconButton title={t("gallery.openFolder")} onClick={() => api.config().then((c) => native.openFolder(c.outputDir)).catch(toastError)}>
             <FolderOpen size={17} />
           </IconButton>
         )}
         <span className="spacer" />
         {items.length > 0 && (
-          <button className={`btn ${selecting ? "primary" : ""}`} onClick={() => setPicked(selecting ? null : new Set())} title={selecting ? "Stop selecting (Esc)" : "Select several images to delete them at once (or Ctrl/⌘-click)"}>
-            {selecting ? "Done" : "Select"}
+          <button className={`btn ${selecting ? "primary" : ""}`} onClick={() => setPicked(selecting ? null : new Set())} title={selecting ? t("gallery.stopSelecting") : t("gallery.selectTooltip")}>
+            {selecting ? t("common.done") : t("gallery.select")}
           </button>
         )}
       </div>
@@ -233,13 +234,13 @@ export function Gallery() {
             <DevelopImg src={urls.genThumb(g.id)} lazy />
             {selecting && <span className="pick-mark">{picked.has(g.id) && <Check size={14} strokeWidth={3} />}</span>}
             <div className={`card-actions ${g.favorite ? "fav" : ""}`} onClick={(e) => e.stopPropagation()}>
-              <button title={g.favorite ? "Remove from favorites" : "Favorite"} onClick={() => toggleFav(g)}>
+              <button title={g.favorite ? t("gallery.unfavorite") : t("gallery.favorite")} onClick={() => toggleFav(g)}>
                 <Heart size={14} fill={g.favorite ? "currentColor" : "none"} />
               </button>
               <button
-                title="Delete"
+                title={t("common.delete")}
                 onClick={async () => {
-                  if (await native.confirm("Delete this image from the gallery and disk?", "Delete")) remove(g);
+                  if (await native.confirm(t("gallery.deleteOneConfirm"), t("common.delete"))) remove(g);
                 }}
               >
                 <Trash2 size={14} />
@@ -248,7 +249,7 @@ export function Gallery() {
             <div className="card-meta">{g.prompt}</div>
           </div>
         ))}
-        {!loading && items.length === 0 && <div className="muted" style={{ gridColumn: "1/-1", textAlign: "center", padding: 48 }}>{q || favorites ? "Nothing matches." : "Your generations will appear here."}</div>}
+        {!loading && items.length === 0 && <div className="muted" style={{ gridColumn: "1/-1", textAlign: "center", padding: 48 }}>{q || favorites ? t("gallery.nothingMatches") : t("gallery.empty")}</div>}
         {loading && (
           <div style={{ gridColumn: "1/-1", display: "grid", placeItems: "center", padding: 24 }}>
             <Loader2 className="spin" size={20} />
@@ -257,15 +258,15 @@ export function Gallery() {
       </div>
       {selecting && (
         <div className="select-bar gallery-select">
-          <span className="select-count">{picked.size ? `${picked.size} selected` : "Click images to select them"}</span>
+          <span className="select-count">{picked.size ? t("gallery.selectedCount", { count: picked.size }) : t("gallery.clickToSelect")}</span>
           <button className="link-btn" onClick={() => setPicked(picked.size === items.length ? new Set() : new Set(items.map((g) => g.id)))}>
-            {picked.size === items.length ? "Select none" : `Select all ${items.length < total ? "loaded " : ""}(${items.length})`}
+            {picked.size === items.length ? t("gallery.selectNone") : items.length < total ? t("gallery.selectAllLoaded", { count: items.length }) : t("gallery.selectAll", { count: items.length })}
           </button>
           <span className="spacer" />
           <button className="btn danger" disabled={!picked.size || deleting} onClick={removePicked}>
-            {deleting ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />} Delete
+            {deleting ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />} {t("common.delete")}
           </button>
-          <IconButton title="Cancel (Esc)" onClick={() => setPicked(null)}>
+          <IconButton title={t("gallery.cancelEsc")} onClick={() => setPicked(null)}>
             <X size={16} />
           </IconButton>
         </div>
@@ -312,7 +313,7 @@ function Preview(props: {
     [index, count, total, onGo],
   );
   const del = async () => {
-    if (await native.confirm("Delete this image from the gallery and disk?", "Delete")) props.onDelete(g);
+    if (await native.confirm(t("gallery.deleteOneConfirm"), t("common.delete"))) props.onDelete(g);
   };
 
   useEffect(() => {
@@ -333,9 +334,9 @@ function Preview(props: {
   }, [full, nav, g, onClose, onOpen]);
 
   return (
-    <div className="preview" role="dialog" aria-label="Image preview">
+    <div className="preview" role="dialog" aria-label={t("gallery.imagePreview")}>
       <div className="overlay-head">
-        <IconButton title="Back to all images (Esc)" onClick={onClose}>
+        <IconButton title={t("gallery.backToAll")} onClick={onClose}>
           <ArrowLeft size={18} />
         </IconButton>
         <span className="preview-prompt" title={g.prompt}>
@@ -357,21 +358,21 @@ function Preview(props: {
           {g.width}×{g.height}
         </span>
         <span className="spacer" />
-        <IconButton title={g.favorite ? "Remove from favorites" : "Favorite"} active={g.favorite} onClick={() => props.onFavorite(g)}>
+        <IconButton title={g.favorite ? t("gallery.unfavorite") : t("gallery.favorite")} active={g.favorite} onClick={() => props.onFavorite(g)}>
           <Heart size={17} fill={g.favorite ? "currentColor" : "none"} />
         </IconButton>
-        <IconButton title="Delete" onClick={del}>
+        <IconButton title={t("common.delete")} onClick={del}>
           <Trash2 size={17} />
         </IconButton>
-        <IconButton title="Full screen (F)" onClick={() => setFull(true)}>
+        <IconButton title={t("gallery.fullScreen")} onClick={() => setFull(true)}>
           <Maximize2 size={17} />
         </IconButton>
-        <button className="btn primary" title="Open in its project to keep editing (Enter)" onClick={() => onOpen(g)}>
-          <FolderOpen size={15} /> Open in project
+        <button className="btn primary" title={t("gallery.openInProjectTooltip")} onClick={() => onOpen(g)}>
+          <FolderOpen size={15} /> {t("gallery.openInProject")}
         </button>
       </div>
       {full && (
-        <Fullscreen hint="Scroll or click to zoom · Drag to pan" onClose={() => setFull(false)} nav={nav}>
+        <Fullscreen hint={t("gallery.fullscreenHint")} onClose={() => setFull(false)} nav={nav}>
           <ZoomImage key={g.id} src={urls.gen(g.id)} source={`gen:${g.id}`} size={{ width: g.width, height: g.height }} alt={g.prompt} />
         </Fullscreen>
       )}

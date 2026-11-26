@@ -13,22 +13,35 @@ import { AdvancedPanel } from "./Advanced";
 import { reviewPhotos } from "./PhotoReview";
 import { AspectGrid, pickAspect, RatioIcon, resolutionLabel, ResolutionMenu } from "./SizeMenus";
 import { Option, Popover, Seg } from "./ui";
+import { t } from "../lib/i18n";
 
 // All presets run Qwen-Image 2.1 Turbo (8 steps); they differ in size.
-const QUALITY: { value: Quality; label: string; sub: string }[] = [
-  { value: "fast", label: "Fast", sub: "~1 MP · fastest" },
-  { value: "balanced", label: "Balanced", sub: "~1.5K" },
-  { value: "quality", label: "Quality", sub: "native 2K · slowest" },
+const quality = (): { value: Quality; label: string; sub: string }[] => [
+  { value: "fast", label: t("composer.qualityFast"), sub: t("composer.qualityFastSub") },
+  { value: "balanced", label: t("composer.qualityBalanced"), sub: "~1.5K" },
+  { value: "quality", label: t("composer.qualityQuality"), sub: t("composer.qualityQualitySub") },
 ];
 
-const INPAINT_ACTIONS: { value: InpaintAction; label: string; placeholder: string }[] = [
-  { value: "remove", label: "Remove", placeholder: "What to remove (optional)…" },
-  { value: "edit", label: "Change", placeholder: "Describe the change in the painted area…" },
-  { value: "replace", label: "Replace", placeholder: "What to put there instead…" },
-  { value: "add", label: "Add", placeholder: "What to add in the painted area…" },
+const inpaintActions = (): { value: InpaintAction; label: string; placeholder: string }[] => [
+  { value: "remove", label: t("composer.actionRemove"), placeholder: t("composer.actionRemovePlaceholder") },
+  { value: "edit", label: t("composer.actionChange"), placeholder: t("composer.actionChangePlaceholder") },
+  { value: "replace", label: t("composer.actionReplace"), placeholder: t("composer.actionReplacePlaceholder") },
+  { value: "add", label: t("composer.actionAdd"), placeholder: t("composer.actionAddPlaceholder") },
 ];
 
-const INPAINT_VERB: Record<InpaintAction, string> = { edit: "Changing", remove: "Clearing", replace: "Replacing", add: "Adding to" };
+/** "Changing the painted area of image 1.2", one whole sentence per action. */
+function paintedAreaText(action: InpaintAction, name: string): string {
+  switch (action) {
+    case "edit":
+      return t("composer.paintedChanging", { name });
+    case "remove":
+      return t("composer.paintedClearing", { name });
+    case "replace":
+      return t("composer.paintedReplacing", { name });
+    case "add":
+      return t("composer.paintedAdding", { name });
+  }
+}
 
 /** When a phone's open prompt box was last closed by a tap outside it: that tap only closes it
  * (PhoneStage.tsx Swipe ignores it). */
@@ -116,7 +129,11 @@ function RefStrip() {
         <div
           key={r.key}
           className={`ref ${drag?.active && drag.from === i ? "dragging" : ""} ${drag?.active && drag.to === i && drag.from !== i ? "drop-before" : ""}`}
-          title={`${refs.length > 1 ? `Image ${i + 1}: ` : ""}${nameOf(r) ?? r.name} · ${r.width}×${r.height}${refs.length > 1 ? " — drag to reorder" : ""}`}
+          title={
+            refs.length > 1
+              ? t("composer.refTitleMulti", { n: i + 1, name: nameOf(r) ?? r.name, width: r.width, height: r.height })
+              : t("composer.refTitle", { name: nameOf(r) ?? r.name, width: r.width, height: r.height })
+          }
           onPointerDown={(e) => {
             if ((e.target as HTMLElement).closest(".rm")) return;
             (e.currentTarget.parentElement as HTMLElement).setPointerCapture?.(e.pointerId);
@@ -127,8 +144,8 @@ function RefStrip() {
           {refs.length > 1 && <span className="num">{i + 1}</span>}
           <button
             className="rm"
-            title="Remove"
-            aria-label={`Remove image ${i + 1}`}
+            title={t("common.remove")}
+            aria-label={t("composer.removeImage", { n: i + 1 })}
             onClick={() => {
               const c = getState().composer;
               updateComposer({ refs: c.refs.filter((x) => x.key !== r.key), mask: i === 0 ? null : c.mask, outpaint: i === 0 ? null : c.outpaint });
@@ -149,20 +166,24 @@ function ModeSwitch({ editing }: { editing: boolean }) {
   const session = useStore((s) => s.session);
   const img = sel && (sel.gen || sel.input) ? sel : [...session].reverse().find((i) => i.gen || i.input);
   const refs = useStore((s) => s.composer.refs);
-  const name = refs.length ? "image 1 of the prompt" : img ? `${imageName(sessionLabels(session)[img.key]).toLowerCase()}, the image shown` : "";
+  const editTitle = refs.length
+    ? t("composer.editTitleRef")
+    : img
+      ? t("composer.editTitleShown", { name: imageName(sessionLabels(session)[img.key]).toLowerCase() })
+      : t("composer.editTitleNone");
   return (
-    <div className="mode-switch" role="radiogroup" aria-label="What the prompt does">
+    <div className="mode-switch" role="radiogroup" aria-label={t("composer.modeLabel")}>
       <button
         className={editing ? "" : "on"}
         role="radio"
         aria-checked={!editing}
         onClick={() => startNewImage()}
-        title="Make a new image. Images you add are references (a person, a product, a style) for it, not edited; your images stay in the timeline"
+        title={t("composer.newImageTitle")}
       >
-        <Sparkles size={14} /> <span className="lbl">New image</span>
+        <Sparkles size={14} /> <span className="lbl">{t("composer.newImage")}</span>
       </button>
-      <button className={editing ? "on" : ""} role="radio" aria-checked={editing} onClick={() => !editing && editShownImage()} title={editing ? "The prompt edits this image" : `Edit ${name}`}>
-        <Pencil size={14} /> <span className="lbl">Edit image</span>
+      <button className={editing ? "on" : ""} role="radio" aria-checked={editing} onClick={() => !editing && editShownImage()} title={editing ? t("composer.editsThisImage") : editTitle}>
+        <Pencil size={14} /> <span className="lbl">{t("composer.editImage")}</span>
       </button>
     </div>
   );
@@ -181,8 +202,8 @@ function TargetBar() {
       <div className="target create">
         <ModeSwitch editing={false} />
         <span className="target-text">
-          <span className="what">New image</span>
-          <span className="sub">From the prompt; images you add are references</span>
+          <span className="what">{t("composer.newImage")}</span>
+          <span className="sub">{t("composer.newImageSub")}</span>
         </span>
       </div>
     );
@@ -195,21 +216,29 @@ function TargetBar() {
         <ModeSwitch editing={false} />
         <RefStrip />
         <span className="target-text">
-          <span className="what">New image with {n === 1 ? "1 reference" : `${n} references`}</span>
-          <span className="sub">{n > 1 ? "Refer to them as image 1, image 2… in the prompt" : "Say what to take from it: the person, the product, the style…"}</span>
+          <span className="what">{t("composer.newImageWithRefs", { count: n })}</span>
+          <span className="sub">{n > 1 ? t("composer.referToThem") : t("composer.whatToTake")}</span>
         </span>
       </div>
     );
   }
 
   const first = c.refs[0];
-  const name = nameOf(first)?.toLowerCase() ?? (first.source.startsWith("gen:") ? "this result" : first.name);
+  const name = nameOf(first)?.toLowerCase() ?? (first.source.startsWith("gen:") ? t("composer.thisResult") : first.name);
   const outPx = hasOutpaint(c.outpaint) ? expansionPixels(c.outpaint!, first.width, first.height) : null;
   const what =
-    c.refs.length > 1 ? `Combining ${c.refs.length} images` : c.mask?.marks ? `Adding at the coloured marks on ${name}` : c.mask ? `${INPAINT_VERB[c.inpaintAction]} the painted area of ${name}` : outPx ? `Expanding ${name}` : `Editing ${name}`;
+    c.refs.length > 1
+      ? t("composer.combining", { count: c.refs.length })
+      : c.mask?.marks
+        ? t("composer.addingAtMarks", { name })
+        : c.mask
+          ? paintedAreaText(c.inpaintAction, name)
+          : outPx
+            ? t("composer.expanding", { name })
+            : t("composer.editingName", { name });
   const sub =
     c.refs.length > 1
-      ? "Refer to them as image 1, image 2… in the prompt"
+      ? t("composer.referToThem")
       : outPx
         ? `${first.width}×${first.height} → ${first.width + outPx.left + outPx.right}×${first.height + outPx.top + outPx.bottom}`
         : `${first.width}×${first.height}`;
@@ -224,21 +253,21 @@ function TargetBar() {
       </span>
       <span className="spacer" />
       <span className="tool-group">
-        <button className={`tool ${c.mask ? "on" : ""}`} data-tour="paint" onClick={() => openEditor("inpaint")} title="Paint where things go (one colour each), or the area to change; the rest stays as it is">
-          <Brush size={14} /> <span className="lbl">{c.mask?.marks ? "Colours painted" : c.mask ? "Area painted" : "Paint area"}</span>
+        <button className={`tool ${c.mask ? "on" : ""}`} data-tour="paint" onClick={() => openEditor("inpaint")} title={t("composer.paintTitle")}>
+          <Brush size={14} /> <span className="lbl">{c.mask?.marks ? t("composer.coloursPainted") : c.mask ? t("composer.areaPainted") : t("composer.paintArea")}</span>
         </button>
         {c.mask && (
-          <button className="tool-x" title="Remove the painted area" onClick={() => updateComposer({ mask: null })}>
+          <button className="tool-x" title={t("composer.removePainted")} onClick={() => updateComposer({ mask: null })}>
             <X size={13} />
           </button>
         )}
       </span>
       <span className="tool-group">
-        <button className={`tool ${outPx ? "on" : ""}`} onClick={() => openEditor("expand")} title="Extend the image beyond its borders">
-          <Expand size={14} /> <span className="lbl">{outPx ? "Expanded" : "Expand"}</span>
+        <button className={`tool ${outPx ? "on" : ""}`} onClick={() => openEditor("expand")} title={t("composer.expandTitle")}>
+          <Expand size={14} /> <span className="lbl">{outPx ? t("composer.expanded") : t("composer.expand")}</span>
         </button>
         {outPx && (
-          <button className="tool-x" title="Remove the expansion" onClick={() => updateComposer({ outpaint: null })}>
+          <button className="tool-x" title={t("composer.removeExpansion")} onClick={() => updateComposer({ outpaint: null })}>
             <X size={13} />
           </button>
         )}
@@ -246,8 +275,8 @@ function TargetBar() {
       {/* The lab needs a mouse and room: not in the phone layout. */}
       {c.refs.length === 1 && !narrow && (
         <span className="tool-group">
-          <button className="tool lab" onClick={() => setState({ overlay: "layers" })} title="Experimental: put the objects into layers and save each one, and the background, as a new version">
-            <Layers size={14} /> <span className="lbl">Layers (lab)</span>
+          <button className="tool lab" onClick={() => setState({ overlay: "layers" })} title={t("composer.layersTitle")}>
+            <Layers size={14} /> <span className="lbl">{t("composer.layersLab")}</span>
           </button>
         </span>
       )}
@@ -269,11 +298,12 @@ function AddImage() {
   const browse = async () => (inBrowser ? uploadFiles(await native.pickImageFiles()) : importPaths(await native.pickImages()));
   // In a project, images added while not editing are references for a new image.
   const asReference = refs.length > 0 || create || session.length > 0;
-  const title = asReference ? "Add a reference image" : "Add an image to edit";
+  const title = asReference ? t("composer.addReference") : t("composer.addToEdit");
+  const titleDrop = asReference ? t("composer.addReferenceDrop") : t("composer.addToEditDrop");
 
   if (!candidates.length) {
     return (
-      <button className="icon-btn" title={`${title} (or drop / paste)`} aria-label={title} onClick={browse}>
+      <button className="icon-btn" title={titleDrop} aria-label={title} onClick={browse}>
         <ImagePlus size={19} />
       </button>
     );
@@ -289,7 +319,7 @@ function AddImage() {
     >
       {(close) => (
         <div className="add-menu">
-          <div className="label">{asReference ? (refs.length && !create ? "Add an image as reference" : "Add a reference for the new image") : "Edit an image"}</div>
+          <div className="label">{asReference ? (refs.length && !create ? t("composer.addAsReference") : t("composer.addReferenceForNew")) : t("composer.editAnImage")}</div>
           <div className="add-grid">
             {candidates.map((it: SessionItem) => (
               <button key={it.key} title={it.gen?.prompt ?? imageName(labels[it.key])} onClick={() => (addAsReference(it), close())}>
@@ -302,10 +332,10 @@ function AddImage() {
             <span className="check">
               <FolderOpen size={15} />
             </span>
-            <span>Browse files…</span>
+            <span>{t("composer.browseFiles")}</span>
           </button>
           <div className="muted" style={{ padding: "2px 10px 6px" }}>
-            You can also drop or paste images.
+            {t("composer.dropOrPaste")}
           </div>
         </div>
       )}
@@ -336,7 +366,7 @@ function usePlanPreview(): { plan: Plan | null; error: string | null } {
   return res;
 }
 
-const weightLabel = (w: number) => `${Math.round(w * 100)} %`;
+const weightLabel = (w: number) => t("composer.percent", { percent: Math.round(w * 100) });
 
 /** The project's LoRAs: shown once any LoRA is loaded in Settings. With one LoRA a click turns
  * it on or off; with more, a list with one switch each. */
@@ -346,7 +376,7 @@ function LoraBadge() {
   if (all.length === 0) return null;
   const on = activeLoras({ loras: choice }, all);
   const names = all.filter((l) => on.includes(l.id)).map((l) => `${l.name} (${weightLabel(l.weight)})`);
-  const title = on.length ? `LoRA on in this project: ${names.join(", ")}` : "LoRA: none on in this project";
+  const title = on.length ? t("composer.loraOn", { names: names.join(", ") }) : t("composer.loraNone");
   const toggle = (id: string) => setProjectLoras(toggleLora({ loras: choice }, all, id));
   if (all.length === 1) {
     const l = all[0];
@@ -357,7 +387,7 @@ function LoraBadge() {
         aria-checked={on.length > 0}
         disabled={!l.available}
         onClick={() => toggle(l.id)}
-        title={l.available ? `${title}. Click to turn ${on.length ? "off" : "on"}.` : "This LoRA's file is missing: load it again in Settings → LoRA."}
+        title={l.available ? (on.length ? t("composer.loraClickOff", { title }) : t("composer.loraClickOn", { title })) : t("composer.loraMissing")}
       >
         <Layers size={15} />
         <span className="lbl">LoRA</span>
@@ -377,7 +407,7 @@ function LoraBadge() {
     >
       {(close) => (
         <>
-          <div className="label">LoRA in this project · up to {MAX_LORAS}</div>
+          <div className="label">{t("composer.loraHeader", { max: MAX_LORAS })}</div>
           {all.map((l) => {
             const active = on.includes(l.id);
             const full = !active && on.length >= MAX_LORAS;
@@ -389,11 +419,11 @@ function LoraBadge() {
                 aria-checked={active}
                 disabled={!l.available || full}
                 onClick={() => toggle(l.id)}
-                title={!l.available ? "This LoRA's file is missing: load it again in Settings → LoRA." : full ? `At most ${MAX_LORAS} LoRAs at once.` : l.triggerWords ? `Adds: ${l.triggerWords}` : undefined}
+                title={!l.available ? t("composer.loraMissing") : full ? t("composer.loraMax", { max: MAX_LORAS }) : l.triggerWords ? t("composer.loraAdds", { words: l.triggerWords }) : undefined}
               >
                 <span className="check">{active && <Check size={15} />}</span>
                 <span className="lora-name">{l.name}</span>
-                <span className="sub">{l.available ? weightLabel(l.weight) : "missing"}</span>
+                <span className="sub">{l.available ? weightLabel(l.weight) : t("composer.loraMissingShort")}</span>
               </button>
             );
           })}
@@ -401,7 +431,7 @@ function LoraBadge() {
             <span className="check">
               <Settings2 size={15} />
             </span>
-            <span>Manage LoRAs…</span>
+            <span>{t("composer.manageLoras")}</span>
           </button>
         </>
       )}
@@ -416,16 +446,16 @@ function PromptPlus() {
   const mode = !c.enhance ? "off" : c.enhanceReview ? "review" : "write";
   const title =
     mode === "off"
-      ? "Prompt+: let the model rewrite a short prompt, in any language, as a detailed English description before making the image. Adds a few seconds."
+      ? t("composer.plusOffTitle")
       : mode === "write"
-        ? "Prompt+ on: before making the image, the model rewrites your prompt as a detailed English description (looking at your images). You see it being written; the result keeps both."
-        : "Prompt+ on, review first: the model writes the detailed prompt into the box; change it if you like, then press Enter to make the image.";
+        ? t("composer.plusWriteTitle")
+        : t("composer.plusReviewTitle");
   const pick = (m: "off" | "write" | "review") => updateComposer({ enhance: m !== "off", enhanceReview: m === "off" ? c.enhanceReview : m === "review" });
   return (
     <Popover
       className="prompt-plus"
       trigger={(open, toggle) => (
-        <button className={`pill toggle ${c.enhance || open ? "on" : ""}`} onClick={toggle} title={title} aria-label={`Prompt+: ${mode === "off" ? "off" : mode === "write" ? "on" : "on, review first"}`}>
+        <button className={`pill toggle ${c.enhance || open ? "on" : ""}`} onClick={toggle} title={title} aria-label={mode === "off" ? t("composer.plusOffLabel") : mode === "write" ? t("composer.plusOnLabel") : t("composer.plusReviewLabel")}>
           <WandSparkles size={15} />
           <span className="lbl">Prompt+</span>
           {mode === "review" && <Eye size={13} aria-hidden />}
@@ -436,20 +466,20 @@ function PromptPlus() {
       {(close) => (
         <>
           <div className="menu-title">Prompt+</div>
-          <Option selected={mode === "off"} label="Off" onClick={() => (pick("off"), close())} />
-          <Option selected={mode === "write"} label="On" sub="writes, then makes" onClick={() => (pick("write"), close())} />
-          <Option selected={mode === "review"} label="Review first" sub="you edit it first" onClick={() => (pick("review"), close())} />
+          <Option selected={mode === "off"} label={t("common.off")} onClick={() => (pick("off"), close())} />
+          <Option selected={mode === "write"} label={t("common.on")} sub={t("composer.plusWriteSub")} onClick={() => (pick("write"), close())} />
+          <Option selected={mode === "review"} label={t("composer.plusReview")} sub={t("composer.plusReviewSub")} onClick={() => (pick("review"), close())} />
           {/* How much context Prompt+ gives the image model: only about what is there or what changes. */}
           <div className="menu-sep" />
-          <div className="label">Detail</div>
-          <Option selected={!c.enhanceDetail} label="Standard" sub="short, focused" onClick={() => (updateComposer({ enhanceDetail: false }), close())} />
-          <Option selected={c.enhanceDetail} label="Detailed" sub="more context" onClick={() => (updateComposer({ enhance: true, enhanceDetail: true }), close())} />
+          <div className="label">{t("composer.detail")}</div>
+          <Option selected={!c.enhanceDetail} label={t("composer.detailStandard")} sub={t("composer.detailStandardSub")} onClick={() => (updateComposer({ enhanceDetail: false }), close())} />
+          <Option selected={c.enhanceDetail} label={t("composer.detailDetailed")} sub={t("composer.detailDetailedSub")} onClick={() => (updateComposer({ enhance: true, enhanceDetail: true }), close())} />
           <div className="menu-sep" />
           <button className="opt" onClick={() => (close(), openSettings("general", "prompt-plus"))}>
             <span className="check">
               <Settings size={15} />
             </span>
-            <span>Prompt+ instructions…</span>
+            <span>{t("composer.plusInstructions")}</span>
           </button>
         </>
       )}
@@ -469,7 +499,7 @@ function PromptContext() {
         <span className="prompt-ctx new">
           <Sparkles size={16} />
         </span>
-        <span className="prompt-ctx-label">New image</span>
+        <span className="prompt-ctx-label">{t("composer.newImage")}</span>
       </span>
     );
   }
@@ -482,7 +512,11 @@ function PromptContext() {
         {create ? n > 1 && <span className="num">{n}</span> : <span className="frame-badge"><Pencil size={9} /></span>}
       </span>
       <span className="prompt-ctx-label">
-        {create ? `New image · ${n === 1 ? "1 reference" : `${n} references`}` : n > 1 ? `Combining ${n} images` : `Editing ${(nameOf(first) ?? "this image").toLowerCase()}`}
+        {create
+          ? t("composer.newImageRefs", { count: n })
+          : n > 1
+            ? t("composer.combining", { count: n })
+            : t("composer.editingName", { name: (nameOf(first) ?? t("composer.thisImage")).toLowerCase() })}
       </span>
     </span>
   );
@@ -494,10 +528,10 @@ function EnhancedFrom({ words }: { words: string }) {
     <div className="enhanced-from">
       <WandSparkles size={12} aria-hidden />
       <span className="text" title={words}>
-        Written by Prompt+ from “{words}”. Change it if you like; Enter makes the image.
+        {t("composer.enhancedFrom", { words })}
       </span>
-      <button className="link" onClick={undoEnhancedPrompt} title="Back to your own words">
-        <Undo2 size={12} /> Undo
+      <button className="link" onClick={undoEnhancedPrompt} title={t("composer.undoEnhancedTitle")}>
+        <Undo2 size={12} /> {t("composer.undo")}
       </button>
     </div>
   );
@@ -569,42 +603,42 @@ export function Composer() {
 
   const placeholder = reviewing
     ? reviewJob?.status === "starting_backend" || reviewJob?.status === "queued"
-      ? "Prompt+ is getting ready…"
+      ? t("composer.phPlusReady")
       : hasImages
-        ? "Prompt+ is looking at your images…"
-        : "Prompt+ is reading your idea…"
+        ? t("composer.phPlusLooking")
+        : t("composer.phPlusReading")
     : !hasImages
     ? hasProject
-      ? "Describe a new image: subject, what it's doing, setting…"
-      : "Describe an image (subject, action, setting) or drop one in to edit…"
+      ? t("composer.phNewInProject")
+      : t("composer.phFirst")
     : composing(c)
       ? c.refs.length > 1
-        ? "Describe the new image: who or what from image 1, image 2… and the scene…"
-        : "Describe the new image with the reference: the scene, what it's doing…"
+        ? t("composer.phComposeMulti")
+        : t("composer.phComposeOne")
     : c.refs.length > 1
-      ? "Describe how to combine image 1, image 2…"
+      ? t("composer.phCombine")
       : c.mask?.marks
-        ? "Say what goes at each colour, e.g. “a leather armchair at the red, a lamp at the blue”…"
+        ? t("composer.phMarks")
       : c.mask
-        ? INPAINT_ACTIONS.find((a) => a.value === c.inpaintAction)!.placeholder
+        ? inpaintActions().find((a) => a.value === c.inpaintAction)!.placeholder
         : outPx
-          ? "Describe the extended scene (optional details)…"
-          : "Describe the change…";
+          ? t("composer.phExpand")
+          : t("composer.phChange");
 
   // The closed box on a phone has one short line.
-  const shortPlaceholder = !hasImages ? "Describe a new image…" : composing(c) ? "Describe the new image…" : c.mask ? "Describe the painted area…" : "Describe the change…";
+  const shortPlaceholder = !hasImages ? t("composer.phShortNew") : composing(c) ? t("composer.phShortCompose") : c.mask ? t("composer.phShortPainted") : t("composer.phChange");
 
   const hint = (() => {
     if (error) return error;
     if (!plan) return "";
     // 0 = this machine's speed is not measured yet (the first image measures it).
-    const time = plan.estimated_seconds > 0 ? `~${formatDuration(plan.estimated_seconds)}` : "time known after the first image";
+    const time = plan.estimated_seconds > 0 ? `~${formatDuration(plan.estimated_seconds)}` : t("composer.timeUnknown");
     return `${plan.output.width}×${plan.output.height} · ${time}`;
   })();
   const hintTitle = plan
     ? [
-        plan.working.width !== plan.output.width || plan.working.height !== plan.output.height ? `Works at ${plan.working.width}×${plan.working.height}` : "",
-        plan.optimized_for_vram ? "Optimized for GPU memory" : "",
+        plan.working.width !== plan.output.width || plan.working.height !== plan.output.height ? t("composer.worksAt", { width: plan.working.width, height: plan.working.height }) : "",
+        plan.optimized_for_vram ? t("composer.optimizedVram") : "",
         ...plan.notes,
       ]
         .filter(Boolean)
@@ -612,7 +646,7 @@ export function Composer() {
     : "";
   const shaped = !c.mask && !outPx;
   const custom = c.resolution === "custom";
-  const aspectText = custom ? aspectLabel(c.customWidth, c.customHeight) : c.aspect === "auto" ? (plan ? plan.aspect_label : "Auto") : c.aspect;
+  const aspectText = custom ? aspectLabel(c.customWidth, c.customHeight) : c.aspect === "auto" ? (plan ? plan.aspect_label : t("common.auto")) : c.aspect;
   const aspectRatioNow = custom
     ? c.customWidth / c.customHeight
     : (parseRatio(c.aspect) ?? (plan ? plan.output.width / plan.output.height : 1));
@@ -647,14 +681,14 @@ export function Composer() {
   );
 
   const sendButton = reviewing ? (
-    <button className="send" title="Stop Prompt+ (your prompt stays)" aria-label="Stop Prompt+" onClick={() => cancelPromptReview()}>
+    <button className="send" title={t("composer.stopPlusTitle")} aria-label={t("composer.stopPlus")} onClick={() => cancelPromptReview()}>
       <Square size={14} strokeWidth={2.4} />
     </button>
   ) : (
     <button
       className="send"
-      title={wantsPromptReview(c) ? "Write the prompt with Prompt+ (Enter)" : newImage ? "Create (Enter)" : "Apply (Enter)"}
-      aria-label={wantsPromptReview(c) ? "Write the prompt" : "Generate"}
+      title={wantsPromptReview(c) ? t("composer.sendWriteTitle") : newImage ? t("composer.sendCreateTitle") : t("composer.sendApplyTitle")}
+      aria-label={wantsPromptReview(c) ? t("composer.sendWrite") : t("composer.sendGenerate")}
       disabled={!typedWords(c) && needsPrompt(c)}
       onClick={submit}
     >
@@ -668,7 +702,7 @@ export function Composer() {
         {/* A phone writes on a screen of its own: close it here (sending closes it too). */}
         {phone && expanded && (
           <div className="compose-head">
-            <button className="glass-btn" title="Close" aria-label="Close" onClick={collapse}>
+            <button className="glass-btn" title={t("common.close")} aria-label={t("common.close")} onClick={collapse}>
               <ChevronDown size={22} />
             </button>
             <span className="compose-hint" title={hintTitle}>
@@ -697,28 +731,28 @@ export function Composer() {
             <AddImage />
 
             {c.mask && !c.mask.marks && (
-              <Seg value={c.inpaintAction} options={INPAINT_ACTIONS} onChange={(v) => (updateComposer({ inpaintAction: v, prompt: withActionVerb(c.prompt, v), enhancedFrom: null }), focusPrompt(true))} />
+              <Seg value={c.inpaintAction} options={inpaintActions()} onChange={(v) => (updateComposer({ inpaintAction: v, prompt: withActionVerb(c.prompt, v), enhancedFrom: null }), focusPrompt(true))} />
             )}
 
             {shaped && (
               <Popover
                 className="wide"
                 trigger={(open, toggle) => (
-                  <button className={`pill ${open ? "on" : ""}`} onClick={toggle} title="Aspect ratio">
+                  <button className={`pill ${open ? "on" : ""}`} onClick={toggle} title={t("composer.aspectRatio")}>
                     <RatioIcon ratio={aspectRatioNow} size={15} />
                     {aspectText}
                     <ChevronDown size={13} className="chev" />
                   </button>
                 )}
               >
-                {(close) => <AspectGrid value={custom ? aspectLabel(c.customWidth, c.customHeight) : c.aspect} onPick={(r) => (pickAspect(r), close())} auto={{ sub: newImage ? "From the prompt, else square" : "Same as image 1" }} />}
+                {(close) => <AspectGrid value={custom ? aspectLabel(c.customWidth, c.customHeight) : c.aspect} onPick={(r) => (pickAspect(r), close())} auto={{ sub: newImage ? t("composer.aspectAutoNew") : t("composer.aspectAutoEdit") }} />}
               </Popover>
             )}
 
             <Popover
               className="wide"
               trigger={(open, toggle) => (
-                <button className={`pill ${open ? "on" : ""}`} onClick={toggle} title="Resolution">
+                <button className={`pill ${open ? "on" : ""}`} onClick={toggle} title={t("composer.resolution")}>
                   <Maximize size={14} />
                   {resolutionLabel(c.resolution, c.customWidth, c.customHeight)}
                   <ChevronDown size={13} className="chev" />
@@ -730,15 +764,15 @@ export function Composer() {
 
             <Popover
               trigger={(open, toggle) => (
-                <button className={`pill ${open ? "on" : ""}`} onClick={toggle} title="Quality">
+                <button className={`pill ${open ? "on" : ""}`} onClick={toggle} title={t("composer.quality")}>
                   <Gauge size={15} />
-                  <span className="lbl">{QUALITY.find((q) => q.value === c.quality)?.label}</span>
+                  <span className="lbl">{quality().find((q) => q.value === c.quality)?.label}</span>
                   <ChevronDown size={13} className="chev" />
                 </button>
               )}
             >
               {(close) =>
-                QUALITY.map((q) => <Option key={q.value} selected={c.quality === q.value} label={q.label} sub={q.sub} onClick={() => (updateComposer({ quality: q.value }), close())} />)
+                quality().map((q) => <Option key={q.value} selected={c.quality === q.value} label={q.label} sub={q.sub} onClick={() => (updateComposer({ quality: q.value }), close())} />)
               }
             </Popover>
 
@@ -753,8 +787,8 @@ export function Composer() {
                 <button
                   className={`icon-btn has-badge ${open ? "active" : ""}`}
                   onClick={toggle}
-                  title={overrides.length ? `Advanced: overriding the preset (${overrides.join(", ")})` : "Advanced"}
-                  aria-label={overrides.length ? `Advanced settings, ${overrides.length} overrides active` : "Advanced settings"}
+                  title={overrides.length ? t("composer.advancedOverriding", { list: overrides.join(", ") }) : t("composer.advanced")}
+                  aria-label={overrides.length ? t("composer.advancedOverridesLabel", { count: overrides.length }) : t("composer.advancedSettings")}
                 >
                   <SlidersHorizontal size={17} />
                   {overrides.length > 0 && <span className="override-dot" />}
@@ -765,7 +799,7 @@ export function Composer() {
             </Popover>
 
 
-            <button className="icon-btn" onClick={() => setState({ overlay: "prompt-tips" })} title="Prompt tips" aria-label="Prompt tips">
+            <button className="icon-btn" onClick={() => setState({ overlay: "prompt-tips" })} title={t("composer.promptTips")} aria-label={t("composer.promptTips")}>
               <Lightbulb size={17} />
             </button>
 

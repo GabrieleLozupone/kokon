@@ -1,5 +1,6 @@
 // Pure UI logic (unit-tested in logic.test.ts).
 
+import { formatDate, formatNumber, t } from "./i18n";
 import type { Advanced, GenerationRecord, GenerationRequest, InpaintAction, InputRecord, InstallItem, InstallStatus, JobView, LoraItem, LutInfo, MacBenchState, Mode, ModelsStatus, StatusResponse, OutpaintSpec, Plan, Quality, ResolutionMode, Size } from "./types";
 
 export interface Ref {
@@ -112,8 +113,8 @@ function newChatAdvanced(a: Advanced | undefined): Advanced {
 let counter = 0;
 export const newKey = () => `k${Date.now().toString(36)}${(counter++).toString(36)}`;
 
-export const refFromInput = (r: InputRecord): Ref => ({ key: newKey(), source: `input:${r.id}`, width: r.width, height: r.height, name: r.original_name ? decodeSafe(r.original_name) : "Image", hdr: r.hdr || undefined });
-export const refFromGen = (g: GenerationRecord): Ref => ({ key: newKey(), source: `gen:${g.id}`, width: g.width, height: g.height, name: "Result" });
+export const refFromInput = (r: InputRecord): Ref => ({ key: newKey(), source: `input:${r.id}`, width: r.width, height: r.height, name: r.original_name ? decodeSafe(r.original_name) : imageName(undefined), hdr: r.hdr || undefined });
+export const refFromGen = (g: GenerationRecord): Ref => ({ key: newKey(), source: `gen:${g.id}`, width: g.width, height: g.height, name: t("logic.resultName") });
 
 function decodeSafe(s: string) {
   try {
@@ -220,10 +221,11 @@ const REMOVED_ADVANCED = ["steps", "cfg", "scheduler", "flow_shift", "refine"];
 
 /** Labels of the sampling overrides currently set, e.g. ["Sampler heun", "Strength 0.8"]. */
 export function activeOverrides(a: Advanced): string[] {
-  const label: Record<string, string> = { sampler: "Sampler", strength: "Strength", reference_detail: "Reference" };
+  const label = (k: string, value: string) =>
+    k === "sampler" ? t("logic.overrideSampler", { value }) : k === "strength" ? t("logic.overrideStrength", { value }) : t("logic.overrideReference", { value });
   return Object.entries(cleanAdvanced(a))
     .filter(([k]) => SAMPLING_OVERRIDES.includes(k))
-    .map(([k, v]) => `${label[k]} ${v}`);
+    .map(([k, v]) => label(k, String(v)));
 }
 
 /** `a` without the session-only sampling overrides (what is kept in saved preferences). */
@@ -244,7 +246,7 @@ function cleanAdvanced(a: Advanced): Advanced {
 /** Restores composer fields from a stored generation (gallery "reopen"). */
 export function composerFromRecord(g: GenerationRecord, base: Composer): Composer {
   const req = g.request;
-  const refs: Ref[] = g.references.map((r) => ({ key: newKey(), source: `input:${r.input_id}`, width: r.width, height: r.height, name: `Image ${r.index + 1}` }));
+  const refs: Ref[] = g.references.map((r) => ({ key: newKey(), source: `input:${r.input_id}`, width: r.width, height: r.height, name: imageName(String(r.index + 1)) }));
   const c: Composer = {
     ...base,
     // An enhanced result is the user's prompt with the enhancer on (Reuse prompt takes its text).
@@ -306,17 +308,38 @@ export function moreLikeThisRequest(g: GenerationRecord, strength: number = MORE
   };
 }
 
+/** Labels are getters: read when shown, so they follow the UI language. */
 export const MODE_LABEL: Record<Mode | "lut" | "layers", string> = {
-  auto: "Auto",
-  generate: "Create",
-  edit: "Edit",
-  inpaint: "Inpaint",
-  outpaint: "Expand",
-  multi_reference: "Combine",
-  compose: "From references",
-  upscale: "Upscale",
-  lut: "LUT",
-  layers: "Layers",
+  get auto() {
+    return t("logic.modeAuto");
+  },
+  get generate() {
+    return t("logic.modeCreate");
+  },
+  get edit() {
+    return t("logic.modeEdit");
+  },
+  get inpaint() {
+    return t("logic.modeInpaint");
+  },
+  get outpaint() {
+    return t("logic.modeExpand");
+  },
+  get multi_reference() {
+    return t("logic.modeCombine");
+  },
+  get compose() {
+    return t("logic.modeFromReferences");
+  },
+  get upscale() {
+    return t("logic.modeUpscale");
+  },
+  get lut() {
+    return t("logic.modeLut");
+  },
+  get layers() {
+    return t("logic.modeLayers");
+  },
 };
 
 /** How a LUT is shown: a preset ("kokon:<key>") by its title, a user's LUT by its file name. */
@@ -394,7 +417,7 @@ export function arcLayout(arcs: { a: number; b: number }[], spread = 8, maxShift
 }
 
 /** "Image 1.2" for a short name, for sentences and headings. */
-export const imageName = (label: string | undefined) => (label ? `Image ${label}` : "Image");
+export const imageName = (label: string | undefined) => (label ? t("logic.imageNamed", { label }) : t("logic.image"));
 
 /** How a version joins the timeline: "start" begins a new line (a new image or an import),
  * "next" continues from the version just before it, "variant" is the version before made
@@ -426,11 +449,11 @@ export function timelineLinks(items: { key: string; source: string | null; from:
 /** "1m ago"-style age for the project list. */
 export function timeAgo(ms: number, now = Date.now()): string {
   const s = Math.max(0, (now - ms) / 1000);
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  if (s < 86400 * 7) return `${Math.floor(s / 86400)}d ago`;
-  return new Date(ms).toLocaleDateString();
+  if (s < 60) return t("logic.justNow");
+  if (s < 3600) return t("logic.minutesAgo", { count: Math.floor(s / 60) });
+  if (s < 86400) return t("logic.hoursAgo", { count: Math.floor(s / 3600) });
+  if (s < 86400 * 7) return t("logic.daysAgo", { count: Math.floor(s / 86400) });
+  return formatDate(ms);
 }
 
 /** A project's title as the list shows it: an image file's name without its extension. */
@@ -452,58 +475,58 @@ export function isGenericName(name: string): boolean {
 
 /** The heading a project goes under in the list, by when it was last changed. */
 export function dayGroup(ms: number, now = Date.now()): string {
-  const day = (t: number) => {
-    const d = new Date(t);
+  const day = (at: number) => {
+    const d = new Date(at);
     return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   };
   const days = Math.round((day(now) - day(ms)) / 86400000);
-  if (days <= 0) return "Today";
-  if (days === 1) return "Yesterday";
-  if (days < 7) return "Previous 7 days";
-  if (days < 30) return "Previous 30 days";
-  return "Older";
+  if (days <= 0) return t("logic.dayToday");
+  if (days === 1) return t("logic.dayYesterday");
+  if (days < 7) return t("logic.dayPrevious7");
+  if (days < 30) return t("logic.dayPrevious30");
+  return t("logic.dayOlder");
 }
 
 /** Short truthful status text for a job. */
 export function jobLabel(j: JobView): string {
   switch (j.status) {
     case "queued":
-      return j.queue_position > 1 ? `Queued · ${j.queue_position}` : "Queued";
+      return j.queue_position > 1 ? t("logic.jobQueuedAt", { position: j.queue_position }) : t("logic.jobQueued");
     case "starting_backend":
-      return "Loading model";
+      return t("logic.jobLoadingModel");
     case "preparing":
-      return "Preparing";
+      return t("logic.jobPreparing");
     case "enhancing_prompt":
-      return "Writing the prompt";
+      return t("logic.jobWritingPrompt");
     case "saving":
-      return "Saving";
+      return t("logic.jobSaving");
     case "done":
-      return "Done";
+      return t("logic.jobDone");
     case "failed":
-      return "Failed";
+      return t("logic.failed");
     case "cancelled":
-      return "Cancelled";
+      return t("logic.cancelled");
     case "running": {
       const batch = j.image && j.image[1] > 1 ? ` · ${j.image[0]}/${j.image[1]}` : "";
       switch (j.stage) {
         case "preparing":
-          return "Preparing";
+          return t("logic.jobPreparing");
         case "encoding_images":
-          return "Encoding references";
+          return t("logic.jobEncodingReferences");
         case "encoding_prompt":
-          return "Reading prompt";
+          return t("logic.jobReadingPrompt");
         case "generating":
-          return j.step ? `Generating · ${j.step[0]}/${j.step[1]}${batch}` : `Generating${batch}`;
+          return (j.step ? t("logic.jobGeneratingStep", { step: j.step[0], steps: j.step[1] }) : t("logic.jobGenerating")) + batch;
         case "upscaling":
-          return j.step ? `Upscaling · ${j.step[0]}/${j.step[1]}${batch}` : `Upscaling${batch}`;
+          return (j.step ? t("logic.jobUpscalingStep", { step: j.step[0], steps: j.step[1] }) : t("logic.jobUpscaling")) + batch;
         case "refining":
-          return j.step ? `Refining · ${j.step[0]}/${j.step[1]}${batch}` : `Refining${batch}`;
+          return (j.step ? t("logic.jobRefiningStep", { step: j.step[0], steps: j.step[1] }) : t("logic.jobRefining")) + batch;
         case "decoding":
-          return "Decoding";
+          return t("logic.jobDecoding");
         case "finishing":
-          return "Finishing";
+          return t("logic.jobFinishing");
         default:
-          return "Working";
+          return t("logic.jobWorking");
       }
     }
   }
@@ -529,12 +552,12 @@ export interface JobClock {
 const ENHANCER_WORDS = { generate: 110, compose: 150, edit: 35 };
 const SAVE_SECONDS = 1;
 
-/** Time left of a phase estimated at `est` seconds, `t` seconds in. Past ~80 % of the
+/** Time left of a phase estimated at `est` seconds, `at` seconds in. Past ~80 % of the
  * estimate it keeps shrinking without reaching 0, so an overrun slows the bar instead of
  * stopping it. */
-function phaseLeft(est: number, t: number): number {
+function phaseLeft(est: number, at: number): number {
   if (est <= 0) return 0;
-  return t < 0.8 * est ? est - t : (0.16 * est * est) / t;
+  return at < 0.8 * est ? est - at : (0.16 * est * est) / at;
 }
 
 /** Estimated seconds until the job is done: what is left of the current phase, measured where
@@ -643,7 +666,7 @@ export function upscaleTargets(w: number, h: number, source?: Size | null): Upsc
   add("2x", "2×", { width: w * 2, height: h * 2 });
   const k4 = w >= h ? sizeForWidth(w, h, 3840) : { width: Math.round((3840 * w) / h), height: 3840 };
   add("4k", "4K", k4);
-  if (source) add("source", "Source size", source);
+  if (source) add("source", t("logic.upscaleSourceSize"), source);
   return out;
 }
 
@@ -682,8 +705,8 @@ export function pipelineSummary(g: GenerationRecord): string | null {
   if (!p) return null;
   const parts: string[] = [];
   if (p.base) {
-    const mode = p.refine === "best" ? "Best" : "Fast";
-    parts.push(dims(p.base), `refined ${g.working_width}×${g.working_height} (${mode}, ${p.refine_steps ?? "?"} steps, ${upscalerLabel(p.hires_upscaler)})`);
+    const mode = p.refine === "best" ? t("logic.refineBest") : t("logic.refineFast");
+    parts.push(dims(p.base), t("logic.pipelineRefined", { size: `${g.working_width}×${g.working_height}`, mode, steps: p.refine_steps ?? "?", upscaler: upscalerLabel(p.hires_upscaler) }));
   }
   if (p.enlarged_with && p.enlarged_from) {
     if (!parts.length) parts.push(dims(p.enlarged_from));
@@ -699,14 +722,14 @@ export function planPipeline(plan: Plan): string {
   const via = upscalerLabel(plan.upscaler);
   if (plan.upscale?.method === "quick") return `${dims(plan.upscale.source)} → ${out} (${via})`;
   const work = dims(plan.working);
-  return enlarge ? `${work} render → ${out} output (${via})` : `${work} render → ${out} output`;
+  return enlarge ? t("logic.planRenderOutputVia", { work, out, via }) : t("logic.planRenderOutput", { work, out });
 }
 
 export function formatDuration(s: number): string {
-  const t = Math.round(s);
-  if (t < 60) return `${Math.max(1, t)}s`;
-  const m = Math.floor(t / 60);
-  return t % 60 ? `${m}m ${t % 60}s` : `${m}m`;
+  const total = Math.round(s);
+  if (total < 60) return t("logic.durationSeconds", { seconds: Math.max(1, total) });
+  const m = Math.floor(total / 60);
+  return total % 60 ? t("logic.durationMinutesSeconds", { minutes: m, seconds: total % 60 }) : t("logic.durationMinutes", { minutes: m });
 }
 
 /** Undo target for version `key`: the version it was made from (`from` is that image's
@@ -722,9 +745,12 @@ export function undoTarget(items: { key: string; source: string | null; from: st
 
 /** 1.2 GB, 340 MB, 12 KB (decimal units, like download sizes on Hugging Face and GitHub). */
 export function formatBytes(n: number): string {
-  if (n >= 1e9) return `${(n / 1e9).toFixed(n >= 1e10 ? 0 : 1)} GB`;
-  if (n >= 1e6) return `${Math.round(n / 1e6)} MB`;
-  return `${Math.max(0, Math.round(n / 1e3))} KB`;
+  if (n >= 1e9) {
+    const d = n >= 1e10 ? 0 : 1;
+    return t("logic.sizeGB", { size: formatNumber(Number((n / 1e9).toFixed(d)), { minimumFractionDigits: d, maximumFractionDigits: d }) });
+  }
+  if (n >= 1e6) return t("logic.sizeMB", { size: formatNumber(Math.round(n / 1e6)) });
+  return t("logic.sizeKB", { size: formatNumber(Math.max(0, Math.round(n / 1e3))) });
 }
 
 /** Whether What's new shows at start: once per release `version` after an update (not on a new install, which gets the
@@ -762,11 +788,12 @@ export function macEngineDefaultDue(st: Pick<StatusResponse, "gpu" | "mac_engine
 export function macBenchProgress(b: MacBenchState, now: number): { frac: number; text: string } | null {
   if (b.state !== "running") return null;
   const minutes = Math.max(0, Math.floor((now - Date.parse(b.started_at)) / 60000));
-  const elapsed = Number.isFinite(minutes) ? ` · ${minutes} min` : "";
-  if (b.n <= 0) return { frac: 0, text: `Starting${elapsed}` };
-  const label = b.label.replace(/^default \(paths above\)/, "Default");
+  const elapsed = Number.isFinite(minutes) ? [t("logic.benchMinutes", { minutes })] : [];
+  if (b.n <= 0) return { frac: 0, text: [t("logic.benchStarting"), ...elapsed].join(" · ") };
+  // The engine's label is its own (English) text; only its "default (paths above)" is ours.
+  const label = b.label.replace(/^default \(paths above\)/, t("logic.benchDefault"));
   // A step is done when the next one starts: k − 1 of n.
-  return { frac: (b.k - 1) / b.n, text: `Step ${b.k} of ${b.n}${label ? ` · ${label}` : ""}${elapsed}` };
+  return { frac: (b.k - 1) / b.n, text: [t("logic.benchStep", { step: b.k, steps: b.n }), ...(label ? [label] : []), ...elapsed].join(" · ") };
 }
 
 /** Overall download progress over the files that were not installed already. */
@@ -782,22 +809,22 @@ export function installItemText(i: InstallItem, bytesPerSec: number): string {
   switch (i.state) {
     case "present":
     case "done":
-      return `Installed · ${formatBytes(i.size)}`;
+      return t("logic.installInstalledSize", { size: formatBytes(i.size) });
     case "pending":
-      return `To download · ${formatBytes(i.size - i.received)}`;
+      return t("logic.installToDownload", { size: formatBytes(i.size - i.received) });
     case "downloading": {
-      const rate = bytesPerSec > 0 ? ` · ${formatBytes(bytesPerSec)}/s` : "";
-      const left = bytesPerSec > 0 ? ` · ${formatDuration((i.size - i.received) / bytesPerSec)} left` : "";
-      return `${formatBytes(i.received)} of ${formatBytes(i.size)}${rate}${left}`;
+      const parts = [t("logic.installReceivedOf", { received: formatBytes(i.received), total: formatBytes(i.size) })];
+      if (bytesPerSec > 0) parts.push(t("logic.installRate", { rate: formatBytes(bytesPerSec) }), t("logic.installLeft", { time: formatDuration((i.size - i.received) / bytesPerSec) }));
+      return parts.join(" · ");
     }
     case "verifying":
-      return "Checking the file…";
+      return t("logic.installCheckingFile");
     case "extracting":
-      return "Extracting…";
+      return t("logic.installExtractingEllipsis");
     case "cancelled":
-      return i.received ? `Paused at ${formatBytes(i.received)}; continues where it stopped` : "Cancelled";
+      return i.received ? t("logic.installPausedAt", { size: formatBytes(i.received) }) : t("logic.cancelled");
     case "failed":
-      return i.error ?? "Failed";
+      return i.error ?? t("logic.failed");
   }
 }
 
@@ -806,17 +833,17 @@ export function installItemShort(i: InstallItem): string {
   switch (i.state) {
     case "present":
     case "done":
-      return "Installed";
+      return t("logic.installInstalled");
     case "downloading":
       return `${Math.floor((i.received / i.size) * 100)}%`;
     case "verifying":
-      return "Checking";
+      return t("logic.installChecking");
     case "extracting":
-      return "Extracting";
+      return t("logic.installExtracting");
     case "failed":
-      return "Failed";
+      return t("logic.failed");
     case "cancelled":
-      return i.received ? `Paused · ${formatBytes(i.size - i.received)} left` : formatBytes(i.size);
+      return i.received ? t("logic.installPausedLeft", { size: formatBytes(i.size - i.received) }) : formatBytes(i.size);
     case "pending":
       return formatBytes(i.size - i.received);
   }
@@ -826,16 +853,16 @@ export function installItemShort(i: InstallItem): string {
 export function installStep(items: InstallItem[]): string | null {
   const it = items.find((i) => i.state === "downloading" || i.state === "verifying" || i.state === "extracting");
   if (!it) return null;
-  if (it.state === "verifying") return `Checking ${it.label}`;
-  if (it.state === "extracting") return `Unpacking ${it.label}`;
-  return `Downloading ${it.label}`;
+  if (it.state === "verifying") return t("logic.installStepChecking", { name: it.label });
+  if (it.state === "extracting") return t("logic.installStepUnpacking", { name: it.label });
+  return t("logic.installStepDownloading", { name: it.label });
 }
 
 /** "about 2 min left" once the speed is known. */
 export function installTimeLeft(remaining: number, bytesPerSec: number): string | null {
   if (bytesPerSec < 100e3 || remaining <= 0) return null;
   const s = remaining / bytesPerSec;
-  return s < 60 ? "less than a minute left" : `about ${Math.ceil(s / 60)} min left`;
+  return s < 60 ? t("logic.installLessThanMinuteLeft") : t("logic.installAboutMinutesLeft", { minutes: Math.ceil(s / 60) });
 }
 
 /** Aspect ratios offered in the menus (landscape, then its portrait twin). */
@@ -907,8 +934,8 @@ export function placeInCanvas(p: { left: number; right: number; top: number; bot
   const ex = p.left + p.right;
   const ey = p.top + p.bottom;
   const l = snap(left, ex);
-  const t = snap(top, ey);
-  return { left: l, right: ex - l, top: t, bottom: ey - t, units: "pixels" };
+  const tp = snap(top, ey);
+  return { left: l, right: ex - l, top: tp, bottom: ey - tp, units: "pixels" };
 }
 
 /** Expansion presets in source pixels. */
@@ -1070,23 +1097,27 @@ export type CutStep = "model" | "preparing" | "sending" | "matting" | "edges" | 
 export function cutoutText(name: string, step: CutStep, seconds: number, pct: number | null): string {
   const what =
     step === "model"
-      ? `getting the sticker model (once, 224 MB)${pct != null ? ` · ${pct}%` : ""}`
+      ? pct != null
+        ? t("logic.cutoutModelPct", { pct })
+        : t("logic.cutoutModel")
       : step === "preparing"
-        ? "preparing"
+        ? t("logic.cutoutPreparing")
         : step === "sending"
-          ? "sending to the model"
+          ? t("logic.cutoutSending")
           : step === "matting"
-            ? `model at work${seconds >= 1 ? ` · ${Math.floor(seconds)} s` : ""}`
+            ? seconds >= 1
+              ? t("logic.cutoutMattingSeconds", { seconds: Math.floor(seconds) })
+              : t("logic.cutoutMatting")
             : step === "edges"
-              ? "refining the edge"
-              : "saving";
+              ? t("logic.cutoutEdges")
+              : t("logic.cutoutSaving");
   return `${name} · ${what}`;
 }
 
 /** "step 3 of 8" once the engine reports steps, else "". */
 export function jobStepText(j: Pick<JobView, "status" | "step">): string {
   if (j.status !== "running" || !j.step || !j.step[1]) return "";
-  return `step ${Math.min(j.step[0], j.step[1])} of ${j.step[1]}`;
+  return t("logic.jobStepOf", { step: Math.min(j.step[0], j.step[1]), steps: j.step[1] });
 }
 
 /** The download running in the service is the one for `preset` (Cancel stops only that one: the

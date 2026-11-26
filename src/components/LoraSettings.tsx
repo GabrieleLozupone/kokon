@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { formatBytes, MAX_LORAS } from "../lib/logic";
 import { native } from "../lib/native";
+import { t } from "../lib/i18n";
 import { inBrowser } from "../lib/platform";
 import { refreshLoras, toastError, toastInfo, useStore } from "../lib/store";
 import type { LoraItem } from "../lib/types";
@@ -48,7 +49,7 @@ function LoraRow({ l }: { l: LoraItem }) {
     timer.current = window.setTimeout(() => update(l.id, { weight: w }), 400);
   };
   const remove = async () => {
-    if (!(await native.confirm(`Remove "${l.name}" from Kokon? Your own file stays where it is.`, "Remove LoRA"))) return;
+    if (!(await native.confirm(t("lora.removeConfirm", { name: l.name }), t("lora.removeTitle")))) return;
     try {
       await api.removeLora(l.id);
     } catch (e) {
@@ -59,14 +60,14 @@ function LoraRow({ l }: { l: LoraItem }) {
   return (
     <div className="lora-card">
       <div className="lora-head">
-        <BlurField label="Name" value={l.name} onSave={(name) => update(l.id, { name })} />
-        <button className="icon-btn" onClick={remove} title="Remove" aria-label={`Remove ${l.name}`}>
+        <BlurField label={t("lora.name")} value={l.name} onSave={(name) => update(l.id, { name })} />
+        <button className="icon-btn" onClick={remove} title={t("common.remove")} aria-label={t("lora.removeNamed", { name: l.name })}>
           <Trash2 size={16} />
         </button>
       </div>
       {!l.available && (
         <span className="lora-warn">
-          <CircleAlert size={13} /> Kokon's copy of this LoRA is missing. Remove it and load the file again.
+          <CircleAlert size={13} /> {t("lora.missingCopy")}
         </span>
       )}
       {l.warning && (
@@ -75,22 +76,22 @@ function LoraRow({ l }: { l: LoraItem }) {
         </span>
       )}
       <label className="field-row">
-        <span>Strength</span>
+        <span>{t("lora.strength")}</span>
         <span className="lora-strength">
-          <input type="range" min={0} max={2} step={0.05} value={weight} onChange={(e) => setStrength(Number(e.target.value))} aria-label="Strength" />
-          <span className="muted">{Math.round(weight * 100)} %</span>
+          <input type="range" min={0} max={2} step={0.05} value={weight} onChange={(e) => setStrength(Number(e.target.value))} aria-label={t("lora.strength")} />
+          <span className="muted">{t("lora.strengthPercent", { percent: Math.round(weight * 100) })}</span>
         </span>
       </label>
       <label className="field">
-        <span>Trigger words (added in front of the prompt when the LoRA is on)</span>
-        <BlurField label="Trigger words" placeholder="none" value={l.triggerWords} onSave={(triggerWords) => update(l.id, { triggerWords })} />
+        <span>{t("lora.triggerWordsHint")}</span>
+        <BlurField label={t("lora.triggerWords")} placeholder={t("lora.triggerWordsNone")} value={l.triggerWords} onSave={(triggerWords) => update(l.id, { triggerWords })} />
       </label>
       <div className="field-row">
-        <span>On by default in new projects</span>
-        <Switch on={l.onByDefault} label="On by default" onChange={(onByDefault) => update(l.id, { onByDefault })} />
+        <span>{t("lora.onByDefaultNewProjects")}</span>
+        <Switch on={l.onByDefault} label={t("lora.onByDefault")} onChange={(onByDefault) => update(l.id, { onByDefault })} />
       </div>
       <span className="muted lora-meta">
-        {[...l.notes, `${formatBytes(l.size)} · from ${l.source}`].join(" ")}
+        {[...l.notes, t("lora.sizeFrom", { size: formatBytes(l.size), source: l.source })].join(" ")}
       </span>
     </div>
   );
@@ -109,7 +110,7 @@ export function LoraSettings() {
     setBusy(true);
     try {
       const l = await api.addLora(path);
-      toastInfo(l.warning ? `Loaded "${l.name}", with a warning` : `Loaded "${l.name}"`);
+      toastInfo(l.warning ? t("lora.loadedWithWarning", { name: l.name }) : t("lora.loaded", { name: l.name }));
     } catch (e) {
       toastError(e);
     } finally {
@@ -121,25 +122,17 @@ export function LoraSettings() {
     <>
       <div className="setting-card">
         <div className="setting-card-text">
-          <strong>Your LoRA files (beta)</strong>
-          <span className="muted">
-            Load LoRAs made for Qwen-Image 2.1 (.safetensors). Kokon checks each file and keeps its own prepared copy; your file is not changed. Turn them on or off for each project with the
-            LoRA button next to the prompt, up to {MAX_LORAS} at a time.
-          </span>
+          <strong>{t("lora.title")}</strong>
+          <span className="muted">{t("lora.intro", { max: MAX_LORAS })}</span>
         </div>
         {!inBrowser && (
           <button className="btn primary" disabled={busy} onClick={add}>
-            <Plus size={15} /> {busy ? "Checking…" : "Load a LoRA…"}
+            <Plus size={15} /> {busy ? t("lora.checking") : t("lora.load")}
           </button>
         )}
       </div>
-      <span className="muted">
-        Beta: tested on Windows with an NVIDIA card. It should work the same on Mac and Linux, but it hasn't been tested there yet: please tell us how it goes on GitHub.
-      </span>
-      <span className="muted">
-        Most LoRAs are trained on the full Qwen-Image 2.1 model, while Kokon runs the faster Turbo model. The popular ones we tested didn't improve on what Turbo does with a good prompt, so compare
-        with the LoRA on and off. A LoRA makes each image about 20 % slower.
-      </span>
+      <span className="muted">{t("lora.betaNote")}</span>
+      <span className="muted">{t("lora.turboNote")}</span>
       {loras.map((l) => (
         <LoraRow key={l.id} l={l} />
       ))}

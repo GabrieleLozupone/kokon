@@ -7,38 +7,21 @@ import type { GpuBackend, InstallItem, InstallStatus, ModelsStatus } from "../li
 import { native } from "../lib/native";
 import { VIDEOS } from "../lib/videos";
 import { KokonMark } from "./Welcome";
+import { t } from "../lib/i18n";
 
 /** The release these notes describe. Shown once to people updating from an earlier version. */
 export const WHATS_NEW_VERSION = "0.12.1";
 
-const NEWS = [
-  {
-    icon: Images,
-    title: "More like this",
-    text: "Under a new image, More like this makes another one from it: Subtle keeps the picture and changes the details, Strong keeps the idea and changes more. Regenerate still starts from scratch.",
-  },
-  {
-    icon: Layers,
-    title: "Redraw at this size",
-    text: "In the Layers lab, an object made bigger with the corner handle can be drawn again at its new size, so it stays sharp. The stretched version stays under Versions.",
-    video: VIDEOS.update012.url,
-  },
-  {
-    icon: Cpu,
-    title: "The GPU is freed when Kokon is idle",
-    text: "After 10 idle minutes the model leaves the GPU even with a Kokon window or browser tab open, so other programs can use it. It loads again with the next image.",
-  },
-  {
-    icon: FolderTree,
-    title: "A folder for each project",
-    text: "Settings → General → A folder for each project: new images are saved in a folder named after their project instead of one folder per day. Off unless you turn it on.",
-  },
-  {
-    icon: CircleAlert,
-    title: "Smaller fixes",
-    text: "The time saved in an image's file is local time (it was an hour early in Europe), and when Kokon cannot start its service it says why, for example a processor without AVX.",
-  },
-];
+/** The notes, built at render time so they follow the UI language. */
+function news(): { icon: typeof Layers; title: string; text: string; video?: string }[] {
+  return [
+    { icon: Images, title: t("whatsNew.v0_12_1_moreLikeThisTitle"), text: t("whatsNew.v0_12_1_moreLikeThisText") },
+    { icon: Layers, title: t("whatsNew.v0_12_1_redrawTitle"), text: t("whatsNew.v0_12_1_redrawText"), video: VIDEOS.update012.url },
+    { icon: Cpu, title: t("whatsNew.v0_12_1_gpuFreedTitle"), text: t("whatsNew.v0_12_1_gpuFreedText") },
+    { icon: FolderTree, title: t("whatsNew.v0_12_1_projectFolderTitle"), text: t("whatsNew.v0_12_1_projectFolderText") },
+    { icon: CircleAlert, title: t("whatsNew.v0_12_1_fixesTitle"), text: t("whatsNew.v0_12_1_fixesText") },
+  ];
+}
 
 /** Remembers that these notes were read and what was postponed (the engine update for its release, the model step),
  * so neither is offered again at the next start. */
@@ -59,6 +42,9 @@ export function whatsNewDue(ui: Record<string, unknown>, engine: { release: stri
 }
 
 type Step = "engine" | "vae" | "model";
+
+/** A label with its download size after it, when there is one. */
+const withSize = (label: string, bytes: number) => (bytes ? t("whatsNew.withSize", { label, size: formatBytes(bytes) }) : label);
 
 /** What's new in this release, plus the downloads it offers, each chosen separately: the engine when the release needs
  * a newer stable-diffusion.cpp (only the files that changed), the new VAE (#21) and the Q4_K_M image model, which
@@ -120,7 +106,7 @@ export function WhatsNew() {
   const running = inst?.running ?? false;
   useEffect(() => {
     if (!running) return;
-    const t = window.setInterval(
+    const timer = window.setInterval(
       () =>
         api.installStatus().then((i) => {
           setInst(i);
@@ -135,7 +121,7 @@ export function WhatsNew() {
         }, () => {}),
       500,
     );
-    return () => window.clearInterval(t);
+    return () => window.clearInterval(timer);
   }, [running, queue]);
 
   const items = inst?.items ?? [];
@@ -173,11 +159,11 @@ export function WhatsNew() {
 
   return (
     <div className="modal-scrim">
-      <div className="welcome" role="dialog" aria-label={`What's new in Kokon ${WHATS_NEW_VERSION}`}>
+      <div className="welcome" role="dialog" aria-label={t("whatsNew.heading", { version: WHATS_NEW_VERSION })}>
         <KokonMark size={44} />
-        <h1>What's new in Kokon {WHATS_NEW_VERSION}</h1>
+        <h1>{t("whatsNew.heading", { version: WHATS_NEW_VERSION })}</h1>
         <div className="welcome-grid">
-          {NEWS.map(({ icon: Icon, title, text, video }: { icon: typeof Layers; title: string; text: string; video?: string }) => (
+          {news().map(({ icon: Icon, title, text, video }) => (
             <div className="welcome-item" key={title}>
               <Icon size={20} />
               <strong>{title}</strong>
@@ -186,8 +172,8 @@ export function WhatsNew() {
                 {video && (
                   <>
                     {" "}
-                    <button className="link-btn" onClick={() => native.openLink(video).catch(toastError)} title="On YouTube (opens in your browser)">
-                      <CirclePlay size={13} /> Watch the 0.12 video
+                    <button className="link-btn" onClick={() => native.openLink(video).catch(toastError)} title={t("whatsNew.onYouTube")}>
+                      <CirclePlay size={13} /> {t("whatsNew.watchVideo", { version: "0.12" })}
                     </button>
                   </>
                 )}
@@ -200,23 +186,16 @@ export function WhatsNew() {
           <div className="update-offers">
             {offerModel && (
               <div className="setup-note update-offer">
-                {several && <input type="checkbox" checked={wantModel} onChange={(e) => setWantModel(e.target.checked)} aria-label="Include the new image model file" />}
+                {several && <input type="checkbox" checked={wantModel} onChange={(e) => setWantModel(e.target.checked)} aria-label={t("whatsNew.includeModel")} />}
                 <div>
-                  <strong>
-                    {ownModel ? "A newer image model file" : "New image model file"}
-                    {modelBytes ? ` · ${formatBytes(modelBytes)}` : ""}
-                  </strong>
+                  <strong>{withSize(ownModel ? t("whatsNew.modelTitleOwn") : t("whatsNew.modelTitle"), modelBytes)}</strong>
                   <span>
-                    {ownModel
-                      ? "Your image model is the Q4_K file Kokon used before. Kokon now uses unsloth's Q4_K_M: better supported, slightly better, the same 4-bit size. Kokon can download it into its own folder and use it; your file stays where it is, untouched."
-                      : "Kokon now uses unsloth's Q4_K_M of Qwen-Image 2.1 Turbo: better supported, slightly better, the same 4-bit size. The old file is deleted once the new one is downloaded and checked."}{" "}
-                    You can also switch later in Settings → Models.
+                    {ownModel ? t("whatsNew.modelBodyOwn") : t("whatsNew.modelBody")}
                   </span>
                   <details className="model-files">
-                    <summary>Why change it?</summary>
+                    <summary>{t("whatsNew.modelWhy")}</summary>
                     <span className="update-detail">
-                      Both are 4-bit copies of Qwen's Turbo model and look much the same. The Q4_K_M comes from unsloth, one of the most used sources of
-                      GGUF models, and it is the file Kokon's tests and its Mac engine are checked against. Same license as the model.
+                      {t("whatsNew.modelWhyText")}
                     </span>
                   </details>
                 </div>
@@ -224,20 +203,16 @@ export function WhatsNew() {
             )}
             {offerVae && (
               <div className="setup-note update-offer">
-                {several && <input type="checkbox" checked={wantVae} onChange={(e) => setWantVae(e.target.checked)} aria-label="Include the new decoder" />}
+                {several && <input type="checkbox" checked={wantVae} onChange={(e) => setWantVae(e.target.checked)} aria-label={t("whatsNew.includeVae")} />}
                 <div>
-                  <strong>New image decoder{vaeBytes ? ` · ${formatBytes(vaeBytes)}` : ""}</strong>
+                  <strong>{withSize(t("whatsNew.vaeTitle"), vaeBytes)}</strong>
                   <span>
-                    For the cleaner images above, Kokon needs to replace the decoder it installed. The old file is deleted once the new one is in place.
-                    {ms?.active.source === "user" && " Your own VAE file stays where it is: Kokon uses its own copy."} If you keep the current one, you can switch any time in
-                    Settings → Models.
+                    {ms?.active.source === "user" ? t("whatsNew.vaeBodyOwn") : t("whatsNew.vaeBody")}
                   </span>
                   <details className="model-files">
-                    <summary>What is it?</summary>
+                    <summary>{t("whatsNew.vaeWhat")}</summary>
                     <span className="update-detail">
-                      The decoder (VAE, variational autoencoder) turns the model's result into pixels. Qwen's original decoder leaves a faint 2-pixel checkerboard on fine
-                      texture. This version, retrained by madebyollin (the author of TAESD), removes it: the image, its colours and the time stay the same. Same license as
-                      the model.
+                      {t("whatsNew.vaeWhatText")}
                     </span>
                   </details>
                 </div>
@@ -245,12 +220,11 @@ export function WhatsNew() {
             )}
             {needsEngine && (
               <div className="setup-note update-offer">
-                {several && <input type="checkbox" checked={wantEngine} onChange={(e) => setWantEngine(e.target.checked)} aria-label="Include the engine update" />}
+                {several && <input type="checkbox" checked={wantEngine} onChange={(e) => setWantEngine(e.target.checked)} aria-label={t("whatsNew.includeEngine")} />}
                 <div>
-                  <strong>Engine update{engineBytes ? ` · ${formatBytes(engineBytes)}` : ""}</strong>
+                  <strong>{withSize(t("whatsNew.engineTitle"), engineBytes)}</strong>
                   <span>
-                    A newer stable-diffusion.cpp is ready, the engine that runs the models on your graphics chip{getsSuperscale ? ", plus the Superscale-SP model" : ""}.
-                    Your images, models and settings stay as they are.
+                    {getsSuperscale ? t("whatsNew.engineBodySuperscale") : t("whatsNew.engineBody")}
                   </span>
                 </div>
               </div>
@@ -263,42 +237,43 @@ export function WhatsNew() {
             <div className="setup-progress-head">
               <span className="pct">{Math.floor(prog.frac * 100)}%</span>
               <span className="muted">
-                {formatBytes(prog.received)} of {formatBytes(prog.total)}
-                {installTimeLeft(prog.total - prog.received, inst?.bytes_per_sec ?? 0) ? ` · ${installTimeLeft(prog.total - prog.received, inst?.bytes_per_sec ?? 0)}` : ""}
+                {installTimeLeft(prog.total - prog.received, inst?.bytes_per_sec ?? 0)
+                  ? t("whatsNew.progressLeft", { received: formatBytes(prog.received), total: formatBytes(prog.total), left: installTimeLeft(prog.total - prog.received, inst?.bytes_per_sec ?? 0) ?? "" })
+                  : t("whatsNew.progress", { received: formatBytes(prog.received), total: formatBytes(prog.total) })}
               </span>
             </div>
             <div className="progress thick">
               <i style={{ width: `${prog.frac * 100}%` }} />
             </div>
-            <span className="muted">{installStep(items) ?? "Starting…"}</span>
+            <span className="muted">{installStep(items) ?? t("whatsNew.starting")}</span>
           </div>
         )}
         {failed.length > 0 && !running && (
           <div className="setup-note" style={{ width: "100%", textAlign: "left" }}>
             <CircleAlert size={14} /> {failed.map((f) => `${f.label}: ${f.error}`).join(" · ")}
-            <div className="muted">Try again, or open Settings → Models to do it later.</div>
+            <div className="muted">{t("whatsNew.failedHint")}</div>
           </div>
         )}
 
         {!offering ? (
           <button className="btn primary big" onClick={() => close(false)}>
-            {finished ? "Start creating" : "Got it"}
+            {finished ? t("whatsNew.startCreating") : t("whatsNew.gotIt")}
           </button>
         ) : (
           <div className="welcome-actions">
             <div className="welcome-buttons">
               <button className="btn primary big" disabled={running || !steps.length || (steps.includes("engine") && (!target || missing === null))} onClick={update}>
                 {failed.length
-                  ? "Try again"
+                  ? t("common.retry")
                   : running
-                    ? "Updating…"
-                    : `${modelOnly ? (ownModel ? "Download Q4_K_M and use it" : "Update now and remove the old file") : "Update now"}${size ? ` · ${formatBytes(size)}` : ""}`}
+                    ? t("whatsNew.updating")
+                    : withSize(modelOnly ? (ownModel ? t("whatsNew.downloadQ4KM") : t("whatsNew.updateRemoveOld")) : t("whatsNew.updateNow"), size)}
               </button>
               <button className="btn big" onClick={() => close(true, modelOnly && ownModel)}>
-                {modelOnly && ownModel ? "Keep using my file" : offerVae && !needsEngine && !offerModel ? "Keep the current one" : "Later"}
+                {modelOnly && ownModel ? t("whatsNew.keepMyFile") : offerVae && !needsEngine && !offerModel ? t("whatsNew.keepCurrent") : t("whatsNew.later")}
               </button>
             </div>
-            <span className="muted welcome-foot">You can update later from Settings → Models.</span>
+            <span className="muted welcome-foot">{t("whatsNew.updateLaterHint")}</span>
           </div>
         )}
       </div>

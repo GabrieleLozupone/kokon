@@ -24,6 +24,7 @@ import { IconButton, Popover, useFit } from "./ui";
 import { Fullscreen, FullscreenButton, isTyping, ZoomImage, type ViewerNav } from "./Viewer";
 import { fileManager, inBrowser, shortcut, useNarrow } from "../lib/platform";
 import { PhoneActions, PhoneEmpty, Swipe } from "./PhoneStage";
+import { formatDateTime, t } from "../lib/i18n";
 
 export const MODE_ICON: Record<Mode | "lut" | "layers", React.ReactNode> = {
   auto: <Wand2 size={11} />,
@@ -38,34 +39,45 @@ export const MODE_ICON: Record<Mode | "lut" | "layers", React.ReactNode> = {
   layers: <Layers size={11} />,
 };
 
-const MODE_DOING: Record<Mode, string> = {
-  auto: "Working",
-  generate: "Creating",
-  edit: "Editing",
-  multi_reference: "Combining images",
-  compose: "Creating from references",
-  inpaint: "Inpainting",
-  outpaint: "Expanding",
-  upscale: "Upscaling",
-};
+/** What a job is doing, for its card's title; `name` is the image it works on ("Editing image 2"). */
+function modeDoing(mode: Mode, name?: string): string {
+  switch (mode) {
+    case "auto":
+      return name ? t("stage.doingAutoFrom", { name }) : t("stage.doingAuto");
+    case "generate":
+      return name ? t("stage.doingGenerateFrom", { name }) : t("stage.doingGenerate");
+    case "edit":
+      return name ? t("stage.doingEditFrom", { name }) : t("stage.doingEdit");
+    case "multi_reference":
+      return t("stage.doingMultiReference");
+    case "compose":
+      return t("stage.doingCompose");
+    case "inpaint":
+      return name ? t("stage.doingInpaintFrom", { name }) : t("stage.doingInpaint");
+    case "outpaint":
+      return name ? t("stage.doingOutpaintFrom", { name }) : t("stage.doingOutpaint");
+    case "upscale":
+      return name ? t("stage.doingUpscaleFrom", { name }) : t("stage.doingUpscale");
+  }
+}
 
 function Empty() {
   return (
     <div className="empty">
-      <h1>What should we make?</h1>
-      <p>Describe a new image below, or bring one in to edit it.</p>
+      <h1>{t("stage.emptyTitle")}</h1>
+      <p>{t("stage.emptyIntro")}</p>
       <p className="tip">
-        Tip: say what the subject is doing and where, like “a monkey dribbling a basketball on an outdoor court”. Short prompts get literal results.{" "}
+        {t("stage.emptyTip")}{" "}
         <button className="link" onClick={() => setState({ overlay: "prompt-tips" })}>
-          More prompt tips
+          {t("stage.morePromptTips")}
         </button>
       </p>
       <div className="hint">
         <span>
-          <MousePointerClick size={14} /> Drop images here
+          <MousePointerClick size={14} /> {t("stage.dropImages")}
         </span>
         <span>
-          <ClipboardPaste size={14} /> Paste with {shortcut("V")}
+          <ClipboardPaste size={14} /> {t("stage.pasteWith", { shortcut: shortcut("V") })}
         </span>
       </div>
     </div>
@@ -85,7 +97,7 @@ function Pending({ job, item, labels }: { job: JobView; item: SessionItem; label
   const from = src ? session.find((i) => itemSource(i) === src) : undefined;
   const mode = job.plan?.mode;
   // "v3 · Editing v2", "v1 · Creating"
-  const title = [imageName(labels[item.key]), mode && `${MODE_DOING[mode]}${from && mode !== "multi_reference" && mode !== "compose" ? ` ${imageName(labels[from.key]).toLowerCase()}` : ""}`].filter(Boolean).join(" · ");
+  const title = [imageName(labels[item.key]), mode && modeDoing(mode, from && mode !== "multi_reference" && mode !== "compose" ? imageName(labels[from.key]).toLowerCase() : undefined)].filter(Boolean).join(" · ");
   // The source keeps its own shape inside an expansion; elsewhere it fills the frame.
   const outpaint = item.request?.outpaint;
   const { pct, clock } = useJobPercent(job, item.request, true);
@@ -137,14 +149,14 @@ function ProgressPhase({ job, title, pct, clock, card }: { job: JobView; title: 
         {title}
       </span>
       {canCancel && (
-        <button className="btn ghost stop-corner" onClick={() => cancelJob(job.id)} title="Cancel" aria-label="Stop">
+        <button className="btn ghost stop-corner" onClick={() => cancelJob(job.id)} title={t("common.cancel")} aria-label={t("common.stop")}>
           <Square size={12} />
-          <span className="stop-label">Stop</span>
+          <span className="stop-label">{t("common.stop")}</span>
         </button>
       )}
       {/* The cocoon fills the middle; the percentage sits under it. */}
       <div className="progress-foot" title={notes || undefined}>
-        <span className="job-pct" aria-label={`${Math.floor(pct)} percent`}>
+        <span className="job-pct" aria-label={t("stage.percentAria", { pct: Math.floor(pct) })}>
           {Math.floor(pct)}
           <small>%</small>
         </span>
@@ -154,7 +166,7 @@ function ProgressPhase({ job, title, pct, clock, card }: { job: JobView; title: 
         <span className="progress-detail">
           {jobLabel(job)}
           {o && <span className="detail-size"> · {o.width}×{o.height}</span>}
-          {remain !== null && ` · ${formatDuration(remain)} left`}
+          {remain !== null && ` · ${t("stage.timeLeft", { time: formatDuration(remain) })}`}
         </span>
         {notes && <span className="notes">{notes}</span>}
       </div>
@@ -193,7 +205,7 @@ function PromptPhase(props: { title: string; text: string; streaming: boolean; w
   return (
     <div className={`prompt-stage ${leave.leaving ? "leaving" : ""}`} style={{ transitionDuration: `${PROMPT_FADE_MS}ms`, ...leave.style }}>
       <span className={`enhanced-label ${writing ? "shimmer" : ""}`}>
-        <WandSparkles size={13} /> {writing ? "Writing the prompt" : "The prompt"} · {props.title}
+        <WandSparkles size={13} /> {writing ? t("stage.writingPrompt") : t("stage.thePrompt")} · {props.title}
       </span>
       <div
         className="prompt-text"
@@ -205,12 +217,12 @@ function PromptPhase(props: { title: string; text: string; streaming: boolean; w
         }}
       >
         <div className="prompt-flow">
-          {text ? visible : <span className="enhanced-wait shimmer">{props.withImage ? "Looking at your image…" : "Reading your idea…"}</span>}
+          {text ? visible : <span className="enhanced-wait shimmer">{props.withImage ? t("stage.lookingAtImage") : t("stage.readingIdea")}</span>}
           {writing && text && <i className="caret" />}
         </div>
       </div>
-      <button className="btn ghost" onClick={props.onCancel} title="Cancel">
-        <Square size={12} /> Stop
+      <button className="btn ghost" onClick={props.onCancel} title={t("common.cancel")}>
+        <Square size={12} /> {t("common.stop")}
       </button>
     </div>
   );
@@ -223,20 +235,20 @@ function Failed({ job, item }: { job: JobView; item: SessionItem }) {
   return (
     <div className="stage-frame">
       <div className="failed">
-        <strong>{job.status === "cancelled" ? "Cancelled" : job.error?.message ?? "Generation failed"}</strong>
+        <strong>{job.status === "cancelled" ? t("stage.cancelled") : job.error?.message ?? t("stage.generationFailed")}</strong>
         {job.error?.suggestion && <span>{job.error.suggestion}</span>}
         <div style={{ display: "flex", gap: 8 }}>
           {req && (
             <button className="btn" onClick={() => (removeSessionItem(item.key), submitRequest(req))}>
-              <RotateCcw size={14} /> Try again
+              <RotateCcw size={14} /> {t("common.retry")}
             </button>
           )}
           <button className="btn" onClick={() => removeSessionItem(item.key)}>
-            <X size={14} /> Dismiss
+            <X size={14} /> {t("stage.dismiss")}
           </button>
           {job.error?.detail && (
             <button className="btn" onClick={() => setDetails((d) => !d)}>
-              <Info size={14} /> Details
+              <Info size={14} /> {t("stage.details")}
             </button>
           )}
         </div>
@@ -248,7 +260,7 @@ function Failed({ job, item }: { job: JobView; item: SessionItem }) {
 
 function CopyText({ text, title }: { text: string; title: string }) {
   return (
-    <IconButton small title={title} onClick={() => void native.copyText(text).then(() => toastInfo("Prompt copied"), toastError)}>
+    <IconButton small title={title} onClick={() => void native.copyText(text).then(() => toastInfo(t("stage.promptCopied")), toastError)}>
       <Copy size={13} />
     </IconButton>
   );
@@ -257,42 +269,44 @@ function CopyText({ text, title }: { text: string; title: string }) {
 export function InfoPanel({ g }: { g: GenerationRecord }) {
   const pipeline = pipelineSummary(g);
   const lut = lutInfo(g);
+  const size = `${g.width}×${g.height}`;
+  const created = formatDateTime(new Date(g.created_at));
   const rows: [string, string][] = lut ? [
-    ["Mode", MODE_LABEL[g.mode]],
-    ["Size", `${g.width}×${g.height}`],
-    ["LUT", !lut.name.startsWith("kokon:") && lut.title && lut.title !== lut.name ? `${lut.name} (${lut.title})` : lutLabel(lut)],
-    ["Intensity", `${Math.round(lut.intensity * 100)} %`],
-    ["Created", new Date(g.created_at).toLocaleString()],
+    [t("stage.infoMode"), MODE_LABEL[g.mode]],
+    [t("stage.infoSize"), size],
+    [t("stage.infoLut"), !lut.name.startsWith("kokon:") && lut.title && lut.title !== lut.name ? `${lut.name} (${lut.title})` : lutLabel(lut)],
+    [t("stage.infoIntensity"), t("stage.percentValue", { value: Math.round(lut.intensity * 100) })],
+    [t("stage.infoCreated"), created],
   ] : [
-    ["Mode", MODE_LABEL[g.mode]],
-    ["Size", `${g.width}×${g.height}${g.working_width !== g.width || g.working_height !== g.height ? ` (worked at ${g.working_width}×${g.working_height})` : ""}`],
-    ...(pipeline ? ([["Pipeline", pipeline]] as [string, string][]) : []),
-    ["Seed", String(g.seed)],
-    ["Steps", String(g.steps)],
-    ["CFG", String(g.cfg)],
-    ["Sampler", `${g.sampler}${g.scheduler ? ` / ${g.scheduler}` : ""}`],
-    ...(g.strength != null ? ([["Strength", String(g.strength)]] as [string, string][]) : []),
-    ["References", String(g.references.length)],
-    ...(g.loras?.length ? ([["LoRA", g.loras.map((l) => `${l.name} (${Math.round(l.weight * 100)} %)`).join(", ")]] as [string, string][]) : []),
-    ["Model", g.model],
-    ["Time", formatDuration(g.duration_ms / 1000)],
-    ["Created", new Date(g.created_at).toLocaleString()],
+    [t("stage.infoMode"), MODE_LABEL[g.mode]],
+    [t("stage.infoSize"), g.working_width !== g.width || g.working_height !== g.height ? t("stage.infoSizeWorkedAt", { size, workSize: `${g.working_width}×${g.working_height}` }) : size],
+    ...(pipeline ? ([[t("stage.infoPipeline"), pipeline]] as [string, string][]) : []),
+    [t("stage.infoSeed"), String(g.seed)],
+    [t("stage.infoSteps"), String(g.steps)],
+    [t("stage.infoCfg"), String(g.cfg)],
+    [t("stage.infoSampler"), `${g.sampler}${g.scheduler ? ` / ${g.scheduler}` : ""}`],
+    ...(g.strength != null ? ([[t("stage.infoStrength"), String(g.strength)]] as [string, string][]) : []),
+    [t("stage.infoReferences"), String(g.references.length)],
+    ...(g.loras?.length ? ([["LoRA", g.loras.map((l) => `${l.name} (${t("stage.percentValue", { value: Math.round(l.weight * 100) })})`).join(", ")]] as [string, string][]) : []),
+    [t("stage.infoModel"), g.model],
+    [t("stage.infoTime"), formatDuration(g.duration_ms / 1000)],
+    [t("stage.infoCreated"), created],
   ];
   return (
     <div className="info-panel" style={{ padding: 8, display: "flex", flexDirection: "column", gap: 6 }}>
       <div className="info-prompt">
         <div style={{ fontSize: 13, maxHeight: 160, overflow: "auto" }}>{g.prompt}</div>
-        <CopyText text={g.prompt} title={g.original_prompt ? "Copy the prompt Prompt+ wrote" : "Copy the prompt"} />
+        <CopyText text={g.prompt} title={g.original_prompt ? t("stage.copyEnhancedPrompt") : t("stage.copyPrompt")} />
       </div>
       {g.original_prompt && (
         <div className="info-prompt">
           <div className="muted" style={{ maxHeight: 80, overflow: "auto" }}>
-            <WandSparkles size={11} style={{ verticalAlign: -1 }} /> Written by the prompt enhancer from: “{g.original_prompt}”
+            <WandSparkles size={11} style={{ verticalAlign: -1 }} /> {t("stage.writtenByEnhancerFrom", { prompt: g.original_prompt })}
           </div>
-          <CopyText text={g.original_prompt} title="Copy your prompt" />
+          <CopyText text={g.original_prompt} title={t("stage.copyYourPrompt")} />
         </div>
       )}
-      {g.negative_prompt && <div className="muted">Negative: {g.negative_prompt}</div>}
+      {g.negative_prompt && <div className="muted">{t("stage.negativePrompt", { prompt: g.negative_prompt })}</div>}
       <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 12px", fontSize: 12 }}>
         {rows.map(([k, v]) => (
           <Fragment key={k}>
@@ -324,7 +338,7 @@ function UpscaleMenu(props: { source: string; size: Size; original?: Size | null
   };
   return (
     <div className="upscale-menu" style={{ padding: 8, display: "flex", flexDirection: "column", gap: 10 }}>
-      <span className="muted">{via}: a few seconds, adds no new content.</span>
+      <span className="muted">{t("stage.upscaleVia", { upscaler: via })}</span>
       {targets.map((t) => (
         <button key={t.key} className="btn" onClick={() => go(t)}>
           {t.label} · {t.width}×{t.height}
@@ -339,13 +353,13 @@ function UpscaleMenu(props: { source: string; size: Size; original?: Size | null
           style={{ width: 90 }}
           value={customW}
           onChange={(e) => setCustomW(Math.max(64, Math.min(MAX_UPSCALE_SIDE, Math.round(Number(e.target.value) || 0))))}
-          aria-label="Custom width"
+          aria-label={t("stage.customWidth")}
         />
         <span className="muted" style={{ flex: 1 }}>
           × {custom.height}
         </span>
         <button className="btn" disabled={!customOk} onClick={() => go(custom)}>
-          Upscale
+          {t("stage.upscale")}
         </button>
       </div>
     </div>
@@ -366,7 +380,7 @@ export function UpscaleButton(props: { source: string; size: Size; original?: Si
   return (
     <Popover
       placement="top-end"
-      trigger={(open, toggle) => <ActionButton title="Upscale: make a larger copy (2×, 4K or a custom size)" icon={<ImageUpscale size={16} />} label="Upscale" onClick={toggle} active={open} />}
+      trigger={(open, toggle) => <ActionButton title={t("stage.upscaleTooltip")} icon={<ImageUpscale size={16} />} label={t("stage.upscale")} onClick={toggle} active={open} />}
     >
       {(close) => <UpscaleMenu {...props} close={close} />}
     </Popover>
@@ -380,13 +394,13 @@ function MoreLikeThisButton({ g }: { g: GenerationRecord }) {
     if (r) submitRequest(r);
   };
   const options = [
-    { strength: MORE_LIKE_THIS.subtle, label: "Subtle", hint: "Same picture, new details" },
-    { strength: MORE_LIKE_THIS.strong, label: "Strong", hint: "Same idea, more changes" },
+    { strength: MORE_LIKE_THIS.subtle, label: t("stage.moreLikeThisSubtle"), hint: t("stage.moreLikeThisSubtleHint") },
+    { strength: MORE_LIKE_THIS.strong, label: t("stage.moreLikeThisStrong"), hint: t("stage.moreLikeThisStrongHint") },
   ];
   return (
     <Popover
       placement="top-end"
-      trigger={(open, toggle) => <ActionButton title="More like this: a new image that keeps this one's layout and look" icon={<Images size={16} />} label="More like this" onClick={toggle} active={open} />}
+      trigger={(open, toggle) => <ActionButton title={t("stage.moreLikeThisTooltip")} icon={<Images size={16} />} label={t("stage.moreLikeThis")} onClick={toggle} active={open} />}
     >
       {(close) => (
         <>
@@ -412,7 +426,7 @@ function MoreMenu({ item, path }: { item: SessionItem; path: string | null }) {
     <Popover
       placement="top-end"
       trigger={(open, toggle) => (
-        <IconButton title="More" onClick={toggle} active={open}>
+        <IconButton title={t("stage.more")} onClick={toggle} active={open}>
           <Ellipsis size={17} />
         </IconButton>
       )}
@@ -432,7 +446,7 @@ function MoreMenu({ item, path }: { item: SessionItem; path: string | null }) {
               <span className="check">
                 <SlidersHorizontal size={15} />
               </span>
-              <span>Reuse prompt and settings</span>
+              <span>{t("stage.reusePromptAndSettings")}</span>
             </button>
           )}
           {path && !inBrowser && (
@@ -440,14 +454,14 @@ function MoreMenu({ item, path }: { item: SessionItem; path: string | null }) {
               <span className="check">
                 <FolderOpen size={15} />
               </span>
-              <span>Show in {fileManager}</span>
+              <span>{fileManager === "Finder" ? t("stage.showInFinder") : fileManager === "Explorer" ? t("stage.showInExplorer") : t("stage.showInFileManager")}</span>
             </button>
           )}
           <button className="opt" onClick={() => (close(), removeSessionItem(item.key))}>
             <span className="check">
               <Trash2 size={15} />
             </span>
-            <span>Remove from project</span>
+            <span>{t("stage.removeFromProject")}</span>
           </button>
         </>
       )}
@@ -469,17 +483,17 @@ function GenActions({ item, g, showOriginal, onLut }: { item: SessionItem; g: Ge
     <div className="actions">
       {g.prompt && (
         <ActionButton
-          title="Reuse prompt: put this prompt back in the box to change it a little. It works on the same image this one was made from; your current settings stay as they are."
+          title={t("stage.reusePromptTooltip")}
           icon={<TextCursorInput size={16} />}
-          label="Reuse prompt"
+          label={t("stage.reusePrompt")}
           onClick={() => reusePrompt(g)}
         />
       )}
       {g.request && g.mode !== "upscale" && g.mode !== "lut" && g.mode !== "layers" && (
         <ActionButton
-          title="Regenerate: same prompt and settings, new seed"
+          title={t("stage.regenerateTooltip")}
           icon={<RefreshCw size={16} />}
-          label="Regenerate"
+          label={t("stage.regenerate")}
           onClick={() => {
             const r = variationRequest(g);
             if (r) submitRequest(r);
@@ -491,7 +505,7 @@ function GenActions({ item, g, showOriginal, onLut }: { item: SessionItem; g: Ge
       <LutButton onPick={onLut} />
       <span className="sep" />
       <IconButton
-        title={fav ? "Remove from favorites" : "Favorite"}
+        title={fav ? t("stage.removeFromFavorites") : t("stage.favorite")}
         active={fav}
         onClick={async () => {
           try {
@@ -505,7 +519,7 @@ function GenActions({ item, g, showOriginal, onLut }: { item: SessionItem; g: Ge
         <Heart size={17} fill={fav ? "currentColor" : "none"} />
       </IconButton>
       <IconButton
-        title={inBrowser ? (showOriginal ? "Download the original (before upscaling)" : "Download") : showOriginal ? "Save the original (before upscaling) as…" : "Save as…"}
+        title={inBrowser ? (showOriginal ? t("stage.downloadOriginal") : t("common.download")) : showOriginal ? t("stage.saveOriginalAs") : t("stage.saveAs")}
         onClick={async () => {
           const name = g.file_path.split(/[\\/]/).pop() ?? "image.png";
           if (inBrowser) {
@@ -517,7 +531,7 @@ function GenActions({ item, g, showOriginal, onLut }: { item: SessionItem; g: Ge
           if (!path) return;
           try {
             const r = await api.exportGeneration(g.id, path, showOriginal);
-            toastInfo(`Saved ${r.path.split(/[\\/]/).pop()}`);
+            toastInfo(t("stage.savedFile", { name: r.path.split(/[\\/]/).pop() ?? "" }));
           } catch (e) {
             toastError(e);
           }
@@ -527,12 +541,12 @@ function GenActions({ item, g, showOriginal, onLut }: { item: SessionItem; g: Ge
       </IconButton>
       {canCopyImage && (
         <IconButton
-          title={showOriginal ? "Copy the original (before upscaling)" : "Copy image"}
+          title={showOriginal ? t("stage.copyOriginal") : t("stage.copyImage")}
           onClick={async () => {
             try {
               if (inBrowser) await native.copyImageUrl(showOriginal ? urls.genOriginal(g.id) : urls.gen(g.id));
               else await native.copyImage(shownPath);
-              toastInfo("Image copied");
+              toastInfo(t("stage.imageCopied"));
             } catch (e) {
               toastError(e);
             }
@@ -544,7 +558,7 @@ function GenActions({ item, g, showOriginal, onLut }: { item: SessionItem; g: Ge
       <Popover
         placement="top-end"
         trigger={(open, toggle) => (
-          <IconButton title="Details" onClick={toggle} active={open}>
+          <IconButton title={t("stage.details")} onClick={toggle} active={open}>
             <Info size={17} />
           </IconButton>
         )}
@@ -599,29 +613,29 @@ function StageBar(props: { item: SessionItem; label: string; showOriginal: boole
   const w = g?.width ?? item.input!.width;
   const h = g?.height ?? item.input!.height;
   const from = g?.pipeline?.original_path ? g.pipeline.enlarged_from : null;
-  const name = item.input?.original_name ? safeDecode(item.input.original_name) : "Imported image";
+  const name = item.input?.original_name ? safeDecode(item.input.original_name) : t("stage.importedImage");
   return (
     <div className="stage-bar">
       <div className="stage-meta">
         <span className="ver">{imageName(label)}</span>
         {g && <span className="mode">{MODE_LABEL[g.mode]}</span>}
         {g?.original_prompt && (
-          <span className="enhanced-mark" title="The prompt enhancer wrote this image's prompt">
+          <span className="enhanced-mark" title={t("stage.enhancedMarkTooltip")}>
             <WandSparkles size={13} />
           </span>
         )}
         {!props.phone && (
-        <span className="stage-prompt" title={g?.original_prompt ? `${g.prompt}\n\nYour prompt: ${g.original_prompt}` : g?.prompt ?? name}>
-          {g ? g.original_prompt || g.prompt || (g.mode === "upscale" ? `${g.references[0]?.width ?? "?"}×${g.references[0]?.height ?? "?"} → ${w}×${h}` : lut ? `${lutLabel(lut)} · ${Math.round(lut.intensity * 100)} %` : "") : name}
+        <span className="stage-prompt" title={g?.original_prompt ? t("stage.promptWithYours", { prompt: g.prompt, original: g.original_prompt }) : g?.prompt ?? name}>
+          {g ? g.original_prompt || g.prompt || (g.mode === "upscale" ? `${g.references[0]?.width ?? "?"}×${g.references[0]?.height ?? "?"} → ${w}×${h}` : lut ? `${lutLabel(lut)} · ${t("stage.percentValue", { value: Math.round(lut.intensity * 100) })}` : "") : name}
         </span>
         )}
         {from && !props.lutBar ? (
-          <span className="seg dims-seg" role="radiogroup" aria-label="Which image to show">
-            <button className={showOriginal ? "" : "on"} role="radio" aria-checked={!showOriginal} onClick={() => setShowOriginal(false)} title={`The result, enlarged by ${upscalerLabel(g!.pipeline!.enlarged_with)}`}>
-              Upscaled<span className="seg-dims"> {w}×{h}</span>
+          <span className="seg dims-seg" role="radiogroup" aria-label={t("stage.whichImage")}>
+            <button className={showOriginal ? "" : "on"} role="radio" aria-checked={!showOriginal} onClick={() => setShowOriginal(false)} title={t("stage.upscaledTooltip", { upscaler: upscalerLabel(g!.pipeline!.enlarged_with) })}>
+              {t("stage.upscaled")}<span className="seg-dims"> {w}×{h}</span>
             </button>
-            <button className={showOriginal ? "on" : ""} role="radio" aria-checked={showOriginal} onClick={() => setShowOriginal(true)} title="What the model made, before the upscaler enlarged it">
-              Original<span className="seg-dims"> {from.width}×{from.height}</span>
+            <button className={showOriginal ? "on" : ""} role="radio" aria-checked={showOriginal} onClick={() => setShowOriginal(true)} title={t("stage.originalTooltip")}>
+              {t("stage.original")}<span className="seg-dims"> {from.width}×{from.height}</span>
             </button>
           </span>
         ) : (
@@ -670,7 +684,7 @@ function Joint({ kind, hot }: { kind: LinkKind; hot: boolean }) {
 function linkText(link: TimelineLink | undefined, labels: Record<string, string>): string {
   if (!link || link.kind === "start") return "";
   const names = link.parents.map((k) => imageName(labels[k]).toLowerCase()).join(" + ");
-  return link.kind === "variant" ? `new seed of ${names}` : `from ${names}`;
+  return link.kind === "variant" ? t("stage.linkNewSeedOf", { names }) : t("stage.linkFrom", { names });
 }
 
 /** The project's versions in order. A version continues the line of the one it was made from;
@@ -734,7 +748,7 @@ function Timeline({ labels, lab }: { labels: Record<string, string>; lab: Lab })
       if (!keys.length) return;
       e.preventDefault();
       const n = keys.length;
-      const ok = await native.confirm(n === 1 ? "Remove this version from the project? Its image stays in All images." : `Remove ${n} versions from the project? Their images stay in All images.`, "Remove from project");
+      const ok = await native.confirm(t("stage.removeVersionsConfirm", { count: n }), t("stage.removeFromProject"));
       if (!ok) return;
       removeSessionItems(keys);
       setPicked(new Set());
@@ -805,7 +819,7 @@ function Timeline({ labels, lab }: { labels: Record<string, string>; lab: Lab })
     return (
       <Fragment key={`lab-${id}`}>
         {!first && <Joint kind="next" hot={false} />}
-        <button data-key={`lab-${id}`} className={`frame ${isSel ? "sel" : ""}`} title="Layers: this image's layered version (open its layers from the Stage)" onClick={() => selectItem(key)}>
+        <button data-key={`lab-${id}`} className={`frame ${isSel ? "sel" : ""}`} title={t("stage.layersFrameTooltip")} onClick={() => selectItem(key)}>
           <span className="frame-box">
             <span className="frame-img">
               <LabThumb doc={doc} job={making} />
@@ -819,7 +833,7 @@ function Timeline({ labels, lab }: { labels: Record<string, string>; lab: Lab })
           </span>
           <span className="frame-label">
             <Layers size={10} />
-            Layers
+            {t("stage.layers")}
           </span>
         </button>
       </Fragment>
@@ -845,7 +859,7 @@ function Timeline({ labels, lab }: { labels: Record<string, string>; lab: Lab })
   };
 
   return (
-    <div className={`timeline ${overflow ? "overflow" : ""}`} ref={boxRef} aria-label="Versions">
+    <div className={`timeline ${overflow ? "overflow" : ""}`} ref={boxRef} aria-label={t("stage.versions")}>
       {/* Room for the selection outline even when there are no arcs (the scroll box clips). */}
       <div className="track" ref={trackRef} style={{ paddingTop: Math.max(band, 6) }} onMouseLeave={() => setHovered(null)}>
         {arcs.length > 0 && (
@@ -870,8 +884,8 @@ function Timeline({ labels, lab }: { labels: Record<string, string>; lab: Lab })
           const link = links[it.key];
           const pendingSrc = pending && it.request?.mode !== "generate" && it.request?.mode !== "compose" ? it.request?.images?.[0] : undefined;
           const prompt = it.gen?.prompt || it.request?.prompt || "";
-          const what = mode ? (mode === "generate" && link?.kind === "start" ? "New image" : MODE_LABEL[mode]) : it.input ? "Imported" : "";
-          const tip = [[imageName(labels[it.key]), what, linkText(link, labels)].filter(Boolean).join(" · "), prompt, src ? "Drag onto the prompt box to use it there" : ""].filter(Boolean).join("\n");
+          const what = mode ? (mode === "generate" && link?.kind === "start" ? t("stage.newImage") : MODE_LABEL[mode]) : it.input ? t("stage.imported") : "";
+          const tip = [[imageName(labels[it.key]), what, linkText(link, labels)].filter(Boolean).join(" · "), prompt, src ? t("stage.dragToPrompt") : ""].filter(Boolean).join("\n");
           const hot = it.key === focus || link?.parents[0] === focus;
           return (
             <Fragment key={it.key}>
@@ -931,7 +945,7 @@ function Timeline({ labels, lab }: { labels: Record<string, string>; lab: Lab })
                     </span>
                   )}
                   {src && src === target && (
-                    <span className="frame-badge" title="The prompt edits this image">
+                    <span className="frame-badge" title={t("stage.promptEditsThis")}>
                       <Pencil size={10} />
                     </span>
                   )}
@@ -997,11 +1011,11 @@ function StageFullscreen({ item, session, showOriginal, onClose }: { item: Sessi
   const base = g ? compareBase(g) : null;
   const from = g?.pipeline?.original_path ? g.pipeline.enlarged_from : null;
   let content: React.ReactNode;
-  let hint = "Scroll or click to zoom · Drag to pan";
-  if (g && from && showOriginal) content = <ZoomImage key={`original-${g.id}`} src={urls.genOriginal(g.id)} alt={`${g.prompt} (before upscaling)`} />;
+  let hint = t("stage.zoomHint");
+  if (g && from && showOriginal) content = <ZoomImage key={`original-${g.id}`} src={urls.genOriginal(g.id)} alt={t("stage.beforeUpscalingAlt", { prompt: g.prompt })} />;
   else if (g && base) {
     content = <CompareFullscreen key={g.id} g={g} base={base} />;
-    hint = "Hold B for the original";
+    hint = t("stage.holdBForOriginal");
   } else {
     const src = g ? urls.gen(g.id) : urls.input(item.input!.id);
     const size = g ? { width: g.width, height: g.height } : { width: item.input!.width, height: item.input!.height };
@@ -1164,7 +1178,7 @@ export function Stage() {
             onFullscreen={openFull}
           />
         ) : g && from && showOriginal ? (
-          <PlainFrame key={`original-${g.id}`} src={urls.genOriginal(g.id)} alt={`${g.prompt} (before upscaling)`} w={from.width} h={from.height} onFullscreen={openFull} />
+          <PlainFrame key={`original-${g.id}`} src={urls.genOriginal(g.id)} alt={t("stage.beforeUpscalingAlt", { prompt: g.prompt })} w={from.width} h={from.height} onFullscreen={openFull} />
         ) : item.gen && base ? (
           <CompareFrame key={`compare-${item.gen.id}`} g={item.gen} base={base} maskSrc={maskSrc} onFullscreen={openFull} />
         ) : (

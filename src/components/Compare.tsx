@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { urls } from "../lib/api";
 import { diffPixels, type CompareBase, type CompareMode } from "../lib/logic";
 import { haptic } from "../lib/haptics";
+import { t } from "../lib/i18n";
 import { inBrowser, isNarrow, useNarrow } from "../lib/platform";
 import { setState, stageImage, useStore } from "../lib/store";
 import type { GenerationRecord } from "../lib/types";
@@ -13,16 +14,16 @@ import { Option, Popover, Seg, useFit } from "./ui";
 import { FullscreenButton } from "./Viewer";
 import { ZoomPan } from "./ZoomPan";
 
-const MODES: { value: CompareMode; label: string }[] = [
-  { value: "off", label: "Result" },
-  { value: "slider", label: "Slider" },
-  { value: "flicker", label: "Flicker" },
-  { value: "diff", label: "Changes" },
+const modes = (): { value: CompareMode; label: string }[] => [
+  { value: "off", label: t("compare.modeResult") },
+  { value: "slider", label: t("compare.modeSlider") },
+  { value: "flicker", label: t("compare.modeFlicker") },
+  { value: "diff", label: t("compare.modeChanges") },
 ];
-const SPEEDS: { value: string; label: string }[] = [
-  { value: "250", label: "Fast" },
-  { value: "500", label: "Normal" },
-  { value: "1000", label: "Slow" },
+const speeds = (): { value: string; label: string }[] => [
+  { value: "250", label: t("compare.speedFast") },
+  { value: "500", label: t("compare.speedNormal") },
+  { value: "1000", label: t("compare.speedSlow") },
 ];
 /** Long side of the difference map; downscaling also averages out the VAE re-encode noise. */
 const DIFF_SIDE = 1024;
@@ -91,7 +92,7 @@ export function CompareFrame({ g, base, fullscreen = false, maskSrc, onFullscree
   };
 
   const showBefore = holding || (mode === "flicker" && phase === "before");
-  const label = holding || mode === "flicker" ? (showBefore ? "Before" : "After") : null;
+  const label = holding || mode === "flicker" ? (showBefore ? t("compare.before") : t("compare.after")) : null;
   const pct = (v: number) => `${v * 100}%`;
   const { x, y, w, h } = base.rect;
 
@@ -137,7 +138,7 @@ export function CompareFrame({ g, base, fullscreen = false, maskSrc, onFullscree
           setHolding(false);
         }}
         onDoubleClick={() => setState({ overlay: null })}
-        title={mode === "off" && !zoomed ? "Press and hold (or hold B) to see the original" : undefined}
+        title={mode === "off" && !zoomed ? t("compare.holdTooltip") : undefined}
       >
         <DevelopImg className="compare-img" src={after} placeholder={urls.genThumb(g.id)} alt={g.prompt} />
         {mode === "diff" && !holding && before && <DiffCanvas after={diff[0]} before={diff[1]} rect={base.rect} tagStyle={tag("left")} />}
@@ -151,7 +152,7 @@ export function CompareFrame({ g, base, fullscreen = false, maskSrc, onFullscree
             clipPath: mode === "slider" && !holding ? `inset(0 ${pct(1 - split)} 0 0)` : undefined,
           }}
         >
-          <img src={before} alt="Original" draggable={false} style={{ left: pct(x), top: pct(y), width: pct(w), height: pct(h) }} />
+          <img src={before} alt={t("compare.original")} draggable={false} style={{ left: pct(x), top: pct(y), width: pct(w), height: pct(h) }} />
         </div>
         {mode === "slider" && !holding && (
           <>
@@ -167,8 +168,8 @@ export function CompareFrame({ g, base, fullscreen = false, maskSrc, onFullscree
             >
               <span style={{ transform: `scale(${k})` }} />
             </div>
-            <span className="compare-tag left" style={tag("left")}>Before</span>
-            <span className="compare-tag right" style={tag("right")}>After</span>
+            <span className="compare-tag left" style={tag("left")}>{t("compare.before")}</span>
+            <span className="compare-tag right" style={tag("right")}>{t("compare.after")}</span>
           </>
         )}
         {label && <span className="compare-tag left" style={tag("left")}>{label}</span>}
@@ -179,7 +180,7 @@ export function CompareFrame({ g, base, fullscreen = false, maskSrc, onFullscree
           </div>
         )}
         {!fullscreen && (
-          <FullscreenButton hint="Hold B for the original" onOpen={onFullscreen} content={<CompareFullscreen g={g} base={base} />} />
+          <FullscreenButton hint={t("compare.holdBHint")} onOpen={onFullscreen} content={<CompareFullscreen g={g} base={base} />} />
         )}
       </div>
     );
@@ -263,24 +264,36 @@ function DiffCanvas({ after, before, rect, tagStyle }: { after: string; before: 
     <>
       <canvas ref={ref} className="compare-diff" />
       <span className="compare-tag left" style={tagStyle}>
-        {error ? "Could not compare the images" : share === null ? "Comparing…" : share < 0.001 ? "No visible change" : `≈${share < 0.01 ? "<1" : Math.round(share * 100)}% of the image changed`}
+        {error ? t("compare.compareFailed") : share === null ? t("compare.comparing") : share < 0.001 ? t("compare.noChange") : t("compare.changedShare", { pct: share < 0.01 ? "<1" : Math.round(share * 100) })}
       </span>
     </>
   );
 }
 
-const MODE_SUB: Record<CompareMode, string> = { off: "the new version", slider: "drag across it", flicker: "back and forth", diff: "what changed" };
+function modeSub(m: CompareMode): string {
+  switch (m) {
+    case "off":
+      return t("compare.subResult");
+    case "slider":
+      return t("compare.subSlider");
+    case "flicker":
+      return t("compare.subFlicker");
+    case "diff":
+      return t("compare.subChanges");
+  }
+}
 
 /** A phone: the views behind one small button on the picture (four side by side don't fit a
  * narrow picture); its sheet offers them, and Flicker's speeds. */
 function PhoneCompare() {
   const mode = useStore((s) => s.compare);
   const flickerMs = useStore((s) => s.flickerMs);
+  const MODES = modes();
   return (
     <div className="compare-pill-wrap" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
       <Popover
         trigger={(open, toggle) => (
-          <button className={`compare-pill ${open ? "on" : ""}`} onClick={toggle} title="Compare with the original">
+          <button className={`compare-pill ${open ? "on" : ""}`} onClick={toggle} title={t("compare.withOriginal")}>
             <SquareSplitHorizontal size={15} />
             {MODES.find((m) => m.value === mode)?.label}
             <ChevronDown size={13} />
@@ -289,13 +302,13 @@ function PhoneCompare() {
       >
         {(close) => (
           <>
-            <div className="label">Compare with the original</div>
+            <div className="label">{t("compare.withOriginal")}</div>
             {MODES.map((m) => (
               <Option
                 key={m.value}
                 selected={mode === m.value}
                 label={m.label}
-                sub={MODE_SUB[m.value]}
+                sub={modeSub(m.value)}
                 onClick={() => {
                   haptic();
                   setState({ compare: m.value });
@@ -305,8 +318,8 @@ function PhoneCompare() {
             ))}
             {mode === "flicker" && (
               <div className="compare-speed">
-                <span className="muted">Speed</span>
-                <Seg value={String(flickerMs)} options={SPEEDS} onChange={(v) => setState({ flickerMs: Number(v) })} />
+                <span className="muted">{t("compare.speed")}</span>
+                <Seg value={String(flickerMs)} options={speeds()} onChange={(v) => setState({ flickerMs: Number(v) })} />
               </div>
             )}
           </>
@@ -324,13 +337,13 @@ export function CompareBar() {
     <div className="compare-bar">
       <Seg
         value={mode}
-        options={MODES}
+        options={modes()}
         onChange={(v) => {
           if (isNarrow()) haptic();
           setState({ compare: v });
         }}
       />
-      {mode === "flicker" && <Seg value={String(flickerMs)} options={SPEEDS} onChange={(v) => setState({ flickerMs: Number(v) })} />}
+      {mode === "flicker" && <Seg value={String(flickerMs)} options={speeds()} onChange={(v) => setState({ flickerMs: Number(v) })} />}
     </div>
   );
 }

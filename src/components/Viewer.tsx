@@ -9,6 +9,7 @@ import { haptic } from "../lib/haptics";
 import { native } from "../lib/native";
 import { inBrowser } from "../lib/platform";
 import { useBlackStatusBar } from "../lib/theme";
+import { t } from "../lib/i18n";
 import { ZoomPan } from "./ZoomPan";
 
 export const isTyping = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
@@ -39,8 +40,8 @@ export function FullscreenButton({ content, hint, onOpen }: { content?: ReactNod
     <>
       <button
         className="fullscreen-btn"
-        title="Full screen (F)"
-        aria-label="View full screen"
+        title={t("viewer.fullScreenTooltip")}
+        aria-label={t("viewer.viewFullScreen")}
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => {
           e.stopPropagation();
@@ -106,8 +107,8 @@ export function NavArrows({ nav, visible }: { nav: ViewerNav; visible: boolean }
     go && (
       <button
         className={`nav-arrow ${side} ${visible ? "" : "hidden"}`}
-        title={side === "left" ? "Previous (←)" : "Next (→)"}
-        aria-label={side === "left" ? "Previous image" : "Next image"}
+        title={side === "left" ? t("viewer.previousTooltip") : t("viewer.nextTooltip")}
+        aria-label={side === "left" ? t("viewer.previousImage") : t("viewer.nextImage")}
         onClick={(e) => {
           e.stopPropagation();
           go();
@@ -250,7 +251,7 @@ function FullscreenShell({ children, hint, onClose, nav }: { children: ReactNode
     <div
       className="viewer"
       role="dialog"
-      aria-label="Full screen"
+      aria-label={t("viewer.fullScreen")}
       onPointerDown={stop}
       onPointerMove={(e) => {
         stop(e);
@@ -272,8 +273,8 @@ function FullscreenShell({ children, hint, onClose, nav }: { children: ReactNode
       {nav && <NavArrows nav={nav} visible={active} />}
       <div className="viewer-bar">
         {nav?.pos && <span className="viewer-tag">{nav.pos}</span>}
-        <span className="viewer-hint">{hint ? `${hint} · ` : ""}{nav ? "← → to browse · " : ""}Esc to exit</span>
-        <button className="viewer-close" title="Exit full screen (Esc)" aria-label="Exit full screen" onClick={onClose}>
+        <span className="viewer-hint">{[hint, nav ? t("viewer.browseHint") : "", t("viewer.escToExit")].filter(Boolean).join(" · ")}</span>
+        <button className="viewer-close" title={t("viewer.exitFullScreenTooltip")} aria-label={t("viewer.exitFullScreen")} onClick={onClose}>
           <X size={18} />
         </button>
       </div>

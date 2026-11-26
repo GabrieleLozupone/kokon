@@ -7,9 +7,11 @@ import { useEffect, useMemo, useState } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { encode } from "uqr";
 import { api, type RemoteStatus } from "../lib/api";
+import { t } from "../lib/i18n";
 import { native } from "../lib/native";
 import { VIDEOS } from "../lib/videos";
 import { toastError, toastInfo } from "../lib/store";
+import { Trans } from "./Trans";
 import { Switch } from "./ui";
 
 const GUIDE_URL = "https://github.com/GabrieleLozupone/kokon/blob/master/docs/remote-access.md";
@@ -23,7 +25,7 @@ function QrCode({ text }: { text: string }) {
     return { path: d, size: qr.size };
   }, [text]);
   return (
-    <svg className="qr" viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`QR code for ${text}`} shapeRendering="crispEdges">
+    <svg className="qr" viewBox={`0 0 ${size} ${size}`} role="img" aria-label={t("remote.qrLabel", { url: text })} shapeRendering="crispEdges">
       <rect width={size} height={size} fill="#fff" />
       <path d={path} fill="#000" />
     </svg>
@@ -45,7 +47,7 @@ function PasswordForm({ status, onSaved }: { status: RemoteStatus; onSaved: (s: 
       if (first && !s.enabled) s = await api.setRemote(true);
       setPassword("");
       onSaved(s);
-      toastInfo(first ? "Password set" : "Password changed. Other devices sign in again.");
+      toastInfo(first ? t("remote.passwordSet") : t("remote.passwordChanged"));
     } catch (err) {
       toastError(err);
     } finally {
@@ -54,22 +56,22 @@ function PasswordForm({ status, onSaved }: { status: RemoteStatus; onSaved: (s: 
   };
   return (
     <form className="field" onSubmit={save}>
-      <span>{status.password_set ? "Change the password" : "Choose a password"}</span>
+      <span>{status.password_set ? t("remote.changePassword") : t("remote.choosePassword")}</span>
       <div className="path-row">
         <input
           className="input"
           type="password"
           autoComplete="new-password"
-          placeholder={`At least ${status.min_password_chars} characters`}
+          placeholder={t("remote.minChars", { count: status.min_password_chars })}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
         <button className="btn primary" type="submit" disabled={!password || short || busy}>
-          {status.password_set ? "Change" : "Set and turn on"}
+          {status.password_set ? t("remote.change") : t("remote.setAndTurnOn")}
         </button>
       </div>
       <span className="muted">
-        {short ? `At least ${status.min_password_chars} characters.` : "Each browser asks for it once. Stored only as a secure hash on this computer."}
+        {short ? t("remote.minCharsSentence", { count: status.min_password_chars }) : t("remote.passwordHint")}
       </span>
     </form>
   );
@@ -92,7 +94,7 @@ export function RemoteAccess() {
     }
   };
   const removePassword = async () => {
-    if (!(await native.confirm("Remove the password? Access from other devices turns off, and every browser is signed out.", "Remove password"))) return;
+    if (!(await native.confirm(t("remote.removePasswordConfirm"), t("remote.removePasswordTitle")))) return;
     try {
       setSt(await api.removeRemotePassword());
     } catch (e) {
@@ -102,65 +104,56 @@ export function RemoteAccess() {
 
   return (
     <>
-      <span className="muted">
-        Open Kokon in a browser on your phone, tablet or another computer on the same network. Images are made on this computer and saved in its gallery; each device can download
-        them.
-      </span>
+      <span className="muted">{t("remote.intro")}</span>
       {!st.password_set ? (
         <PasswordForm status={st} onSaved={setSt} />
       ) : (
         <>
           <div className="field-row">
-            <span>Allow access from other devices</span>
+            <span>{t("remote.allowAccess")}</span>
             <Switch on={st.enabled} onChange={toggle} />
           </div>
-          {st.forced && <span className="muted">Turned on for this run by kokon-service --remote.</span>}
+          {st.forced && <span className="muted">{t("remote.forced")}</span>}
           {st.listening && st.url && (
             <div className="setting-card remote-open">
               <QrCode text={st.url} />
               <div className="setting-card-text">
-                <strong>Scan it with your phone's camera</strong>
+                <strong>{t("remote.scan")}</strong>
                 <span className="muted">
-                  Or open <span className="remote-url">{st.url}</span> on the other device. To keep Kokon on the home screen like an app: on iPhone, Share → Add to Home Screen; on
-                  Android, the browser's menu → Add to Home screen. The router can give this computer another address later: reserve it in the router's settings (DHCP
-                  reservation) so the icon keeps working.
+                  <Trans k="remote.openOnDevice" vars={{ url: st.url }} tags={{ url: (s) => <span className="remote-url">{s}</span> }} />
                 </span>
-                <button className="btn" style={{ alignSelf: "flex-start", marginTop: 6 }} onClick={() => writeText(st.url!).then(() => toastInfo("Address copied"), toastError)}>
-                  <Copy size={14} /> Copy address
+                <button className="btn" style={{ alignSelf: "flex-start", marginTop: 6 }} onClick={() => writeText(st.url!).then(() => toastInfo(t("remote.addressCopied")), toastError)}>
+                  <Copy size={14} /> {t("remote.copyAddress")}
                 </button>
               </div>
             </div>
           )}
-          {st.listening && !st.url && <span className="muted">On, at port {st.port} of this computer's network address.</span>}
+          {st.listening && !st.url && <span className="muted">{t("remote.onAtPort", { port: st.port })}</span>}
           {st.error && <span className="muted">{st.error}</span>}
           <label className="field-row">
-            <span>Port</span>
+            <span>{t("remote.port")}</span>
             <input className="input" type="number" min={1024} max={65535} style={{ width: 100 }} value={port} onChange={(e) => setPort(e.target.value)} onBlur={() => st.enabled && Number(port) !== st.port && toggle(true)} />
           </label>
           <PasswordForm status={st} onSaved={setSt} />
           <div className="field-row">
-            <span>Remove the password and turn access off</span>
+            <span>{t("remote.removePasswordRow")}</span>
             <button className="btn" onClick={removePassword}>
-              Remove
+              {t("common.remove")}
             </button>
           </div>
         </>
       )}
       <div className="setting-card" style={{ alignItems: "flex-start" }}>
         <div className="setting-card-text">
-          <strong>Good to know</strong>
-          <span className="muted">
-            It works while Kokon is open on this computer. Use it on a network you trust, like your home Wi-Fi: the connection is not encrypted, so avoid public or shared networks. To
-            reach Kokon from outside, use a private network such as Tailscale, never port forwarding on your router. The first time, your system may ask to allow Kokon on the
-            network: allow it on private networks.
-          </span>
+          <strong>{t("remote.goodToKnow")}</strong>
+          <span className="muted">{t("remote.goodToKnowText")}</span>
         </div>
         <div className="row-btns">
-          <button className="btn" onClick={() => native.openLink(VIDEOS.remote011.url).catch(toastError)} title="A video of setting it up on a phone, on YouTube (opens in your browser)">
-            <CirclePlay size={14} /> Video
+          <button className="btn" onClick={() => native.openLink(VIDEOS.remote011.url).catch(toastError)} title={t("remote.videoTitle")}>
+            <CirclePlay size={14} /> {t("remote.video")}
           </button>
           <button className="btn" onClick={() => native.openLink(GUIDE_URL).catch(toastError)}>
-            <ExternalLink size={14} /> Guide
+            <ExternalLink size={14} /> {t("remote.guide")}
           </button>
         </div>
       </div>

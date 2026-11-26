@@ -5,11 +5,12 @@
 // every project is kept as ids in `projects` (persisted) and re-loaded from the service when
 // opened again.
 
+import { t } from "./i18n";
 import { inBrowser, isNarrow } from "./platform";
 import { useSyncExternalStore } from "react";
 import { markFresh } from "../components/Cocoon";
 import { api, ApiError, setPrivateInputs, subscribe, urls } from "./api";
-import { activeLoras, buildRequest, composing, emptyComposer, goneVersions, isGenericName, macEngineDefaultDue, needsPrompt, newKey, pageOutdated, persistentAdvanced, refFromGen, refFromInput, reviewRequest, stageFitsPreview, starPromptDue, timelineLinks, typedWords, undoTarget, versionLabels, wantsPromptReview, type CompareMode, type Composer, type Ref } from "./logic";
+import { activeLoras, buildRequest, composing, emptyComposer, goneVersions, imageName, isGenericName, macEngineDefaultDue, needsPrompt, newKey, pageOutdated, persistentAdvanced, refFromGen, refFromInput, reviewRequest, stageFitsPreview, starPromptDue, timelineLinks, typedWords, undoTarget, versionLabels, wantsPromptReview, type CompareMode, type Composer, type Ref } from "./logic";
 import { keepLabsIn, labsChanged, labSources, loadLab, type LabStore } from "./layerDoc";
 import type { AppErrorBody, GenerationRecord, GenerationRequest, InputRecord, JobView, LoraItem, MacBenchState, ServerState, StatusResponse } from "./types";
 
@@ -338,10 +339,10 @@ function titleOf(items: SessionItem[]): string | null {
     const p = prompt(i);
     if (p) return p;
     if (i.input) {
-      const name = i.input.original_name ? safeDecode(i.input.original_name) : "Imported image";
-      // A file name that says nothing ("image.png", "IMG_1234.jpg"): the project's first prompt,
-      // so it can be told apart in the list.
-      return isGenericName(name) ? (items.map(prompt).find(Boolean) ?? name) : name;
+      const name = i.input.original_name ? safeDecode(i.input.original_name) : t("store.importedImage");
+      // A file name that says nothing ("image.png", "IMG_1234.jpg"), or none: the project's first
+      // prompt, so it can be told apart in the list.
+      return !i.input.original_name || isGenericName(name) ? (items.map(prompt).find(Boolean) ?? name) : name;
     }
   }
   return null;
@@ -384,7 +385,7 @@ function syncProject(prev: State) {
   projects[id] = {
     meta: {
       id,
-      title: old?.meta.named ? old.meta.title : titleOf(state.session) ?? old?.meta.title ?? "Untitled",
+      title: old?.meta.named ? old.meta.title : titleOf(state.session) ?? old?.meta.title ?? t("store.untitled"),
       named: old?.meta.named,
       updatedAt: edited || !old ? Date.now() : old.meta.updatedAt,
       cover: lastCover(items, old?.lab ?? labsHere.get(id)),
@@ -567,7 +568,7 @@ export async function turnOnMacEngine(): Promise<void> {
     const cfg = await api.config();
     const ui = { ...((cfg.ui ?? {}) as Record<string, unknown>), macEngineOffered: true };
     await api.saveConfig({ ...cfg, macEngine: true, ui });
-    toastInfo("Kokon's Mac engine is on: about 4 times faster. LoRAs and the upscaler model need the standard engine (Settings → Performance).");
+    toastInfo(t("store.macEngineOn"));
   } catch (e) {
     toastError(e);
   }
@@ -823,7 +824,7 @@ export async function setPrivateMode(on: boolean, confirmDiscard: () => Promise<
   setPrivateInputs(on);
   // The project being left was saved already (normal mode) or is discarded (private mode).
   setState((st) => ({ privateMode: on, projectId: newKey(), session: [], selected: null, overlay: null, redo: [], composer: emptyComposer(st.composer) }));
-  if (on) toastInfo("Private mode: images are not saved, and are deleted when you turn it off or close the app.");
+  if (on) toastInfo(t("store.privateModeOn"));
   if (!isNarrow()) focusPrompt();
 }
 
@@ -950,7 +951,7 @@ export async function endTour() {
 export function projectTitle(prompt?: string): string {
   const old = projects[state.projectId];
   if (old?.meta.named) return old.meta.title;
-  return titleOf(state.session) ?? (prompt?.trim() || old?.meta.title || "Untitled");
+  return titleOf(state.session) ?? (prompt?.trim() || old?.meta.title || t("store.untitled"));
 }
 
 /** Gives a project a name; an empty name goes back to naming it after its first prompt. */
@@ -958,7 +959,7 @@ export function renameProject(id: string, name: string) {
   const title = name.trim().replace(/\s+/g, " ").slice(0, 120);
   const p = projects[id] ?? { meta: { id, title: "", updatedAt: Date.now(), cover: null, count: 0 }, items: [], selected: null };
   const auto = id === state.projectId ? titleOf(state.session) : null;
-  p.meta = title ? { ...p.meta, title, named: true } : { ...p.meta, title: auto ?? p.meta.title ?? "Untitled", named: false };
+  p.meta = title ? { ...p.meta, title, named: true } : { ...p.meta, title: auto ?? p.meta.title ?? t("store.untitled"), named: false };
   projects[id] = p;
   persistProjects([id]);
   setState({ projects: projectList() });
@@ -1136,7 +1137,7 @@ export function reusePrompt(g: GenerationRecord) {
       sources.from.forEach((src, i) => {
         const here = refOf(s.session.find((x) => itemSource(x) === src));
         const rec = g.references[i];
-        const ref = here ?? (rec ? { key: newKey(), source: `input:${rec.input_id}`, width: rec.width, height: rec.height, name: `Image ${i + 1}` } : null);
+        const ref = here ?? (rec ? { key: newKey(), source: `input:${rec.input_id}`, width: rec.width, height: rec.height, name: imageName(String(i + 1)) } : null);
         if (ref) refs.push(ref);
       });
     }
@@ -1212,7 +1213,7 @@ export function addInputs(records: InputRecord[]) {
       selected: items[0].key,
     };
   });
-  if (getState().composer.refs.length >= 10) toastInfo("Up to 10 reference images are supported.");
+  if (getState().composer.refs.length >= 10) toastInfo(t("store.maxReferences", { count: 10 }));
 }
 
 /** Images made in the app (the layers lab's split): new versions at the end of the project, not
@@ -1271,7 +1272,7 @@ export async function submitComposer() {
   // Made from the layers lab: a step, out of the gallery (only the image saved from the lab shows).
   if (s.overlay === "layers" || isLabStep(target)) req.hidden = true;
   if (!typedWords(s.composer) && needsPrompt(s.composer)) {
-    toastInfo("Describe what to create or change.");
+    toastInfo(t("store.describeWhat"));
     return;
   }
   if (await submitRequest(req)) {
@@ -1326,11 +1327,11 @@ export function addAsReference(item: SessionItem) {
   const ref = item.gen ? refFromGen(item.gen) : item.input ? refFromInput(item.input) : null;
   if (!ref) return;
   if (getState().composer.refs.some((r) => r.source === ref.source)) {
-    toastInfo("That image is already in the prompt.");
+    toastInfo(t("store.imageAlreadyInPrompt"));
     return;
   }
   if (getState().composer.refs.length >= 10) {
-    toastInfo("Up to 10 reference images are supported.");
+    toastInfo(t("store.maxReferences", { count: 10 }));
     return;
   }
   setState((s) => ({ composer: { ...s.composer, refs: [...s.composer.refs, ref].slice(0, 10), create: s.composer.refs.length ? s.composer.create : true, outpaint: null } }));

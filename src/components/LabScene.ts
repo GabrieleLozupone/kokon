@@ -11,7 +11,8 @@ import { Segmenter } from "../lib/sam";
 import { blendKeep } from "../lib/blend";
 import { alignEdit, attached, blur, changed, darkness, IDENTITY, invertAffine, luminance, MARK_COLOURS, objectAt, scaleAffine, splitShadows, toneCurve, type Affine, type MarkColour } from "../lib/sceneEdit";
 import type { InputRecord } from "../lib/types";
-import { loadImage, pixels, drawSource, sourceInfo, toPng } from "./LayerDoc";
+import { colourName, loadImage, pixels, drawSource, sourceInfo, toPng } from "./LayerDoc";
+import { t } from "../lib/i18n";
 
 /** Long side of the analysis (shadows are soft: no need for every pixel). */
 const SIDE = 1536;
@@ -96,8 +97,8 @@ const total = (m: ArrayLike<number>) => {
 
 /** "a green glass bottle" -> "Green glass bottle". */
 export function layerName(what: string, colour: MarkColour): string {
-  const t = what.trim().replace(/^(a|an|the|some|another)\s+/i, "");
-  return t ? t[0].toUpperCase() + t.slice(1, 40) : `New object (${colour})`;
+  const s = what.trim().replace(/^(a|an|the|some|another)\s+/i, "");
+  return s ? s[0].toUpperCase() + s.slice(1, 40) : t("lab.newObjectName", { colour: colourName(colour) });
 }
 
 interface Pair {
@@ -306,7 +307,7 @@ export async function readScene(doc: LayerDoc, e: SceneEdit, result: string): Pr
       let obj = objectAt(cand, dilate(mk.m, w, h, Math.round(Math.max(w, h) * 0.01)), w, h);
       const area = total(obj) / 255;
       if (area < w * h * 0.0002) {
-        out.notes.push(`Nothing new was found at the ${mk.colour} marks.`);
+        out.notes.push(t("lab.nothingAtMarks", { colour: colourName(mk.colour) }));
         continue;
       }
       obj = await samOutline(p, obj, w, h);
@@ -334,7 +335,7 @@ export async function readScene(doc: LayerDoc, e: SceneEdit, result: string): Pr
     // The objects not blended were not in what Qwen got: the Blend layer on top leaves them showing.
     for (const [id, m] of feet) if (!e.shadows.includes(id)) for (let i = 0; i < m.length; i++) if (m[i]) r.alpha[i] = 0;
     if (r.n < w * h * 0.0003) {
-      out.notes.push("Nothing was added round the objects. Blend again, or check what the AI read.");
+      out.notes.push(t("lab.nothingBlended"));
       return out;
     }
     // Qwen's image at full size, its overall tone brought back to the original's (colours kept).
@@ -377,7 +378,7 @@ export async function readScene(doc: LayerDoc, e: SceneEdit, result: string): Pr
       if (near[i] || !keep[i]) continue;
       alpha[i] = Math.round(Math.min(1, dark[i]) * 255);
     }
-    if (total(alpha) < 255 * w * h * 0.0003) out.notes.push("No shadow was found.");
+    if (total(alpha) < 255 * w * h * 0.0003) out.notes.push(t("lab.noShadow"));
     else out.shadows.push({ of: "all", src: `input:${(await upload(alpha, w, h, W, H, "Shadows")).id}` });
     return out;
   }
@@ -389,7 +390,7 @@ export async function readScene(doc: LayerDoc, e: SceneEdit, result: string): Pr
     for (let k = 0; k < targets.length; k++) {
       // Less than a hint of shadow: nothing to add.
       if (total(split[k]) < 255 * w * h * 0.0003) {
-        out.notes.push(`No shadow was found for ${nameOf(doc, targets[k].of, out)}.`);
+        out.notes.push(t("lab.noShadowFor", { name: nameOf(doc, targets[k].of, out) }));
         continue;
       }
       const rec = await upload(split[k], w, h, W, H, `${nameOf(doc, targets[k].of, out)} shadow`);

@@ -10,30 +10,32 @@
 // Everything here works on plain arrays (one byte per pixel, or RGBA).
 
 import type { SceneReading } from "./types";
+import { t } from "./i18n";
 import { dilate, erode } from "./layers";
 import { blur, fillHoles, luminance } from "./sceneEdit";
 
 type Surface = SceneReading["surface"];
 type Fall = SceneReading["shadows_fall"];
 
-/** The choices the dialog offers, as the user reads them. */
+/** The choices the dialog offers, as the user reads them (labels are getters: read when shown, so
+ * they follow the UI language). */
 export const SURFACES: { id: Surface; label: string }[] = [
-  { id: "dry", label: "Dry ground" },
-  { id: "wet", label: "Wet ground" },
-  { id: "water", label: "Puddle or water" },
-  { id: "glossy", label: "Glossy or polished" },
-  { id: "grass", label: "Grass" },
-  { id: "soil", label: "Sand or soil" },
-  { id: "snow", label: "Snow" },
-  { id: "fabric", label: "Carpet or fabric" },
-  { id: "other", label: "Something else" },
+  { id: "dry", get label() { return t("blend.surfaceDry"); } },
+  { id: "wet", get label() { return t("blend.surfaceWet"); } },
+  { id: "water", get label() { return t("blend.surfaceWater"); } },
+  { id: "glossy", get label() { return t("blend.surfaceGlossy"); } },
+  { id: "grass", get label() { return t("blend.surfaceGrass"); } },
+  { id: "soil", get label() { return t("blend.surfaceSoil"); } },
+  { id: "snow", get label() { return t("blend.surfaceSnow"); } },
+  { id: "fabric", get label() { return t("blend.surfaceFabric"); } },
+  { id: "other", get label() { return t("blend.surfaceOther"); } },
 ];
 export const FALLS: { id: Fall; label: string }[] = [
-  { id: "under", label: "Under it" },
-  { id: "left", label: "To the left" },
-  { id: "right", label: "To the right" },
-  { id: "front", label: "Towards the camera" },
-  { id: "back", label: "Away from the camera" },
+  { id: "under", get label() { return t("blend.shadowsFallUnder"); } },
+  { id: "left", get label() { return t("blend.shadowsFallLeft"); } },
+  { id: "right", get label() { return t("blend.shadowsFallRight"); } },
+  { id: "front", get label() { return t("blend.shadowsFallFront"); } },
+  { id: "back", get label() { return t("blend.shadowsFallBack"); } },
 ];
 
 /** What is safe when the scene could not be read: dry ground, a soft shadow under it. */

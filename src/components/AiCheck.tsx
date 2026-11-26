@@ -6,26 +6,39 @@
 import { Copy, ScanSearch, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, type AiCheckReport } from "../lib/api";
+import { t } from "../lib/i18n";
 import { native } from "../lib/native";
 import { setState, toastError, toastInfo } from "../lib/store";
 
-/** The IPTC Digital Source Type in plain words. */
-const SOURCE_WORDS: Record<string, string> = {
-  trainedAlgorithmicMedia: "made with generative AI",
-  compositeWithTrainedAlgorithmicMedia: "made or changed with generative AI",
-  algorithmicallyEnhanced: "enhanced by software (not generated)",
-  digitalCapture: "a photo from a camera",
-  algorithmicMedia: "made by an algorithm (not AI)",
-  compositeSynthetic: "a composite with synthetic parts",
-  composite: "a composite of several images",
-  screenCapture: "a screenshot",
-};
+/** The IPTC Digital Source Type in plain words (undefined for a type it doesn't know). */
+function sourceWords(type: string): string | undefined {
+  switch (type) {
+    case "trainedAlgorithmicMedia":
+      return t("aiCheck.sourceTrainedAlgorithmicMedia");
+    case "compositeWithTrainedAlgorithmicMedia":
+      return t("aiCheck.sourceCompositeWithTrainedAlgorithmicMedia");
+    case "algorithmicallyEnhanced":
+      return t("aiCheck.sourceAlgorithmicallyEnhanced");
+    case "digitalCapture":
+      return t("aiCheck.sourceDigitalCapture");
+    case "algorithmicMedia":
+      return t("aiCheck.sourceAlgorithmicMedia");
+    case "compositeSynthetic":
+      return t("aiCheck.sourceCompositeSynthetic");
+    case "composite":
+      return t("aiCheck.sourceComposite");
+    case "screenCapture":
+      return t("aiCheck.sourceScreenCapture");
+    default:
+      return undefined;
+  }
+}
 
 /** The headline and its tone. */
 function verdict(r: AiCheckReport): { title: string; tone: "ai" | "none" } {
-  if (r.watermark.kokon) return { title: "Made or changed with AI in Kokon", tone: "ai" };
-  if (r.metadata.ai) return { title: `Marked as ${SOURCE_WORDS[r.metadata.digital_source_type ?? ""] ?? "made with AI"}`, tone: "ai" };
-  return { title: "No AI marking found", tone: "none" };
+  if (r.watermark.kokon) return { title: t("aiCheck.verdictKokon"), tone: "ai" };
+  if (r.metadata.ai) return { title: t("aiCheck.markedAs", { what: sourceWords(r.metadata.digital_source_type ?? "") ?? t("aiCheck.madeWithAi") }), tone: "ai" };
+  return { title: t("aiCheck.noMarking"), tone: "none" };
 }
 
 export function AiCheck() {
@@ -57,7 +70,7 @@ export function AiCheck() {
 
   const copy = () => {
     if (!report) return;
-    native.copyText(JSON.stringify({ file: name, ...report }, null, 2)).then(() => toastInfo("Report copied"), toastError);
+    native.copyText(JSON.stringify({ file: name, ...report }, null, 2)).then(() => toastInfo(t("aiCheck.reportCopied")), toastError);
   };
 
   const v = report && verdict(report);
@@ -65,58 +78,55 @@ export function AiCheck() {
   const md = report?.metadata;
   return (
     <div className="modal-scrim" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div className="tips ai-check" role="dialog" aria-label="Check an image for AI marking">
+      <div className="tips ai-check" role="dialog" aria-label={t("aiCheck.dialogLabel")}>
         <div className="tips-head">
           <ScanSearch size={20} />
-          <h1>Check an image</h1>
+          <h1>{t("aiCheck.title")}</h1>
           <span className="spacer" />
-          <button className="icon-btn" onClick={close} aria-label="Close">
+          <button className="icon-btn" onClick={close} aria-label={t("common.close")}>
             <X size={18} />
           </button>
         </div>
         <div className="tips-body">
-          <p className="muted">
-            Kokon marks every image it makes or changes with AI twice: in the file's information, and with an invisible watermark that stays when the file is copied,
-            resized or turned into a JPEG. Check any image here. It is read on the computer running Kokon and not kept.
-          </p>
+          <p className="muted">{t("aiCheck.intro")}</p>
           <div className="ai-check-pick">
             <button className="btn primary" onClick={choose} disabled={busy}>
-              {busy ? "Checking…" : report ? "Check another image" : "Choose an image"}
+              {busy ? t("aiCheck.checking") : report ? t("aiCheck.checkAnother") : t("aiCheck.choose")}
             </button>
             {name && <span className="muted ai-check-name">{name}</span>}
           </div>
           {report && v && wm && md && (
             <section className="ai-check-result" aria-live="polite">
               <h2 className={v.tone === "ai" ? "ai-yes" : ""}>{v.title}</h2>
-              {v.tone === "none" && <p className="muted">That does not prove it was not made with AI: markings can be removed, and not every app adds them.</p>}
+              {v.tone === "none" && <p className="muted">{t("aiCheck.noProof")}</p>}
               <dl>
-                <dt>Invisible watermark</dt>
+                <dt>{t("aiCheck.watermark")}</dt>
                 <dd>
                   {!wm.checked
-                    ? "Not checked: the watermark model is not installed."
+                    ? t("aiCheck.watermarkNotChecked")
                     : wm.kokon
-                      ? `Kokon's (TrustMark, reads "${wm.text}")`
+                      ? t("aiCheck.watermarkKokon", { text: wm.text ?? "" })
                       : wm.found
-                        ? `A TrustMark watermark from another app (reads "${wm.text}")`
-                        : "None found"}
+                        ? t("aiCheck.watermarkOther", { text: wm.text ?? "" })
+                        : t("aiCheck.watermarkNone")}
                 </dd>
-                <dt>File information</dt>
-                <dd>{md.digital_source_type ? `Says it is ${SOURCE_WORDS[md.digital_source_type] ?? md.digital_source_type}` : "Says nothing about how it was made"}</dd>
+                <dt>{t("aiCheck.fileInfo")}</dt>
+                <dd>{md.digital_source_type ? t("aiCheck.saysItIs", { what: sourceWords(md.digital_source_type) ?? md.digital_source_type }) : t("aiCheck.saysNothing")}</dd>
                 {md.creator_tool && (
                   <>
-                    <dt>Made with</dt>
+                    <dt>{t("aiCheck.madeWith")}</dt>
                     <dd>{md.creator_tool}</dd>
                   </>
                 )}
-                <dt>Content Credentials</dt>
-                <dd>{md.c2pa_manifest ? "Present (not verified here)" : "None"}</dd>
+                <dt>{t("aiCheck.contentCredentials")}</dt>
+                <dd>{md.c2pa_manifest ? t("aiCheck.c2paPresent") : t("aiCheck.c2paNone")}</dd>
               </dl>
               <div className="ai-check-foot">
                 <span className="muted" title={report.sha256}>
-                  {report.width}×{report.height} · SHA-256 {report.sha256.slice(0, 12)}…
+                  {t("aiCheck.sizeHash", { width: report.width, height: report.height, hash: report.sha256.slice(0, 12) })}
                 </span>
                 <button className="btn" onClick={copy}>
-                  <Copy size={14} /> Copy report
+                  <Copy size={14} /> {t("aiCheck.copyReport")}
                 </button>
               </div>
             </section>
@@ -133,11 +143,11 @@ export function AiMarkingCard() {
     <div className="repo-card ai-marking-card">
       <ScanSearch size={22} className="support-mark" aria-hidden />
       <div className="body">
-        <strong>AI marking</strong>
-        <span className="muted">Images Kokon makes or changes say so in their file information and in an invisible watermark, as the EU AI Act asks. Please don't remove them.</span>
+        <strong>{t("aiCheck.markingTitle")}</strong>
+        <span className="muted">{t("aiCheck.markingText")}</span>
       </div>
       <button className="btn" onClick={() => setState({ overlay: "ai-check" })}>
-        Check an image
+        {t("aiCheck.title")}
       </button>
     </div>
   );

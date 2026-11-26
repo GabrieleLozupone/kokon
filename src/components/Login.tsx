@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiError, api } from "../lib/api";
 import { KokonMark } from "./Welcome";
+import { t } from "../lib/i18n";
 
 export function Login({ onSignedIn }: { onSignedIn: () => void }) {
   const [password, setPassword] = useState("");
@@ -27,7 +28,7 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
       await api.login(password);
       onSignedIn();
     } catch (err) {
-      setError(err instanceof ApiError ? err.body.message : "Kokon is not reachable.");
+      setError(err instanceof ApiError ? err.body.message : t("login.notReachable"));
       setPassword("");
       input.current?.focus();
     } finally {
@@ -38,19 +39,19 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
   return (
     <form className="login" onSubmit={submit}>
       <KokonMark size={48} />
-      <strong>Sign in to Kokon</strong>
+      <strong>{t("login.title")}</strong>
       {noPassword ? (
-        <span className="muted">No password is set yet. On the computer running Kokon, open Settings → Other devices and set one.</span>
+        <span className="muted">{t("login.noPassword")}</span>
       ) : (
         <>
-          <span className="muted">Enter the password set on the computer running Kokon. This browser stays signed in.</span>
+          <span className="muted">{t("login.enterPassword")}</span>
           <input
             ref={input}
             className="input"
             type="password"
             autoComplete="current-password"
-            placeholder="Password"
-            aria-label="Password"
+            placeholder={t("login.password")}
+            aria-label={t("login.password")}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
@@ -60,7 +61,7 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
             </span>
           )}
           <button className="btn primary" type="submit" disabled={!password || busy}>
-            {busy ? "Signing in…" : "Sign in"}
+            {busy ? t("login.signingIn") : t("login.signIn")}
           </button>
         </>
       )}

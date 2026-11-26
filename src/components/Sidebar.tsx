@@ -6,6 +6,7 @@ import { native } from "../lib/native";
 import { deleteProject, deleteProjects, newProject, renameProject, setState, switchProject, useStore } from "../lib/store";
 import { IconButton, NameField } from "./ui";
 import { KokonMark } from "./Welcome";
+import { t } from "../lib/i18n";
 
 const CLOSED_KEY = "kokon.sidebarClosed";
 
@@ -85,7 +86,7 @@ export function Sidebar() {
   const removePicked = async () => {
     if (!picked?.size) return;
     const n = picked.size;
-    const ok = await native.confirm(`Remove ${n} ${n === 1 ? "project" : "projects"} from the list? Their images stay in All images.`, "Remove projects");
+    const ok = await native.confirm(t("sidebar.removeConfirm", { count: n }), t("sidebar.removeProjects"));
     if (!ok) return;
     deleteProjects([...picked]);
     setPicked(null);
@@ -121,7 +122,7 @@ export function Sidebar() {
                 } else if (e.key === "F2" && !selecting) setRenaming(p.id);
                 else if ((e.key === "Delete" || e.key === "Backspace") && selecting) removePicked();
               }}
-              title={selecting ? p.title : `${p.title}\n${p.count} ${p.count === 1 ? "version" : "versions"} · ${timeAgo(p.updatedAt)}\nDouble-click or F2 to rename · Ctrl/⌘-click to select several`}
+              title={selecting ? p.title : t("sidebar.projectTooltip", { title: p.title, count: p.count, ago: timeAgo(p.updatedAt) })}
             >
               <span className="cover">
                 {p.cover && <img src={urls.sourceThumb(p.cover)} alt="" draggable={false} loading="lazy" />}
@@ -138,8 +139,8 @@ export function Sidebar() {
                 <>
                   <button
                     className="proj-rm"
-                    title="Rename"
-                    aria-label="Rename project"
+                    title={t("common.rename")}
+                    aria-label={t("sidebar.renameProject")}
                     onClick={(e) => {
                       e.stopPropagation();
                       setRenaming(p.id);
@@ -149,8 +150,8 @@ export function Sidebar() {
                   </button>
                   <button
                     className="proj-rm"
-                    title="Remove from list (images stay in All images)"
-                    aria-label="Remove project"
+                    title={t("sidebar.removeFromListTooltip")}
+                    aria-label={t("sidebar.removeProject")}
                     onClick={(e) => {
                       e.stopPropagation();
                       deleteProject(p.id);
@@ -168,28 +169,28 @@ export function Sidebar() {
     <aside className={`sidebar ${selecting ? "selecting" : ""}`}>
       <div className="side-head" data-tauri-drag-region>
         <Wordmark />
-        <IconButton title="Hide sidebar" onClick={() => setState({ sidebar: false })}>
+        <IconButton title={t("sidebar.hideSidebar")} onClick={() => setState({ sidebar: false })}>
           <PanelLeftClose size={18} />
         </IconButton>
       </div>
       <nav className="side-nav">
         <button className={`side-item ${empty && !gallery ? "on" : ""}`} onClick={newProject}>
-          <SquarePen size={16} /> New image
+          <SquarePen size={16} /> {t("sidebar.newImage")}
         </button>
         <button className={`side-item ${gallery ? "on" : ""}`} onClick={() => setState({ overlay: gallery ? null : "gallery" })}>
-          <Images size={16} /> All images
+          <Images size={16} /> {t("sidebar.allImages")}
         </button>
       </nav>
       {projects.length > 0 && (
         <div className="side-label">
-          <button className={`side-item side-fold ${listOpen ? "" : "closed"}`} onClick={() => fold("Projects")} aria-expanded={listOpen} title={listOpen ? "Collapse projects" : "Show projects"}>
+          <button className={`side-item side-fold ${listOpen ? "" : "closed"}`} onClick={() => fold("Projects")} aria-expanded={listOpen} title={listOpen ? t("sidebar.collapseProjects") : t("sidebar.showProjects")}>
             {listOpen ? <FolderOpen size={16} /> : <Folder size={16} />}
-            Projects
+            {t("sidebar.projects")}
             <ChevronDown size={14} className="fold-chev" />
           </button>
-          <button className="side-select" onClick={() => setPicked(selecting ? null : new Set())} title={selecting ? "Stop selecting (Esc)" : "Select several projects to remove them at once (or Ctrl/⌘-click)"}>
+          <button className="side-select" onClick={() => setPicked(selecting ? null : new Set())} title={selecting ? t("sidebar.stopSelecting") : t("sidebar.selectTooltip")}>
             {!selecting && <ListChecks size={13} />}
-            {selecting ? "Done" : "Select"}
+            {selecting ? t("common.done") : t("sidebar.select")}
           </button>
         </div>
       )}
@@ -211,22 +212,22 @@ export function Sidebar() {
       </div>
       {selecting && (
         <div className="select-bar">
-          <span className="select-count">{picked.size ? `${picked.size} selected` : "Pick projects"}</span>
+          <span className="select-count">{picked.size ? t("sidebar.selectedCount", { count: picked.size }) : t("sidebar.pickProjects")}</span>
           <button className="link-btn" onClick={() => setPicked(picked.size === projects.length ? new Set() : new Set(projects.map((p) => p.id)))}>
-            {picked.size === projects.length ? "None" : "All"}
+            {picked.size === projects.length ? t("sidebar.selectNone") : t("sidebar.selectAll")}
           </button>
           <span className="spacer" />
-          <button className="btn small danger" disabled={!picked.size} onClick={removePicked} title="Remove from the list; the images stay in All images">
-            <Trash2 size={13} /> Remove
+          <button className="btn small danger" disabled={!picked.size} onClick={removePicked} title={t("sidebar.removeSelectedTooltip")}>
+            <Trash2 size={13} /> {t("common.remove")}
           </button>
-          <IconButton title="Cancel (Esc)" onClick={() => setPicked(null)}>
+          <IconButton title={t("sidebar.cancelEsc")} onClick={() => setPicked(null)}>
             <X size={15} />
           </IconButton>
         </div>
       )}
       <div className="side-foot">
         <button className={`side-item settings ${overlay === "settings" ? "on" : ""}`} onClick={() => setState({ overlay: "settings" })}>
-          <Settings size={18} /> Settings
+          <Settings size={18} /> {t("sidebar.settings")}
         </button>
       </div>
     </aside>
@@ -240,8 +241,8 @@ export function ProjectTitle() {
   const [editing, setEditing] = useState(false);
   if (editing) return <NameField className="title-field" value={meta?.title ?? ""} onSave={(v) => renameProject(id, v)} onDone={() => setEditing(false)} />;
   return (
-    <button className={`project-title ${meta ? "" : "placeholder"}`} title="Rename project" onClick={() => setEditing(true)}>
-      {meta?.title ?? "Untitled project"}
+    <button className={`project-title ${meta ? "" : "placeholder"}`} title={t("sidebar.renameProject")} onClick={() => setEditing(true)}>
+      {meta?.title ?? t("sidebar.untitledProject")}
       <Pencil size={13} className="title-pencil" />
     </button>
   );

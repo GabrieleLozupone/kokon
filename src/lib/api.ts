@@ -3,6 +3,7 @@
 // In a browser (another device) there is no token: the session cookie signs requests in, and
 // every change carries the CSRF header the service asks for.
 
+import { t } from "./i18n";
 import { inBrowser } from "./platform";
 import type { ProjectData } from "./store";
 import type {
@@ -20,7 +21,7 @@ export class ApiError extends Error {
 /** Work the user stopped (Stop, Skip, Cancel): not an error to show. */
 export class Stopped extends Error {
   constructor() {
-    super("Stopped.");
+    super(t("api.stopped"));
     this.name = "Stopped";
   }
 }
@@ -67,7 +68,7 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
     });
   } catch (e) {
     if (init.signal?.aborted) throw new Stopped();
-    throw new ApiError({ code: "server_unavailable", message: inBrowser ? "Kokon is not reachable." : "The local service is not reachable.", detail: String(e) }, 0);
+    throw new ApiError({ code: "server_unavailable", message: inBrowser ? t("api.kokonNotReachable") : t("api.serviceNotReachable"), detail: String(e) }, 0);
   }
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
@@ -154,7 +155,7 @@ export const api = {
       res = await fetch(base + "/matte", { method: "POST", headers: { ...authHeaders("POST"), "Content-Type": "application/json" }, body: json({ image, run }), signal });
     } catch (e) {
       if (signal?.aborted) throw new Stopped();
-      throw new ApiError({ code: "server_unavailable", message: inBrowser ? "Kokon is not reachable." : "The local service is not reachable.", detail: String(e) }, 0);
+      throw new ApiError({ code: "server_unavailable", message: inBrowser ? t("api.kokonNotReachable") : t("api.serviceNotReachable"), detail: String(e) }, 0);
     }
     if (!res.ok) {
       const data = await res.json().catch(() => null);

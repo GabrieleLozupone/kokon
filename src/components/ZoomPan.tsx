@@ -11,6 +11,7 @@ import {
 import { isTyping, useMouseActive } from "./Viewer";
 import { getState } from "../lib/store";
 import { viewerWantsFull } from "../lib/logic";
+import { t } from "../lib/i18n";
 
 export interface ZoomPanContext {
   transform: ZoomTransform;
@@ -370,15 +371,15 @@ export function ZoomPan({
           onClick={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
         >
-          <button className="zoom-btn" title="Zoom out (-)" aria-label="Zoom out" onClick={zoom.zoomOut}>
+          <button className="zoom-btn" title={t("zoomPan.zoomOutTooltip")} aria-label={t("zoomPan.zoomOut")} onClick={zoom.zoomOut}>
             <Minus size={15} />
           </button>
           <span className="zoom-pct" aria-live="polite">{zoomPercent}%</span>
-          <button className="zoom-btn" title="Zoom in (+)" aria-label="Zoom in" onClick={zoom.zoomIn}>
+          <button className="zoom-btn" title={t("zoomPan.zoomInTooltip")} aria-label={t("zoomPan.zoomIn")} onClick={zoom.zoomIn}>
             <Plus size={15} />
           </button>
-          <button className="zoom-btn text" title="Fit to screen (0)" disabled={!zoom.isZoomed} onClick={zoom.zoomFit}>
-            Fit
+          <button className="zoom-btn text" title={t("zoomPan.fitTooltip")} disabled={!zoom.isZoomed} onClick={zoom.zoomFit}>
+            {t("zoomPan.fit")}
           </button>
         </div>
     </div>

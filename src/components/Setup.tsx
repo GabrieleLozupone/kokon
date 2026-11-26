@@ -9,21 +9,35 @@ import type { GpuBackend, HardwareReport, InstallItem, InstallStatus, ModelScan,
 import { OwnModels } from "./OwnModels";
 import { Seg } from "./ui";
 import { ReadyTips, Showcase } from "./Welcome";
+import { t } from "../lib/i18n";
 
-const gb = (mib: number) => `${Math.round(mib / 1024)} GB`;
+const gb = (mib: number) => t("setup.gb", { n: Math.round(mib / 1024) });
 
 function engineOptions(vendor: string | null): { value: GpuBackend; label: string }[] {
-  if (vendor === "apple") return [{ value: "metal", label: "Metal (beta)" }];
-  const vulkan = { value: "vulkan" as GpuBackend, label: vendor === "nvidia" ? "Vulkan" : "Vulkan (beta)" };
+  if (vendor === "apple") return [{ value: "metal", label: t("setup.engineMetalBeta") }];
+  const vulkan = { value: "vulkan" as GpuBackend, label: vendor === "nvidia" ? "Vulkan" : t("setup.engineVulkanBeta") };
   return vendor === "nvidia" ? [{ value: "cuda", label: "CUDA" }, vulkan] : [vulkan];
 }
 
 function engineNote(b: GpuBackend, nvidia: boolean): string {
-  if (b === "cuda") return "NVIDIA's CUDA build: the fastest and tested path. Recommended.";
-  if (b === "metal") return "Beta. Runs on the Mac's GPU through Metal. Needs macOS 15 or newer.";
+  if (b === "cuda") return t("setup.engineNoteCuda");
+  if (b === "metal") return t("setup.engineNoteMetal");
   return nvidia
-    ? "The same model through Vulkan: works on NVIDIA, but slower than CUDA (no SageAttention) and the first image takes longer. Useful to try the AMD / Intel path; both engines can stay installed."
-    : "Beta. AMD and Intel cards run the model through Vulkan, with the graphics driver you already have. Not yet tested on a real AMD or Intel card: please report how it goes.";
+    ? t("setup.engineNoteVulkanNvidia")
+    : t("setup.engineNoteVulkan");
+}
+
+/** The GPU card's second line: memory, RAM and driver. */
+function memoryLine(hw: HardwareReport, vram: number | null): string {
+  let line: string;
+  if (hw.gpu?.unified)
+    line = hw.vram_simulated
+      ? t("setup.unifiedMemoryPlanning", { memory: gb(hw.gpu.memory_total_mib), vram: gb(vram ?? 0) })
+      : t("setup.unifiedMemory", { memory: gb(hw.gpu.memory_total_mib) });
+  else if (vram)
+    line = hw.vram_simulated ? t("setup.vramRamSimulated", { vram: gb(vram), ram: gb(hw.ram_total_mib) }) : t("setup.vramRam", { vram: gb(vram), ram: gb(hw.ram_total_mib) });
+  else line = t("setup.ramOnly", { ram: gb(hw.ram_total_mib) });
+  return hw.gpu?.driver_version ? t("setup.withDriver", { line, version: hw.gpu.driver_version }) : line;
 }
 
 function ItemIcon({ it }: { it: InstallItem }) {
@@ -52,15 +66,15 @@ function Failure({ it, issuesUrl }: { it: InstallItem; issuesUrl: string }) {
       <span>{it.hint}</span>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button className="btn" onClick={() => native.openLink(it.page).catch(toastError)}>
-          <ExternalLink size={14} /> Download page
+          <ExternalLink size={14} /> {t("setup.downloadPage")}
         </button>
         {!inBrowser && (
           <button className="btn" onClick={() => native.openFolder(folder).catch(toastError)}>
-            <FolderOpen size={14} /> Open folder
+            <FolderOpen size={14} /> {t("setup.openFolder")}
           </button>
         )}
         <button className="btn" onClick={() => native.openLink(issuesUrl).catch(toastError)}>
-          <Bug size={14} /> Report the problem
+          <Bug size={14} /> {t("setup.reportProblem")}
         </button>
       </div>
     </div>
@@ -98,25 +112,24 @@ function Repair(props: { models: ModelsStatus; busy: string | null; note: string
   const n = models.missing.length;
   return (
     <div className="setup-note setup-repair">
-      <strong>{n === 1 ? "Kokon can't find a model file" : `Kokon can't find ${n} model files`}</strong>
+      <strong>{t("setup.missingTitle", { count: n })}</strong>
       {models.missing.map((m) => (
         <div className="missing" key={m.path}>
           {m.label}: {m.path}
         </div>
       ))}
       <span>
-        If they are on a drive that is not connected, connect it first.
-        {models.scan_dir ? ` Kokon checks again and also looks for them in ${models.scan_dir}, in case they were moved.` : ""}
+        {models.scan_dir ? t("setup.missingHintScan", { dir: models.scan_dir }) : t("setup.missingHint")}
       </span>
       <div className="actions">
         <button className="btn primary" onClick={props.onLookAgain} disabled={!!props.busy}>
-          {props.busy ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />} {props.busy ?? "Look for them again"}
+          {props.busy ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />} {props.busy ?? t("setup.lookAgain")}
         </button>
         {props.note && !props.busy && <span className="repair-result">{props.note}</span>}
       </div>
       {props.options.length > 0 && (
         <div className="repair-options">
-          <span className="muted">Or:</span>
+          <span className="muted">{t("setup.or")}</span>
           {props.options.map((o) => (
             <button key={o.title} className="repair-option" onClick={o.run} disabled={!!props.busy}>
               {o.icon}
@@ -186,8 +199,8 @@ export function Setup() {
       return;
     }
     wasRunning.current = true;
-    const t = window.setInterval(() => api.installStatus().then(setInst, () => {}), 500);
-    return () => window.clearInterval(t);
+    const timer = window.setInterval(() => api.installStatus().then(setInst, () => {}), 500);
+    return () => window.clearInterval(timer);
   }, [inst?.running]);
 
   const chooseFolder = async () => {
@@ -229,7 +242,7 @@ export function Setup() {
       };
       setModels(await api.setUserModels({ diffusion_model: slot("diffusion")!, vae: slot("vae")!, text_encoder: slot("text_encoder")!, vision_projector: slot("vision_projector"), scan_dir: dir }));
       setScan(null);
-      toastInfo(found.length === 1 ? `Found the missing file in ${dir}. It is used from there now.` : `Found the ${found.length} missing files in ${dir}. They are used from there now.`);
+      toastInfo(t("setup.foundMissing", { count: found.length, dir }));
       await refresh();
     }
     return { all, found: found.length, missing: missing.length, scan: sc };
@@ -239,23 +252,23 @@ export function Setup() {
   // found in (files moved inside it).
   const lookAgain = async () => {
     setRepairNote(null);
-    setRepairBusy("Checking the files…");
+    setRepairBusy(t("setup.checkingFiles"));
     try {
       const m = await api.models();
       setModels(m);
       if (m.missing.length === 0) {
-        toastInfo("All model files are there again.");
+        toastInfo(t("setup.allFilesBack"));
         await refresh();
         return;
       }
       if (m.scan_dir) {
-        setRepairBusy(`Looking in ${m.scan_dir}…`);
+        setRepairBusy(t("setup.lookingIn", { dir: m.scan_dir }));
         const r = await relocate(m, m.scan_dir);
         if (r.all) return;
-        setRepairNote(r.found ? `Found ${r.found} of ${r.missing} in ${m.scan_dir}. Choose one of the options below for the others.` : "Still not found. If they are on a drive, connect it and try again, or choose one of the options below.");
+        setRepairNote(r.found ? t("setup.foundSomeIn", { found: r.found, missing: r.missing, dir: m.scan_dir }) : t("setup.stillNotFound"));
         return;
       }
-      setRepairNote("Still not found. If they are on a drive, connect it and try again, or choose one of the options below.");
+      setRepairNote(t("setup.stillNotFound"));
     } catch (e) {
       toastError(e);
     } finally {
@@ -268,11 +281,11 @@ export function Setup() {
     const d = await native.pickFolder(models?.scan_dir ?? models?.user_scan_dir ?? undefined);
     if (!d || !models) return;
     setRepairNote(null);
-    setRepairBusy(`Looking in ${d}…`);
+    setRepairBusy(t("setup.lookingIn", { dir: d }));
     try {
       const r = await relocate(models, d);
       if (!r.all) {
-        setRepairNote(r.found ? `Found ${r.found} of ${r.missing} in that folder: choose the others in "Your files" below.` : `They are not in ${d}. Choose the files in "Your files" below.`);
+        setRepairNote(r.found ? t("setup.foundSomeThere", { found: r.found, missing: r.missing }) : t("setup.notInFolder", { dir: d }));
         setScan(r.scan);
         showOwn();
       }
@@ -296,7 +309,7 @@ export function Setup() {
   };
 
   const switchTo = async (profile: "official" | "user") => {
-    setRepairBusy(profile === "user" ? "Switching to your files…" : "Switching to the official model…");
+    setRepairBusy(profile === "user" ? t("setup.switchingToOwn") : t("setup.switchingToOfficial"));
     try {
       setModels(await api.useModels(profile));
       setMode(profile === "user" ? "own" : "official");
@@ -354,22 +367,22 @@ export function Setup() {
   if (models) {
     const userActive = models.active.source === "user";
     if (!inBrowser) {
-      repairOptions.push({ icon: <FolderOpen size={16} />, title: "Find them in another folder", detail: "If you moved your models: Kokon looks for the same files there.", run: searchElsewhere });
-      repairOptions.push({ icon: <FileSearch size={16} />, title: "Choose other files", detail: "Pick the files yourself, below.", run: showOwn });
+      repairOptions.push({ icon: <FolderOpen size={16} />, title: t("setup.optFindElsewhere"), detail: t("setup.optFindElsewhereDetail"), run: searchElsewhere });
+      repairOptions.push({ icon: <FileSearch size={16} />, title: t("setup.optChooseOther"), detail: t("setup.optChooseOtherDetail"), run: showOwn });
     }
     if (userActive && models.downloadable.length > 0) {
-      repairOptions.push({ icon: <Download size={16} />, title: "Download the missing files", detail: `The official ${models.downloadable.join(", ")}, saved where the missing file was.`, run: () => download("user") });
+      repairOptions.push({ icon: <Download size={16} />, title: t("setup.optDownloadMissing"), detail: t("setup.optDownloadMissingDetail", { files: models.downloadable.join(", ") }), run: () => download("user") });
     }
     if (userActive) {
       repairOptions.push(
         models.official_installed
-          ? { icon: <ArrowLeftRight size={16} />, title: "Use the official model", detail: "Already downloaded: switch to it. Your files stay set up.", run: () => switchTo("official") }
-          : { icon: <Download size={16} />, title: "Download the official model", detail: `${formatBytes(modelBytes)}, tested with Kokon, into ${hw?.sdcpp_dir ?? "the install folder"}.`, run: () => download("official") },
+          ? { icon: <ArrowLeftRight size={16} />, title: t("setup.optUseOfficial"), detail: t("setup.optUseOfficialDetail"), run: () => switchTo("official") }
+          : { icon: <Download size={16} />, title: t("setup.optDownloadOfficial"), detail: hw?.sdcpp_dir ? t("setup.optDownloadOfficialTestedDetail", { size: formatBytes(modelBytes), dir: hw.sdcpp_dir }) : t("setup.optDownloadOfficialTestedDetailNoDir", { size: formatBytes(modelBytes) }), run: () => download("official") },
       );
     } else {
-      repairOptions.push({ icon: <Download size={16} />, title: "Download the official model", detail: `${formatBytes(modelBytes)}, into ${hw?.sdcpp_dir ?? "the install folder"}.`, run: () => download("official") });
+      repairOptions.push({ icon: <Download size={16} />, title: t("setup.optDownloadOfficial"), detail: hw?.sdcpp_dir ? t("setup.optDownloadOfficialDetail", { size: formatBytes(modelBytes), dir: hw.sdcpp_dir }) : t("setup.optDownloadOfficialDetailNoDir", { size: formatBytes(modelBytes) }), run: () => download("official") });
       if (models.user_installed) {
-        repairOptions.push({ icon: <ArrowLeftRight size={16} />, title: "Use your own files again", detail: models.user_scan_dir ? `The ones in ${models.user_scan_dir}.` : "The files you chose before.", run: () => switchTo("user") });
+        repairOptions.push({ icon: <ArrowLeftRight size={16} />, title: t("setup.optUseOwnAgain"), detail: models.user_scan_dir ? t("setup.optUseOwnAgainDetail", { dir: models.user_scan_dir }) : t("setup.optUseOwnAgainDetailNoDir"), run: () => switchTo("user") });
       }
     }
   }
@@ -382,11 +395,13 @@ export function Setup() {
     <div className="setup">
       <div className="setup-inner">
         <div>
-          <h1>{setupDone ? "Models" : "Welcome to Kokon"}</h1>
+          <h1>{setupDone ? t("setup.titleModels") : t("setup.titleWelcome")}</h1>
           <p className="setup-lead">
             {own
-              ? "Everything runs on this PC. Use the Qwen-Image 2.1 files you already have, for example from ComfyUI: Setup only downloads the engine and what you don't have."
-              : `Everything runs on this PC. Setup downloads the image model once (${chosen ? formatBytes(chosen.files.reduce((a, f) => a + f.size, 0)) : "about 12 GB"}); after that, nothing leaves your computer.`}
+              ? t("setup.leadOwn")
+              : chosen
+                ? t("setup.leadOfficial", { size: formatBytes(chosen.files.reduce((a, f) => a + f.size, 0)) })
+                : t("setup.leadOfficialAbout")}
           </p>
         </div>
 
@@ -396,77 +411,74 @@ export function Setup() {
 
         {setupDone && engineUpdate?.update_needed && engineMissing.length > 0 && !running && (
           <div className="setup-note">
-            This version of Kokon brings Prompt+, which needs Kokon&apos;s updated engine: press Install to download it (
-            {formatBytes(engineMissing.reduce((a, i) => a + Math.max(0, i.size - i.received), 0))}). Until then, everything else works as before and Prompt+ stays hidden.
+            {t("setup.promptPlusEngine", { size: formatBytes(engineMissing.reduce((a, i) => a + Math.max(0, i.size - i.received), 0)) })}
           </div>
         )}
 
         {!hw ? (
           <div className="setup-card">
-            <Loader2 className="spin" size={18} /> Checking this PC…
+            <Loader2 className="spin" size={18} /> {t("setup.checkingPc")}
           </div>
         ) : (
           <>
             <div className="setup-card setup-gpu">
-              <strong>{hw.gpu ? hw.gpu.name : "No graphics card found"}</strong>
+              <strong>{hw.gpu ? hw.gpu.name : t("setup.noGpu")}</strong>
               <span className="muted">
-                {hw.gpu?.unified
-                  ? `${gb(hw.gpu.memory_total_mib)} unified memory${hw.vram_simulated ? ` (planning as ${gb(vram ?? 0)})` : ""}`
-                  : `${vram ? `${gb(vram)} VRAM${hw.vram_simulated ? " (simulated)" : ""} · ` : ""}${gb(hw.ram_total_mib)} RAM`}{hw.gpu?.driver_version ? ` · driver ${hw.gpu.driver_version}` : ""}
+                {memoryLine(hw, vram)}
               </span>
             </div>
             {!hw.gpu && (
               <div className="setup-note">
-                Kokon needs a graphics card with at least 12 GB of VRAM: NVIDIA (RTX 20 series or newer), or AMD / Intel through Vulkan (beta), or a Mac with Apple Silicon. Make sure its driver is installed.
+                {t("setup.noGpuNote")}
               </div>
             )}
             {hw.gpu?.unified ? (
               hw.gpu.memory_total_mib < 23 * 1024 ? (
                 <div className="setup-note">
-                  With {gb(hw.gpu.memory_total_mib)} of unified memory Kokon works, but slowly: model weights are read from disk as needed and images are made at about 1 megapixel, which takes about 4 to 5 minutes on an M2 Pro. 32 GB or more and a Pro, Max or Ultra chip are recommended. Close other apps while generating.
+                  {t("setup.unifiedSlowNote", { memory: gb(hw.gpu.memory_total_mib) })}
                 </div>
               ) : (
                 hw.gpu.memory_total_mib < 31 * 1024 && (
                   <div className="setup-note">
-                    With {gb(hw.gpu.memory_total_mib)} of unified memory expect several minutes per image. 32 GB or more and a Pro, Max or Ultra chip are recommended.
+                    {t("setup.unifiedMinutesNote", { memory: gb(hw.gpu.memory_total_mib) })}
                   </div>
                 )
               )
             ) : (
               <>
-                {vram !== null && vram < 7 * 1024 && <div className="setup-note">Your GPU has {gb(vram)} of VRAM. 8 GB is the smallest size Kokon runs on (in beta); it may fail or run slowly.</div>}
+                {vram !== null && vram < 7 * 1024 && <div className="setup-note">{t("setup.lowVramNote", { vram: gb(vram) })}</div>}
                 {vram !== null && vram >= 7 * 1024 && vram < 10 * 1024 && (
                   <div className="setup-note">
-                    8 GB graphics cards are in beta: images are made at about 1 megapixel, and an edit takes 1–2 minutes on an RTX 5050 Laptop. Tell us how it runs on yours.
+                    {t("setup.vram8gbNote")}
                   </div>
                 )}
-                {hw.ram_total_mib < 15 * 1024 && <div className="setup-note">The text encoder runs from system RAM; with {gb(hw.ram_total_mib)} of RAM, 16 GB or more is recommended.</div>}
+                {hw.ram_total_mib < 15 * 1024 && <div className="setup-note">{t("setup.lowRamNote", { ram: gb(hw.ram_total_mib) })}</div>}
               </>
             )}
 
             {running || paused ? (
               <div className="muted">
-                {chosen?.label} preset · {hw.sdcpp_dir}
+                {t("setup.presetAndFolder", { preset: chosen?.label ?? "", dir: hw.sdcpp_dir })}
               </div>
             ) : (
               <>
                 {/* Where the model comes from: the first choice, so it is seen first. A browser has only the download. */}
                 {!inBrowser && <div className="field">
-                  <span>Image model</span>
+                  <span>{t("setup.imageModel")}</span>
                   <div className="choice-cards" role="radiogroup">
                     <button className={`choice-card ${!own ? "on" : ""}`} role="radio" aria-checked={!own} onClick={() => setMode("official")}>
                       <Download size={20} />
                       <div>
-                        <strong>Download the model</strong>
-                        <span>Qwen-Image 2.1 Turbo, tested with Kokon{modelBytes ? ` · ${formatBytes(modelBytes)}` : ""}</span>
+                        <strong>{t("setup.downloadModel")}</strong>
+                        <span>{modelBytes ? t("setup.downloadModelDetailSize", { size: formatBytes(modelBytes) }) : t("setup.downloadModelDetail")}</span>
                       </div>
                     </button>
                     {!inBrowser && (
                       <button className={`choice-card ${own ? "on" : ""}`} role="radio" aria-checked={own} onClick={() => setMode("own")}>
                         <FolderOpen size={20} />
                         <div>
-                          <strong>Use models I already have</strong>
-                          <span>From ComfyUI or another folder; only the engine is downloaded</span>
+                          <strong>{t("setup.useOwnModels")}</strong>
+                          <span>{t("setup.useOwnModelsDetail")}</span>
                         </div>
                       </button>
                     )}
@@ -492,7 +504,7 @@ export function Setup() {
                 )}
                 {hw.gpus.length > 1 && (
                   <label className="field">
-                    <span>Graphics card</span>
+                    <span>{t("setup.graphicsCard")}</span>
                     <select
                       className="select"
                       value={hw.gpu_index}
@@ -505,17 +517,18 @@ export function Setup() {
                     >
                       {hw.gpus.map((g, i) => (
                         <option key={i} value={i}>
-                          {g.name} · {gb(g.memory_total_mib)}
-                          {i === hw.gpu_in_use && setupDone ? " (in use)" : ""}
+                          {i === hw.gpu_in_use && setupDone
+                            ? t("setup.gpuOptionInUse", { name: g.name, memory: gb(g.memory_total_mib) })
+                            : t("setup.gpuOption", { name: g.name, memory: gb(g.memory_total_mib) })}
                         </option>
                       ))}
                     </select>
-                    <span className="muted">Kokon runs on one card. The preset is sized for the card you pick; you can change it later in Settings → Performance.</span>
+                    <span className="muted">{t("setup.oneCardNote")}</span>
                   </label>
                 )}
                 {hw.gpu && (
                   <div className="field">
-                    <span>Engine</span>
+                    <span>{t("setup.engine")}</span>
                     <Seg<GpuBackend>
                       value={backend ?? hw.backend}
                       options={engineOptions(hw.vendor)}
@@ -528,35 +541,35 @@ export function Setup() {
                   </div>
                 )}
                 <div className="field">
-                  <span>{hw.gpu?.unified ? "Preset for your Mac's memory" : "Preset for your graphics card"}</span>
+                  <span>{hw.gpu?.unified ? t("setup.presetMac") : t("setup.presetGpu")}</span>
                   <Seg<string> value={preset ?? hw.recommended} options={hw.presets.map((p) => ({ value: p.id, label: p.label }))} onChange={setPreset} />
-                  {chosen && own && <span className="muted">How Kokon runs the model on your card: memory use and image sizes. Your files are kept.</span>}
+                  {chosen && own && <span className="muted">{t("setup.presetOwnNote")}</span>}
                   {chosen && !own && (
                     <span className="muted">
-                      {chosen.summary}.{chosen.id === hw.recommended ? " Recommended for your GPU." : ""}
-                      {hw.gpu?.unified ? " Not yet tested on a Mac." : chosen.verified ? "" : chosen.id === "8gb" ? " Beta: tested by users, not yet by us." : " Not yet tested on a real card of this size."}
+                      {chosen.summary}.{chosen.id === hw.recommended ? ` ${t("setup.recommendedForGpu")}` : ""}
+                      {hw.gpu?.unified ? ` ${t("setup.notTestedMac")}` : chosen.verified ? "" : chosen.id === "8gb" ? ` ${t("setup.betaUserTested")}` : ` ${t("setup.notTestedCardSize")}`}
                     </span>
                   )}
                   {hw.gpu?.unified && (
                     <span className="muted">
-                      Presets are named by total unified memory. macOS lets the graphics part use about two thirds of it, and the text encoder shares the same memory, so the image model gets less than the number on your Mac: a 16 GB Mac has room for the lightest preset only. Pick a larger one only on a Mac with that much memory.
+                      {t("setup.macPresetNote")}
                     </span>
                   )}
                 </div>
                 <div className="field">
-                  <span>Install folder</span>
+                  <span>{t("setup.installFolder")}</span>
                   <div className="path-row">
                     <input className="input" type="text" value={hw.sdcpp_dir} readOnly spellCheck={false} />
                     {!inBrowser && (
                       <button className="btn" onClick={chooseFolder}>
-                        Change
+                        {t("setup.change")}
                       </button>
                     )}
                   </div>
                   <span className="muted">
-                    {hw.free_bytes != null ? `${formatBytes(hw.free_bytes)} free` : ""}
-                    {chosen && chosen.disk_bytes > 0 ? ` · needs about ${formatBytes(chosen.disk_bytes)}` : ""}
-                    {lowSpace ? " — not enough space on this drive; choose another folder." : ""}
+                    {hw.free_bytes != null ? t("setup.freeSpace", { size: formatBytes(hw.free_bytes) }) : ""}
+                    {chosen && chosen.disk_bytes > 0 ? ` · ${t("setup.needsAbout", { size: formatBytes(chosen.disk_bytes) })}` : ""}
+                    {lowSpace ? ` — ${t("setup.notEnoughSpace")}` : ""}
                   </span>
                 </div>
               </>
@@ -568,23 +581,23 @@ export function Setup() {
                 <div className="setup-progress-head">
                   <span className="pct">{Math.floor(prog.frac * 100)}%</span>
                   <span className="muted">
-                    {formatBytes(prog.received)} of {formatBytes(prog.total)}
-                    {running && rate > 0 ? ` · ${formatBytes(rate)}/s` : ""}
-                    {running ? (installTimeLeft(prog.total - prog.received, rate) ? ` · ${installTimeLeft(prog.total - prog.received, rate)}` : "") : " · paused"}
+                    {t("setup.progress", { received: formatBytes(prog.received), total: formatBytes(prog.total) })}
+                    {running && rate > 0 ? ` · ${t("setup.rate", { rate: formatBytes(rate) })}` : ""}
+                    {running ? (installTimeLeft(prog.total - prog.received, rate) ? ` · ${installTimeLeft(prog.total - prog.received, rate)}` : "") : ` · ${t("setup.paused")}`}
                   </span>
                 </div>
                 <div className="progress thick">
                   <i style={{ width: `${prog.frac * 100}%` }} />
                 </div>
-                <span className="muted">{running ? installStep(items) ?? "Starting…" : "Downloads continue where they stopped, also after closing the app."}</span>
+                <span className="muted">{running ? installStep(items) ?? t("setup.starting") : t("setup.resumeNote")}</span>
                 <div>
                   {running ? (
                     <button className="btn" onClick={() => api.cancelInstall().then(setInst, toastError)}>
-                      <Pause size={14} /> Pause
+                      <Pause size={14} /> {t("setup.pause")}
                     </button>
                   ) : (
                     <button className="btn primary" onClick={install} disabled={lowSpace}>
-                      <Play size={14} /> Resume
+                      <Play size={14} /> {t("setup.resume")}
                     </button>
                   )}
                 </div>
@@ -594,8 +607,7 @@ export function Setup() {
             {failed.length > 0 && !running && (
               <div className="setup-note">
                 <div style={{ marginBottom: 8 }}>
-                  {failed.length === 1 ? "One file" : `${failed.length} files`} could not be downloaded. Try again, or get {failed.length === 1 ? "it" : "them"} by hand and press Check again.
-                  Please report a broken link so it can be fixed for everyone.
+                  {t("setup.failedNote", { count: failed.length })}
                 </div>
                 {failed.map((it) => (
                   <Failure key={it.id} it={it} issuesUrl={hw.issues_url} />
@@ -607,14 +619,14 @@ export function Setup() {
               // Checking the files and the engine takes a few seconds: say so.
               <div className="setup-card setup-ready">
                 <Loader2 className="spin" size={18} />
-                <span>Checking the model files and the engine…</span>
+                <span>{t("setup.checkingFilesEngine")}</span>
               </div>
             ) : (
               presetInstalled &&
               !running && (
                 <div className="setup-card setup-ready">
                   <Check size={18} />
-                  <span>{hw.current === chosen?.id || !chosen ? "Everything is installed." : `The ${chosen.label} files are already here.`}</span>
+                  <span>{hw.current === chosen?.id || !chosen ? t("setup.allInstalled") : t("setup.presetFilesHere", { preset: chosen.label })}</span>
                 </div>
               )
             )}
@@ -626,7 +638,7 @@ export function Setup() {
               <div className="field">
                 <button className="setup-toggle" onClick={() => setShowFiles((v) => !v)} aria-expanded={showFiles || running}>
                   <ChevronDown size={14} style={{ transform: showFiles || running ? "none" : "rotate(-90deg)", transition: "transform 0.15s" }} />
-                  {items.length} files · {missing.length ? `${formatBytes(toDownload)} to download` : "all installed"}
+                  {missing.length ? t("setup.filesToDownload", { count: items.length, size: formatBytes(toDownload) }) : t("setup.filesAllInstalled", { count: items.length })}
                 </button>
                 {(showFiles || running) && <FileList items={items} />}
               </div>
@@ -637,35 +649,35 @@ export function Setup() {
         <div className="setup-actions">
           {hw && !running && !paused && !presetInstalled && (!own || ownActive) && (
             <button className="btn primary big" disabled={!chosen || lowSpace} onClick={install}>
-              <Download size={16} /> {failed.length ? "Try again" : `Install · ${formatBytes(toDownload)}`}
+              <Download size={16} /> {failed.length ? t("common.retry") : t("setup.install", { size: formatBytes(toDownload) })}
             </button>
           )}
           {hw && presetInstalled && !running && chosen && (hw.current !== chosen.id || hw.current_backend !== hw.backend || (!own && hw.active_source === "user")) && (
             // Files of another preset or engine are already here: switch without downloading.
             <button className="btn" onClick={install}>
               {!own && hw.active_source === "user"
-                ? "Use the official files"
+                ? t("setup.useOfficialFiles")
                 : hw.current_backend !== hw.backend
-                  ? `Use ${{ cuda: "CUDA", vulkan: "Vulkan", metal: "Metal" }[hw.backend]} with the ${chosen.label} preset`
-                  : `Use the ${chosen.label} preset`}
+                  ? t("setup.useEngineWithPreset", { engine: { cuda: "CUDA", vulkan: "Vulkan", metal: "Metal" }[hw.backend], preset: chosen.label })
+                  : t("setup.usePreset", { preset: chosen.label })}
             </button>
           )}
           {(ready || presetInstalled) && !running && (
             <button className={`btn big ${presetInstalled ? "primary" : ""}`} disabled={!ready || checking} onClick={start}>
-              {setupDone ? "Done" : "Start"}
+              {setupDone ? t("common.done") : t("setup.start")}
             </button>
           )}
           <span style={{ flex: 1 }} />
           {setupDone && (
             <button className="btn ghost" onClick={back} disabled={running}>
-              <ArrowLeft size={14} /> Back
+              <ArrowLeft size={14} /> {t("common.back")}
             </button>
           )}
           <button className="btn ghost" onClick={() => setState({ overlay: "settings" })} disabled={running}>
-            <Settings2 size={14} /> Settings
+            <Settings2 size={14} /> {t("setup.settings")}
           </button>
           <button className="btn ghost" onClick={() => refresh()} disabled={checking || running}>
-            <RefreshCw size={14} /> Check again
+            <RefreshCw size={14} /> {t("setup.checkAgain")}
           </button>
         </div>
 
@@ -673,7 +685,7 @@ export function Setup() {
             while own files are still being chosen, and not twice with the missing-files card. */}
         {report && !report.ready && !running && !paused && presetInstalled && !repair && !checking && (
           <div className="setup-note">
-            <div style={{ marginBottom: 6 }}>Kokon can't start yet:</div>
+            <div style={{ marginBottom: 6 }}>{t("setup.cantStartYet")}</div>
             {report.checks
               .filter((c) => !c.ok)
               .map((c, i) => (
@@ -684,8 +696,7 @@ export function Setup() {
           </div>
         )}
         <p className="muted setup-foot">
-          Qwen-Image 2.1 Turbo is released by Alibaba's Qwen team under the Qwen Research License: research and evaluation only, no commercial use. By downloading it you accept that license. The upscalers are Superscale-SP by Nmkd
-          (WTFPL) and the experimental 4xNomos2_hq_mosr by Philip Hofmann (CC BY 4.0). Downloads come only from GitHub (stable-diffusion.cpp, upscaler) and Hugging Face, and every file is verified with its SHA-256 checksum.
+          {t("setup.licenseFoot")}
         </p>
       </div>
     </div>

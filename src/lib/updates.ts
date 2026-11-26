@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { type Update, check } from "@tauri-apps/plugin-updater";
 import { api } from "./api";
+import { t } from "./i18n";
 import { inBrowser } from "./platform";
 import { getState, setState, toastError, toastInfo } from "./store";
 
@@ -32,9 +33,9 @@ function readLastCheck(): number | null {
   }
 }
 
-function writeLastCheck(t: number) {
+function writeLastCheck(when: number) {
   try {
-    localStorage.setItem(LAST_CHECK_KEY, String(t));
+    localStorage.setItem(LAST_CHECK_KEY, String(when));
   } catch {
     /* only means checking again next start */
   }
@@ -51,11 +52,11 @@ export async function checkForUpdate(manual = false): Promise<void> {
       pending = u;
       setState({ update: { version: u.version, notes: u.body ?? "", phase: "available", progress: null } });
     } else if (manual) {
-      toastInfo("Kokon is up to date.");
+      toastInfo(t("updates.upToDate"));
     }
   } catch (e) {
     // Offline, or no release published yet: silent for the automatic check.
-    if (manual) toastError(`Could not check for updates: ${String(e)}`);
+    if (manual) toastError(t("updates.checkFailed", { error: String(e) }));
     else console.info("update check failed", e);
   }
 }
@@ -94,6 +95,6 @@ export async function installUpdate(): Promise<void> {
     await relaunch();
   } catch (e) {
     setState({ update: { ...info, phase: "available", progress: null } });
-    toastError(`The update could not be installed: ${String(e)}`);
+    toastError(t("updates.installFailed", { error: String(e) }));
   }
 }

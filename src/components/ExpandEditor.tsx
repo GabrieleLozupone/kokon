@@ -6,6 +6,7 @@ import { closeEditor, focusPrompt, updateComposer, useStore } from "../lib/store
 import type { OutpaintSpec, Units } from "../lib/types";
 import { AspectGrid, RatioIcon } from "./SizeMenus";
 import { IconButton, Popover, Seg } from "./ui";
+import { t } from "../lib/i18n";
 
 type Side = "left" | "right" | "top" | "bottom";
 const MAX_FINAL = 16384;
@@ -50,10 +51,10 @@ function SizeForm(props: { w: number; h: number; minW: number; minH: number; onA
   return (
     <div className="expand-size">
       <span className="pair">
-        <input className="input" type="number" min={props.minW} max={MAX_FINAL} value={w} onChange={(e) => typeW(Math.round(Number(e.target.value) || 0))} onKeyDown={(e) => e.key === "Enter" && ok && props.onApply(w, h)} aria-label="Final width" />
+        <input className="input" type="number" min={props.minW} max={MAX_FINAL} value={w} onChange={(e) => typeW(Math.round(Number(e.target.value) || 0))} onKeyDown={(e) => e.key === "Enter" && ok && props.onApply(w, h)} aria-label={t("expand.finalWidth")} />
         <span className="muted">×</span>
-        <input className="input" type="number" min={props.minH} max={MAX_FINAL} value={h} onChange={(e) => typeH(Math.round(Number(e.target.value) || 0))} onKeyDown={(e) => e.key === "Enter" && ok && props.onApply(w, h)} aria-label="Final height" />
-        <button className={`icon-btn sm ${lock ? "active" : ""}`} onClick={toggleLock} aria-pressed={lock} title={lock ? "Ratio locked: changing one side changes the other" : "Lock the ratio"}>
+        <input className="input" type="number" min={props.minH} max={MAX_FINAL} value={h} onChange={(e) => typeH(Math.round(Number(e.target.value) || 0))} onKeyDown={(e) => e.key === "Enter" && ok && props.onApply(w, h)} aria-label={t("expand.finalHeight")} />
+        <button className={`icon-btn sm ${lock ? "active" : ""}`} onClick={toggleLock} aria-pressed={lock} title={lock ? t("expand.ratioLocked") : t("expand.lockRatio")}>
           {lock ? <Lock size={14} /> : <LockOpen size={14} />}
         </button>
       </span>
@@ -77,13 +78,41 @@ function SizeForm(props: { w: number; h: number; minW: number; minH: number; onA
         </span>
       )}
       <span className="muted">
-        At least {props.minW}×{props.minH} (the image itself); the image starts centred: drag it, or use the grid, to place it.
+        {t("expand.sizeHint", { w: props.minW, h: props.minH })}
       </span>
       <button className="btn" disabled={!ok} onClick={() => props.onApply(w, h)}>
-        Use this size
+        {t("expand.useThisSize")}
       </button>
     </div>
   );
+}
+
+function sideLabel(s: Side): string {
+  switch (s) {
+    case "left":
+      return t("expand.sideLeft");
+    case "right":
+      return t("expand.sideRight");
+    case "top":
+      return t("expand.sideTop");
+    case "bottom":
+      return t("expand.sideBottom");
+  }
+}
+
+/** The 3x3 grid's tooltip: where the image sits (0 / 0.5 / 1 per axis) and where the new space goes. */
+function anchorTitle(ax: number, ay: number, growX: boolean, growY: boolean): string {
+  const col = ax === 0 ? 0 : ax === 1 ? 2 : 1;
+  const row = ay === 0 ? 0 : ay === 1 ? 2 : 1;
+  const position = [
+    [t("expand.posTopLeft"), t("expand.posTop"), t("expand.posTopRight")],
+    [t("expand.posLeft"), t("expand.posCentred"), t("expand.posRight")],
+    [t("expand.posBottomLeft"), t("expand.posBottom"), t("expand.posBottomRight")],
+  ][row][col];
+  const x = col === 0 ? t("expand.spaceRight") : col === 2 ? t("expand.spaceLeft") : growX ? t("expand.spaceLeftRight") : "";
+  const y = row === 0 ? t("expand.spaceBottom") : row === 2 ? t("expand.spaceTop") : growY ? t("expand.spaceTopBottom") : "";
+  const sides = x && y ? t("expand.spaceBoth", { x, y }) : x || y;
+  return t("expand.anchorTitle", { position, sides });
 }
 
 /** How far the canvas (`size` px of a view `room` px) moves from the centre while `pin`'s side is
@@ -240,12 +269,12 @@ export function ExpandEditor() {
   return (
     <div className="overlay">
       <div className="overlay-head">
-        <h2>Expand the image</h2>
+        <h2>{t("expand.title")}</h2>
         <span className="muted">
           {W}×{H} ({aspectLabel(W, H)}) → <strong className="expand-final">{finalW}×{finalH} ({aspectLabel(finalW, finalH)})</strong>
         </span>
         <span className="spacer" />
-        <IconButton title="Cancel (Esc)" onClick={() => closeEditor()}>
+        <IconButton title={t("expand.cancelEsc")} onClick={() => closeEditor()}>
           <X size={18} />
         </IconButton>
       </div>
@@ -265,29 +294,29 @@ export function ExpandEditor() {
             className={`expand-src ${any ? "movable" : ""}`}
             style={{ left: px.left * scale, top: px.top * scale, width: W * scale, height: H * scale }}
             onPointerDown={onImageDown}
-            title={any ? "Drag to place the image in the new canvas" : undefined}
+            title={any ? t("expand.dragImage") : undefined}
           >
             <img src={src} alt="" draggable={false} />
           </div>
-          <div className="handle h" style={{ left: 0, top: ch / 2 }} onPointerDown={onHandleDown("left")} title="Drag to extend left" />
-          <div className="handle h" style={{ left: cw, top: ch / 2 }} onPointerDown={onHandleDown("right")} title="Drag to extend right" />
-          <div className="handle v" style={{ left: cw / 2, top: 0 }} onPointerDown={onHandleDown("top")} title="Drag to extend up" />
-          <div className="handle v" style={{ left: cw / 2, top: ch }} onPointerDown={onHandleDown("bottom")} title="Drag to extend down" />
+          <div className="handle h" style={{ left: 0, top: ch / 2 }} onPointerDown={onHandleDown("left")} title={t("expand.dragLeft")} />
+          <div className="handle h" style={{ left: cw, top: ch / 2 }} onPointerDown={onHandleDown("right")} title={t("expand.dragRight")} />
+          <div className="handle v" style={{ left: cw / 2, top: 0 }} onPointerDown={onHandleDown("top")} title={t("expand.dragUp")} />
+          <div className="handle v" style={{ left: cw / 2, top: ch }} onPointerDown={onHandleDown("bottom")} title={t("expand.dragDown")} />
         </div>
       </div>
       <div className="editor-tools" style={{ flexDirection: "column", gap: 10 }}>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center" }}>
           <div className="group">
-            <IconButton title="Extend left" onClick={() => preset("left")}>
+            <IconButton title={t("expand.extendLeft")} onClick={() => preset("left")}>
               <ArrowLeft size={17} />
             </IconButton>
-            <IconButton title="Extend right" onClick={() => preset("right")}>
+            <IconButton title={t("expand.extendRight")} onClick={() => preset("right")}>
               <ArrowRight size={17} />
             </IconButton>
-            <IconButton title="Extend up" onClick={() => preset("top")}>
+            <IconButton title={t("expand.extendUp")} onClick={() => preset("top")}>
               <ArrowUp size={17} />
             </IconButton>
-            <IconButton title="Extend down" onClick={() => preset("bottom")}>
+            <IconButton title={t("expand.extendDown")} onClick={() => preset("bottom")}>
               <ArrowDown size={17} />
             </IconButton>
           </div>
@@ -295,7 +324,7 @@ export function ExpandEditor() {
             <Popover
               className="wide"
               trigger={(open, toggle) => (
-                <button className={`pill ${open ? "on" : ""}`} onClick={toggle} title="Expand to an aspect ratio">
+                <button className={`pill ${open ? "on" : ""}`} onClick={toggle} title={t("expand.toAspectRatio")}>
                   <RatioIcon ratio={finalW / finalH} size={15} />
                   {aspectLabel(finalW, finalH)}
                   <ChevronDown size={13} />
@@ -315,7 +344,7 @@ export function ExpandEditor() {
             </Popover>
             <Popover
               trigger={(open, toggle) => (
-                <button className={`pill ${open ? "on" : ""}`} onClick={toggle} title="Expand to an exact size">
+                <button className={`pill ${open ? "on" : ""}`} onClick={toggle} title={t("expand.toExactSize")}>
                   <Maximize size={14} />
                   {finalW}×{finalH}
                   <ChevronDown size={13} />
@@ -336,7 +365,7 @@ export function ExpandEditor() {
               )}
             </Popover>
             {/* Where the image goes in the new canvas: the extra space goes to the other sides. */}
-            <div className="anchor-grid" role="group" aria-label="Place the image">
+            <div className="anchor-grid" role="group" aria-label={t("expand.placeImage")}>
               {[0, 0.5, 1].map((ay) =>
                 [0, 0.5, 1].map((ax) => (
                   <button
@@ -344,14 +373,14 @@ export function ExpandEditor() {
                     className={any && anchored(ax, ay) ? "on" : ""}
                     disabled={!any || (exX === 0 && ax !== 0.5) || (exY === 0 && ay !== 0.5)}
                     onClick={() => anchorAt(ax, ay)}
-                    title={`Image ${ay === 0 ? "top" : ay === 1 ? "bottom" : ""}${ay !== 0.5 && ax !== 0.5 ? " " : ""}${ax === 0 ? "left" : ax === 1 ? "right" : ""}${ax === 0.5 && ay === 0.5 ? "centred" : ""}: the new space on the ${[ax === 0 ? "right" : ax === 1 ? "left" : exX ? "left and right" : "", ay === 0 ? "bottom" : ay === 1 ? "top" : exY ? "top and bottom" : ""].filter(Boolean).join(", ")}`}
+                    title={anchorTitle(ax, ay, exX > 0, exY > 0)}
                   >
                     <span />
                   </button>
                 )),
               )}
             </div>
-            <IconButton title="Reset" onClick={() => setSpec({ left: 0, right: 0, top: 0, bottom: 0, units: spec.units })}>
+            <IconButton title={t("common.reset")} onClick={() => setSpec({ left: 0, right: 0, top: 0, bottom: 0, units: spec.units })}>
               <RotateCcw size={17} />
             </IconButton>
           </div>
@@ -359,7 +388,7 @@ export function ExpandEditor() {
         <div className="expand-fields">
           {(["left", "right", "top", "bottom"] as Side[]).map((s) => (
             <label key={s}>
-              {s[0].toUpperCase() + s.slice(1)}
+              {sideLabel(s)}
               <input className="num-input" type="number" min={0} step={spec.units === "pixels" ? 8 : 1} value={spec[s]} onChange={(e) => setSide(s, Number(e.target.value))} />
             </label>
           ))}
@@ -376,14 +405,14 @@ export function ExpandEditor() {
           <button
             className="btn primary"
             disabled={!any || tooBig}
-            title={tooBig ? `Max ${MAX_FINAL}px per side` : undefined}
+            title={tooBig ? t("expand.maxPerSide", { max: MAX_FINAL }) : undefined}
             onClick={() => {
               updateComposer({ outpaint: spec, mask: null, mode: "auto" });
               closeEditor();
               focusPrompt();
             }}
           >
-            <Check size={15} /> Done
+            <Check size={15} /> {t("common.done")}
           </button>
         </div>
       </div>

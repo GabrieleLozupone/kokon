@@ -8,6 +8,7 @@ import { editSource, getState, itemOrigin, itemSource, toastError, toastInfo, us
 import { readScene } from "./LabScene";
 import { LayerDoc, noteExtents, pasteCrop, pasteRedraw, shadowImage, sourceInfo } from "./LayerDoc";
 import { LayerSplit } from "./LayerSplit";
+import { t } from "../lib/i18n";
 
 export function LayersEditor() {
   const projectId = useStore((s) => s.projectId);
@@ -40,8 +41,10 @@ function LayersLab({ projectId }: { projectId: string }) {
       if (making.current.has(result)) continue;
       making.current.add(result);
       const obj = p.of ? doc.layers.find((l) => l.id === p.of) : undefined;
-      const name = obj ? `${obj.name} shadow` : "Shadows";
-      shadowImage({ ...p, mask: done.gen.mask_input_id ?? p.mask }, result, doc.width, doc.height, name).then(
+      // The file keeps the English name (older labs' leftovers are found by it); the layer's is shown.
+      const file = obj ? `${obj.name} shadow` : "Shadows";
+      const name = obj ? t("layers.objectShadow", { name: obj.name }) : t("layers.shadows");
+      shadowImage({ ...p, mask: done.gen.mask_input_id ?? p.mask }, result, doc.width, doc.height, file).then(
         (rec) => {
           const d = latest.current!;
           const src = `input:${rec.id}`;
@@ -102,7 +105,7 @@ function LayersLab({ projectId }: { projectId: string }) {
               const have = layers.find((l) => l.auto && l.blend === "paste");
               const next: DocLayer = have
                 ? { ...have, source: s.src, history: [...have.history, s.src], made: undefined, strength: undefined, hidden: false }
-                : { id: `fx-${result}-all`, name: "Blend", source: s.src, history: [s.src], hidden: false, base: false, effect: true, auto: true, blend: "paste", dx: 0, dy: 0, s: 1 };
+                : { id: `fx-${result}-all`, name: t("layers.blend"), source: s.src, history: [s.src], hidden: false, base: false, effect: true, auto: true, blend: "paste", dx: 0, dy: 0, s: 1 };
               layers = [next, ...layers.filter((l) => l.id !== next.id)];
               continue;
             }
@@ -112,7 +115,7 @@ function LayersLab({ projectId }: { projectId: string }) {
               // A new result starts at its own strength again.
               if (have) layers = layers.map((l) => (l.id === have.id ? { ...l, source: s.src, history: [...l.history, s.src], made: undefined, strength: undefined, hidden: false } : l));
               else {
-                const layer: DocLayer = { id: `fx-${result}-all`, name: "Shadows", source: s.src, history: [s.src], hidden: false, base: false, effect: true, auto: true, dx: 0, dy: 0, s: 1 };
+                const layer: DocLayer = { id: `fx-${result}-all`, name: t("layers.shadows"), source: s.src, history: [s.src], hidden: false, base: false, effect: true, auto: true, dx: 0, dy: 0, s: 1 };
                 const at = layers.findIndex((l) => l.base);
                 layers = [...layers];
                 layers.splice(at < 0 ? layers.length : at, 0, layer);
@@ -132,7 +135,7 @@ function LayersLab({ projectId }: { projectId: string }) {
             const id = `fx-${result}-${key}`;
             madeBy[key] = id;
             const place = isNew ? { dx: 0, dy: 0, s: 1 } : { dx: e.places[obj]?.dx ?? 0, dy: e.places[obj]?.dy ?? 0, s: e.places[obj]?.s ?? 1 };
-            const layer: DocLayer = { id, name: `${owner?.name ?? "Object"} shadow`, source: s.src, history: [s.src], hidden: false, base: false, effect: true, follows: obj, at: place, dx: 0, dy: 0, s: 1 };
+            const layer: DocLayer = { id, name: t("layers.objectShadow", { name: owner?.name ?? t("layers.object") }), source: s.src, history: [s.src], hidden: false, base: false, effect: true, follows: obj, at: place, dx: 0, dy: 0, s: 1 };
             const at = layers.findIndex((l) => l.id === obj);
             layers = [...layers];
             layers.splice(at < 0 ? layers.findIndex((l) => l.base) : at + 1, 0, layer);
@@ -246,7 +249,7 @@ function LayersLab({ projectId }: { projectId: string }) {
       onNewSplit={() => {
         // Split this document's photo again (the prompt may be on one of its layers).
         if (doc.photo && !editSource(doc.photo, false)) {
-          toastError(new Error("The photo these layers were split from is no longer in the project."));
+          toastError(new Error(t("layers.photoGone")));
           return;
         }
         setSplitting(true);

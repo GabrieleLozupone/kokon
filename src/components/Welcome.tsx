@@ -14,6 +14,8 @@ import { WHATS_NEW_VERSION } from "./WhatsNew";
 import { inBrowser, isMac } from "../lib/platform";
 import { autoCheckEnabled } from "../lib/updates";
 import { setState, toastError, useStore } from "../lib/store";
+import { t } from "../lib/i18n";
+import { Trans } from "./Trans";
 
 const machine = isMac ? "Mac" : "PC";
 
@@ -36,11 +38,11 @@ async function markSeen(updateCheck: boolean) {
   }
 }
 
-const PROMISES = [
-  { icon: Cpu, title: `Made on your ${machine}`, text: "Your graphics chip creates every image. Photos and prompts never leave this computer." },
-  { icon: CloudOff, title: "Online only when needed", text: "To download the model, and once a day to check for a new Kokon version. Your images and prompts are never sent." },
-  { icon: Unlimited, title: "No limits", text: "No account, no credits, no subscription, no queue. Create as much as you like." },
-  { icon: EyeOff, title: "Private mode", text: "Click the eye icon and nothing is kept: no gallery, no files, no history." },
+const promises = () => [
+  { icon: Cpu, title: t("welcome.madeOnTitle", { machine }), text: t("welcome.madeOnText") },
+  { icon: CloudOff, title: t("welcome.onlineTitle"), text: t("welcome.onlineText") },
+  { icon: Unlimited, title: t("welcome.noLimitsTitle"), text: t("welcome.noLimitsText") },
+  { icon: EyeOff, title: t("welcome.privateTitle"), text: t("welcome.privateText") },
 ];
 
 /** First launch (and Settings → General → Show welcome screen): what Kokon is and why it is private. */
@@ -63,15 +65,12 @@ export function Welcome() {
   }, []);
   return (
     <div className="modal-scrim">
-      <div className="welcome" role="dialog" aria-label="Welcome to Kokon">
+      <div className="welcome" role="dialog" aria-label={t("welcome.title")}>
         <KokonMark size={44} />
-        <h1>Welcome to Kokon</h1>
-        <p className="welcome-lead">
-          A private image studio that lives on your {machine}. Describe a new image, or a change to a photo, in plain words. Like a cocoon, Kokon is a closed space where something new
-          takes shape, and nothing gets out unless you take it out.
-        </p>
+        <h1>{t("welcome.title")}</h1>
+        <p className="welcome-lead">{t("welcome.lead", { machine })}</p>
         <div className="welcome-grid">
-          {PROMISES.map(({ icon: Icon, title, text }) => (
+          {promises().map(({ icon: Icon, title, text }) => (
             <div className="welcome-item" key={title}>
               <Icon size={20} />
               <strong>{title}</strong>
@@ -82,32 +81,33 @@ export function Welcome() {
         {!inBrowser && (
           <label className="welcome-check">
             <input type="checkbox" checked={updateCheck} onChange={(e) => setUpdateCheck(e.target.checked)} />
-            Check for Kokon updates once a day
+            {t("welcome.updateCheck")}
           </label>
         )}
         <button className="btn primary big" onClick={close}>
-          {needsSetup ? "Set up Kokon" : "Start creating"}
+          {needsSetup ? t("welcome.setUp") : t("welcome.startCreating")}
         </button>
-        <span className="muted welcome-foot">You can open this again from Settings → General.</span>
+        <span className="muted welcome-foot">{t("welcome.openAgain")}</span>
       </div>
     </div>
   );
 }
 
-const SLIDES: { src: string; video?: boolean; title: string; prompt: string }[] = [
-  { src: demo, video: true, title: "One project, start to finish", prompt: "Create, edit, combine and expand: the whole flow in under a minute." },
-  { src: remove, title: "Remove", prompt: "Paint the scooter · Remove · “the red scooter”" },
-  { src: replace, title: "Replace", prompt: "“Replace the yellow armchair with a deep green velvet sofa and hang an abstract painting above it”" },
-  { src: relight, title: "Relight", prompt: "“Make it a snowy winter night, warm light glowing from the cabin windows”" },
-  { src: restyle, title: "Restyle", prompt: "“Turn it into a hand-painted watercolor illustration”" },
-  { src: text, title: "Change text", prompt: "“Change the gold sign text to ‘KOKON CAFÉ’”" },
-  { src: expand, title: "Expand", prompt: "Expand 40 % left and right · “continue the rocky coastline and the turquoise sea”" },
+const slides = (): { src: string; video?: boolean; title: string; prompt: string }[] => [
+  { src: demo, video: true, title: t("welcome.slideDemoTitle"), prompt: t("welcome.slideDemoText") },
+  { src: remove, title: t("welcome.slideRemoveTitle"), prompt: t("welcome.slideRemoveText") },
+  { src: replace, title: t("welcome.slideReplaceTitle"), prompt: t("welcome.slideReplaceText") },
+  { src: relight, title: t("welcome.slideRelightTitle"), prompt: t("welcome.slideRelightText") },
+  { src: restyle, title: t("welcome.slideRestyleTitle"), prompt: t("welcome.slideRestyleText") },
+  { src: text, title: t("welcome.slideTextTitle"), prompt: t("welcome.slideTextText") },
+  { src: expand, title: t("welcome.slideExpandTitle"), prompt: t("welcome.slideExpandText") },
 ];
 
 /** What Kokon can do, shown while the model downloads (the wait is the best moment for it). */
 export function Showcase() {
   const [i, setI] = useState(0);
   const video = useRef<HTMLVideoElement>(null);
+  const SLIDES = slides();
   const slide = SLIDES[i];
   const go = (d: number) => setI((n) => (n + d + SLIDES.length) % SLIDES.length);
   // Photos advance every 6 s; the video advances when it ends.
@@ -119,21 +119,19 @@ export function Showcase() {
   return (
     <div className="showcase">
       <div className="showcase-head">
-        <strong>While you wait: what you can do</strong>
-        <span className="muted">
-          {i + 1} / {SLIDES.length}
-        </span>
+        <strong>{t("welcome.showcaseTitle")}</strong>
+        <span className="muted">{t("welcome.slideCount", { n: i + 1, total: SLIDES.length })}</span>
       </div>
       <div className="showcase-media">
         {slide.video ? (
           <video ref={video} key={slide.src} src={slide.src} poster={poster} autoPlay muted playsInline onEnded={() => go(1)} />
         ) : (
-          <img key={slide.src} src={slide.src} alt={`${slide.title}: before and after`} />
+          <img key={slide.src} src={slide.src} alt={t("welcome.slideAlt", { title: slide.title })} />
         )}
-        <button className="showcase-nav prev" onClick={() => go(-1)} aria-label="Previous">
+        <button className="showcase-nav prev" onClick={() => go(-1)} aria-label={t("welcome.previous")}>
           <ChevronLeft size={18} />
         </button>
-        <button className="showcase-nav next" onClick={() => go(1)} aria-label="Next">
+        <button className="showcase-nav next" onClick={() => go(1)} aria-label={t("common.next")}>
           <ChevronRight size={18} />
         </button>
       </div>
@@ -154,17 +152,17 @@ export function Showcase() {
 export function ReadyTips() {
   return (
     <div className="ready-tips">
-      <strong>Three ways to begin</strong>
+      <strong>{t("welcome.readyTitle")}</strong>
       <ol>
-        <li>Drop or paste a photo, then describe the change: “make it golden hour”.</li>
+        <li>{t("welcome.readyDrop")}</li>
         <li>
-          Switch to <b>New image</b> and describe something that does not exist yet.
+          <Trans k="welcome.readyNewImage" tags={{ b: (s) => <b>{s}</b> }} />
         </li>
         <li>
-          Use <b>Paint area</b> to brush over part of a photo, and only that part changes.
+          <Trans k="welcome.readyPaint" tags={{ b: (s) => <b>{s}</b> }} />
         </li>
       </ol>
-      <span className="muted">Want nothing saved? Turn on Private mode with the eye icon at the top.</span>
+      <span className="muted">{t("welcome.readyPrivate")}</span>
     </div>
   );
 }

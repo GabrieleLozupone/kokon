@@ -10,6 +10,7 @@ import { closeEditor, focusPrompt, getState, toastError, toastInfo, updateCompos
 import { IconButton } from "./ui";
 import { isTyping } from "./Viewer";
 import { ZoomPan } from "./ZoomPan";
+import { t } from "../lib/i18n";
 
 // Two ways to say where the change goes. Colours (the default): each thing gets a colour, painted
 // over the whole area it should fill, and a few words; the model gets the image with the marks
@@ -240,7 +241,7 @@ export function InpaintEditor() {
   const select = async (x: number, y: number, remove: boolean) => {
     const s = segmenter.current;
     if (!s) {
-      toastInfo(sam === "missing" ? "The selection model could not be downloaded: paint with the brush." : samPct != null ? `Downloading the selection model… ${samPct}%` : sam === "error" ? "The selection model could not start: paint with the brush." : "The selection model is still getting ready.");
+      toastInfo(sam === "missing" ? t("inpaint.samMissingToast") : samPct != null ? t("inpaint.samDownloadingToast", { pct: samPct }) : sam === "error" ? t("inpaint.samErrorToast") : t("inpaint.samNotReadyToast"));
       return;
     }
     const prev = lastClick.current;
@@ -492,19 +493,21 @@ export function InpaintEditor() {
 
   const selectTitle =
     sam === "missing"
-      ? "Select (S): the selection model could not be downloaded (open the editor again to retry)"
+      ? t("inpaint.selectMissing")
       : sam === "loading"
         ? samPct != null
-          ? `Select (S): downloading the selection model (44 MB, once)… ${samPct}%`
-          : "Select (S): getting the selection model ready…"
-        : `Select (S): click an object to ${colours ? "fill it with the colour" : "paint it"} · click again for a bigger part · right-click takes it out`;
+          ? t("inpaint.selectDownloading", { pct: samPct })
+          : t("inpaint.selectPreparing")
+        : colours
+          ? t("inpaint.selectColours")
+          : t("inpaint.selectArea");
 
   return (
     <div className="overlay">
       <div className="overlay-head">
-        <h2>{colours ? "Paint where things go" : "Paint the area to change"}</h2>
+        <h2>{colours ? t("inpaint.titleColours") : t("inpaint.titleArea")}</h2>
         <span className="spacer" />
-        <IconButton title="Cancel (Esc)" onClick={() => closeEditor()}>
+        <IconButton title={t("inpaint.cancelEsc")} onClick={() => closeEditor()}>
           <X size={18} />
         </IconButton>
       </div>
@@ -579,7 +582,7 @@ export function InpaintEditor() {
                       <span className="doc-swatch" style={{ background: cssOf(c) }} />
                       <input
                         value={wants[c] ?? ""}
-                        placeholder={`What goes here, e.g. “a green velvet armchair”`}
+                        placeholder={t("inpaint.wantPlaceholder")}
                         onChange={(e) => setWants({ ...wants, [c]: e.target.value })}
                         spellCheck={false}
                       />
@@ -607,8 +610,8 @@ export function InpaintEditor() {
         <div className="marks-panel">
           <p className="marks-help">
             {used.length
-              ? "Say what goes at each colour in its box on the image. Works best when the colour fills the whole area the thing should take."
-              : "Fill the whole area where something should go, one colour per thing (Select fills an object in one click). The rest of the photo stays as it is."}
+              ? t("inpaint.helpColoursUsed")
+              : t("inpaint.helpColoursEmpty")}
           </p>
         </div>
       )}
@@ -616,17 +619,17 @@ export function InpaintEditor() {
       <div className="editor-tools">
         {/* How to paint, next to the brush: colours (one per thing) or one area. */}
         <div className="group">
-          <span className="seg inpaint-kind" role="radiogroup" aria-label="How to paint">
-            <button className={colours ? "on" : ""} role="radio" aria-checked={colours} onClick={() => setKind("colours")} title="One colour per thing to add or change: fill its area, then say what goes there">
-              <Palette size={14} /> Colours
+          <span className="seg inpaint-kind" role="radiogroup" aria-label={t("inpaint.howToPaint")}>
+            <button className={colours ? "on" : ""} role="radio" aria-checked={colours} onClick={() => setKind("colours")} title={t("inpaint.coloursTooltip")}>
+              <Palette size={14} /> {t("inpaint.colours")}
             </button>
-            <button className={colours ? "" : "on"} role="radio" aria-checked={!colours} onClick={() => setKind("area")} title="One area and a prompt (edit, remove, replace or add)">
-              <Brush size={14} /> One area
+            <button className={colours ? "" : "on"} role="radio" aria-checked={!colours} onClick={() => setKind("area")} title={t("inpaint.oneAreaTooltip")}>
+              <Brush size={14} /> {t("inpaint.oneArea")}
             </button>
           </span>
         </div>
         {colours && (
-          <div className="group marks-colours" role="radiogroup" aria-label="Colour">
+          <div className="group marks-colours" role="radiogroup" aria-label={t("inpaint.colour")}>
             {MARK_COLOURS.map((m, i) => (
               <button
                 key={m.name}
@@ -634,8 +637,8 @@ export function InpaintEditor() {
                 style={{ background: m.css }}
                 role="radio"
                 aria-checked={colour === m.name}
-                aria-label={m.name}
-                title={`${m.name[0].toUpperCase()}${m.name.slice(1)} (${i + 1})`}
+                aria-label={colourName(m.name)}
+                title={`${capitalize(colourName(m.name))} (${i + 1})`}
                 onClick={() => setColour(m.name)}
               />
             ))}
@@ -643,7 +646,7 @@ export function InpaintEditor() {
         )}
         <div className="group">
           <IconButton
-            title={colours ? "Brush (B): fill the area · right-click erases" : "Brush (B) · right-click erases"}
+            title={colours ? t("inpaint.brushColours") : t("inpaint.brushArea")}
             active={tool !== "select" && (swapped ? tool === "eraser" : tool === "brush") && !spacePressed}
             onClick={() => setTool("brush")}
           >
@@ -653,14 +656,14 @@ export function InpaintEditor() {
             {sam === "loading" || selecting ? <Loader2 size={17} className="spin" /> : <MousePointerClick size={17} />}
           </IconButton>
           <IconButton
-            title="Eraser (E) · right-click paints"
+            title={t("inpaint.eraser")}
             active={tool !== "select" && (swapped ? tool === "brush" : tool === "eraser") && !spacePressed}
             onClick={() => setTool("eraser")}
           >
             <Eraser size={17} />
           </IconButton>
           <IconButton
-            title="Move (H) · or drag with the middle button, or hold Space"
+            title={t("inpaint.move")}
             active={tool === "pan" || spacePressed}
             onClick={() => setTool((t) => (t === "pan" ? "brush" : "pan"))}
           >
@@ -669,31 +672,31 @@ export function InpaintEditor() {
         </div>
 
         <div className="group">
-          <label className="slider" title="Brush size ( [ and ] )">
-            Size
+          <label className="slider" title={t("inpaint.brushSizeTooltip")}>
+            {t("inpaint.size")}
             <input type="range" min={4} max={400} value={brush} onChange={(e) => setBrush(Number(e.target.value))} />
           </label>
         </div>
 
         <div className="group">
-          <IconButton title={`Undo (${shortcut("Z")})`} onClick={undo} disabled={!ops.length}>
+          <IconButton title={t("inpaint.undo", { shortcut: shortcut("Z") })} onClick={undo} disabled={!ops.length}>
             <Undo2 size={17} />
           </IconButton>
-          <IconButton title={`Redo (${shortcut("Y")})`} onClick={redoOp} disabled={!redo.length}>
+          <IconButton title={t("inpaint.redo", { shortcut: shortcut("Y") })} onClick={redoOp} disabled={!redo.length}>
             <Redo2 size={17} />
           </IconButton>
           {!colours && (
-            <IconButton title="Invert mask" onClick={() => push({ kind: "invert" })}>
+            <IconButton title={t("inpaint.invertMask")} onClick={() => push({ kind: "invert" })}>
               <Contrast size={17} />
             </IconButton>
           )}
-          <IconButton title={colours ? "Clear the colours" : "Clear mask"} onClick={() => push({ kind: "clear" })}>
+          <IconButton title={colours ? t("inpaint.clearColours") : t("inpaint.clearMask")} onClick={() => push({ kind: "clear" })}>
             <Trash2 size={17} />
           </IconButton>
         </div>
 
         <button className="btn primary" onClick={done} disabled={busy}>
-          <Check size={15} /> Done
+          <Check size={15} /> {t("common.done")}
         </button>
       </div>
     </div>
@@ -701,6 +704,22 @@ export function InpaintEditor() {
 }
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
+
+/** A mark colour's name in the UI language (lower case, as in a sentence). */
+function colourName(c: MarkColour): string {
+  switch (c) {
+    case "red":
+      return t("inpaint.colourRed");
+    case "blue":
+      return t("inpaint.colourBlue");
+    case "green":
+      return t("inpaint.colourGreen");
+    case "yellow":
+      return t("inpaint.colourYellow");
+  }
+}
+
+const capitalize = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
 /** The mark colours on the canvas and the box of each (0-1 of the image; sampled, an opaque pixel goes
  * to the nearest colour). */

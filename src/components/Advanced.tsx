@@ -1,4 +1,5 @@
 import { Dices, RotateCcw } from "lucide-react";
+import { t } from "../lib/i18n";
 import { updateComposer, useStore } from "../lib/store";
 import type { Advanced, OutputFormat, Plan, ReferenceDetail } from "../lib/types";
 import { Seg, Switch } from "./ui";
@@ -40,26 +41,26 @@ export function AdvancedPanel({ plan }: { plan: Plan | null }) {
   return (
     <>
       <label className="field-row">
-        <span>Seed</span>
+        <span>{t("advanced.seed")}</span>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <input
             className="input"
             style={{ width: 120 }}
             type="number"
-            placeholder="Random"
+            placeholder={t("advanced.seedRandom")}
             value={c.seed ?? ""}
             onChange={(e) => updateComposer({ seed: e.target.value === "" ? null : Math.max(0, Math.floor(Number(e.target.value))) })}
           />
-          <button className="icon-btn sm" title="Random seed" onClick={() => updateComposer({ seed: null })}>
+          <button className="icon-btn sm" title={t("advanced.randomSeed")} onClick={() => updateComposer({ seed: null })}>
             <Dices size={15} />
           </button>
         </div>
       </label>
 
       <label className="field-row">
-        <span>Sampler</span>
+        <span>{t("advanced.sampler")}</span>
         <select className="select" value={a.sampler ?? ""} onChange={(e) => setA({ sampler: e.target.value || null })}>
-          <option value="">Default ({plan?.sampler ?? "euler"})</option>
+          <option value="">{t("advanced.samplerDefault", { name: plan?.sampler ?? "euler" })}</option>
           {(samplers?.length ? samplers : FALLBACK_SAMPLERS).map((s) => (
             <option key={s} value={s}>
               {s}
@@ -71,7 +72,11 @@ export function AdvancedPanel({ plan }: { plan: Plan | null }) {
       {editLike && (
         <label className="field">
           <span>
-            Edit strength {a.strength != null ? a.strength.toFixed(2) : plan?.strength != null ? `(auto ${plan.strength})` : "(auto)"}
+            {a.strength != null
+              ? t("advanced.editStrength", { value: a.strength.toFixed(2) })
+              : plan?.strength != null
+                ? t("advanced.editStrengthAutoValue", { value: plan.strength })
+                : t("advanced.editStrengthAuto")}
           </span>
           <input type="range" min={0.05} max={1} step={0.05} value={a.strength ?? plan?.strength ?? 1} onChange={(e) => setA({ strength: Number(e.target.value) })} />
         </label>
@@ -79,24 +84,22 @@ export function AdvancedPanel({ plan }: { plan: Plan | null }) {
 
       {plan?.reference_detail && (
         <div className="field">
-          <span title="The source images share the GPU budget with the image being drawn. 1 MP leaves more of it for the result, which renders larger and faster; Full gives the model finer source detail but halves the result's size. New chats start at 1 MP.">
-            Reference detail
-          </span>
+          <span title={t("advanced.referenceDetailHint")}>{t("advanced.referenceDetail")}</span>
           <Seg<ReferenceDetail>
             value={a.reference_detail ?? "standard"}
             options={[
-              { value: "standard", label: "1 MP" },
-              { value: "full", label: "Full" },
+              { value: "standard", label: t("advanced.referenceDetailStandard") },
+              { value: "full", label: t("advanced.referenceDetailFull") },
             ]}
             onChange={(v) => setA({ reference_detail: v === "standard" ? null : v })}
           />
         </div>
       )}
 
-      <NumField label="Images per run" value={a.batch_count} placeholder="1" min={1} max={4} onChange={(v) => setA({ batch_count: v })} />
+      <NumField label={t("advanced.imagesPerRun")} value={a.batch_count} placeholder="1" min={1} max={4} onChange={(v) => setA({ batch_count: v })} />
 
       <div className="field">
-        <span>Format</span>
+        <span>{t("advanced.format")}</span>
         <Seg<OutputFormat>
           value={a.output_format ?? "png"}
           options={[
@@ -110,22 +113,18 @@ export function AdvancedPanel({ plan }: { plan: Plan | null }) {
 
       {c.refs[0]?.hdr && (
         <div className="field-row">
-          <span title="The HEIC source has an HDR gain map. The result is saved as an Ultra HDR JPEG; the HDR boost fades where the edit changed brightness.">
-            Keep HDR (Ultra HDR JPEG)
-          </span>
-          <Switch on={a.hdr ?? true} onChange={(v) => setA({ hdr: v })} label="Keep HDR" />
+          <span title={t("advanced.keepHdrHint")}>{t("advanced.keepHdrUltra")}</span>
+          <Switch on={a.hdr ?? true} onChange={(v) => setA({ hdr: v })} label={t("advanced.keepHdr")} />
         </div>
       )}
 
       <div className="field-row">
-        <span>
-          VAE tiling {a.vae_tiling == null ? `(auto: ${plan?.vae_tiling ? "on" : "off"})` : ""}
-        </span>
-        <Switch on={a.vae_tiling ?? plan?.vae_tiling ?? false} onChange={(v) => setA({ vae_tiling: v })} label="VAE tiling" />
+        <span>{a.vae_tiling != null ? t("advanced.vaeTiling") : plan?.vae_tiling ? t("advanced.vaeTilingAutoOn") : t("advanced.vaeTilingAutoOff")}</span>
+        <Switch on={a.vae_tiling ?? plan?.vae_tiling ?? false} onChange={(v) => setA({ vae_tiling: v })} label={t("advanced.vaeTiling")} />
       </div>
 
       <button className="btn" onClick={() => updateComposer({ advanced: {}, seed: null })}>
-        <RotateCcw size={14} /> Reset to automatic
+        <RotateCcw size={14} /> {t("advanced.resetToAuto")}
       </button>
 
       <hr className="menu-sep" />

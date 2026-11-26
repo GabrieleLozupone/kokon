@@ -72,6 +72,13 @@ minutes (real inference, benchmarks, release builds) is run by the maintainer: h
   comment what you measured it on (GPU, OS, bench). Comments explain *why*.
 - Add or update a test for behaviour you change. Tests never touch real user folders.
 - UI text and docs: plain, short English. Follow the style of the file you edit (`cargo fmt`, strict TypeScript).
+- **UI text lives in `src/locales/`, never in the code.** Components call `t("area.name")` (`src/lib/i18n.ts`),
+  or `<Trans>` for a sentence with markup. When you add or change a text, do it in **every** supported language
+  in the same change: `en.json` (the source) and each other file in `src/locales/` (today `it`, `es`, `fr`),
+  written as a native speaker would, following the glossary in `src/locales/<lang>.notes.md`. A changed English
+  text means its translations change too; a removed key is removed everywhere. Check with
+  `node scripts/dev/i18n-check.mjs` and `npm test` (`src/lib/i18n.test.ts` fails on missing keys,
+  placeholders or tags).
 - Methods must generalize: no constants tuned on one image; every step falls back safely when it doesn't apply.
 - Don't commit model files or large binaries. Code is AGPL-3.0-only; contributors sign the [CLA](CLA.md).
 

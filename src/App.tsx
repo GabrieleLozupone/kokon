@@ -29,6 +29,7 @@ import { PhoneApp } from "./components/PhoneApp";
 import { BareTitleBar } from "./components/TitleBar";
 import { TopBar } from "./components/TopBar";
 import { autoCheckForUpdate } from "./lib/updates";
+import { t } from "./lib/i18n";
 
 const IMAGE_EXT = /\.(png|jpe?g|webp|bmp|gif|tiff?|heic|heif)$/i;
 const REPO_URL = "https://github.com/GabrieleLozupone/kokon";
@@ -38,13 +39,13 @@ const REPO_URL = "https://github.com/GabrieleLozupone/kokon";
 function BootSplash() {
   const [slow, setSlow] = useState(false);
   useEffect(() => {
-    const t = window.setTimeout(() => setSlow(true), 3000);
-    return () => window.clearTimeout(t);
+    const timer = window.setTimeout(() => setSlow(true), 3000);
+    return () => window.clearTimeout(timer);
   }, []);
   return (
     <div className="boot-splash">
       <KokonMark size={56} />
-      <span className={`muted boot-text ${slow ? "on" : ""}`}>Starting Kokon…</span>
+      <span className={`muted boot-text ${slow ? "on" : ""}`}>{t("app.starting")}</span>
     </div>
   );
 }
@@ -55,19 +56,19 @@ function Toasts() {
   return (
     <div className="toasts" role="status">
       <StarPrompt />
-      {toasts.map((t) => (
-        <div key={t.id} className="toast">
+      {toasts.map((toast) => (
+        <div key={toast.id} className="toast">
           <div className="body">
-            <div>{t.message}</div>
-            {t.suggestion && <div className="sugg">{t.suggestion}</div>}
-            {t.detail && (
-              <button onClick={() => setOpen(open === t.id ? null : t.id)} style={{ marginTop: 4 }}>
-                {open === t.id ? "Hide details" : "Details"}
+            <div>{toast.message}</div>
+            {toast.suggestion && <div className="sugg">{toast.suggestion}</div>}
+            {toast.detail && (
+              <button onClick={() => setOpen(open === toast.id ? null : toast.id)} style={{ marginTop: 4 }}>
+                {open === toast.id ? t("app.hideDetails") : t("app.details")}
               </button>
             )}
-            {open === t.id && <pre>{t.detail}</pre>}
+            {open === toast.id && <pre>{toast.detail}</pre>}
           </div>
-          <button onClick={() => dismissToast(t.id)} aria-label="Dismiss">
+          <button onClick={() => dismissToast(toast.id)} aria-label={t("app.dismiss")}>
             <X size={14} />
           </button>
         </div>
@@ -87,18 +88,18 @@ function StarPrompt() {
   return (
     <div className="star-prompt">
       <div className="body">
-        <strong>Enjoying Kokon?</strong>
-        <div className="sugg">A star on GitHub helps other people find it. This is the only time we ask.</div>
+        <strong>{t("app.starTitle")}</strong>
+        <div className="sugg">{t("app.starBody")}</div>
         <div className="star-actions">
           <button className="btn primary" onClick={star}>
-            <Star size={14} /> Star on GitHub
+            <Star size={14} /> {t("app.starOnGitHub")}
           </button>
           <button className="btn ghost" onClick={closeStarPrompt}>
-            No thanks
+            {t("app.noThanks")}
           </button>
         </div>
       </div>
-      <button onClick={closeStarPrompt} aria-label="Dismiss">
+      <button onClick={closeStarPrompt} aria-label={t("app.dismiss")}>
         <X size={14} />
       </button>
     </div>
@@ -180,7 +181,7 @@ export default function App() {
         if (cfg.setupComplete && !inBrowser)
           api.models().then((m) => {
             const w = m.active.source === "user" ? m.slots.find((x) => x.role === "diffusion")?.info?.warning : null;
-            if (w) toastError(new ApiError({ code: "model_warning", message: w, suggestion: "Settings → Models: download the official files, or use other files of your own." }, 200));
+            if (w) toastError(new ApiError({ code: "model_warning", message: w, suggestion: t("app.modelWarningSuggestion") }, 200));
           }, () => {});
         // Preload the model so the first generation starts immediately (on the Mac engine when it was just switched
         // on). After What's new instead (afterStartScreens): not a file or engine about to be replaced.
@@ -213,7 +214,7 @@ export default function App() {
       const all = Array.from(e.dataTransfer?.files ?? []);
       const files = all.filter((f) => f.type.startsWith("image/") || IMAGE_EXT.test(f.name));
       if (files.length) uploadFiles(files);
-      else if (all.length) toastInfo("Only image files can be added.");
+      else if (all.length) toastInfo(t("app.onlyImages"));
     };
     window.addEventListener("dragover", over);
     window.addEventListener("dragleave", leave);
@@ -241,7 +242,7 @@ export default function App() {
           setDragging(false);
           const paths = p.paths.filter((x) => IMAGE_EXT.test(x));
           if (paths.length) importPaths(paths);
-          else if (p.paths.length) toastInfo("Only image files can be added.");
+          else if (p.paths.length) toastInfo(t("app.onlyImages"));
         }
       })
       .then((u) => (gone ? u() : (un = u)))
@@ -335,10 +336,10 @@ export default function App() {
           <BootSplash />
         ) : (
           <div className="failed">
-            <strong>{inBrowser ? "Could not reach Kokon" : "Could not start the local service"}</strong>
+            <strong>{inBrowser ? t("app.unreachable") : t("app.serviceFailed")}</strong>
             <span style={{ whiteSpace: "pre-line" }}>{boot}</span>
             <button className="btn" onClick={() => location.reload()}>
-              Try again
+              {t("common.retry")}
             </button>
           </div>
         )}
@@ -381,7 +382,7 @@ export default function App() {
           {overlay === "inpaint" && <InpaintEditor />}
           {overlay === "expand" && <ExpandEditor />}
           {overlay === "layers" && <LayersEditor />}
-          {dragging && <div className="drop-hint">{editing ? "Drop to add as a reference image" : "Drop an image to start editing it"}</div>}
+          {dragging && <div className="drop-hint">{editing ? t("app.dropReference") : t("app.dropToEdit")}</div>}
         </div>
         {!needsSetup && overlay !== "inpaint" && overlay !== "expand" && overlay !== "gallery" && <Composer />}
       </div>

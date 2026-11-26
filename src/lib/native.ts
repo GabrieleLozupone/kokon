@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
+import { t } from "./i18n";
 import { inBrowser } from "./platform";
 
 export interface Connection { baseUrl: string; token: string; version: string }
@@ -21,7 +22,7 @@ async function asPng(blob: Blob): Promise<Blob> {
   canvas.width = bmp.width;
   canvas.height = bmp.height;
   canvas.getContext("2d")!.drawImage(bmp, 0, 0);
-  return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Could not copy the image."))), "image/png"));
+  return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error(t("native.copyImageFailed")))), "image/png"));
 }
 
 export const native = {
@@ -32,7 +33,7 @@ export const native = {
   /** Browser: the image at `url` (see `canCopyImage`). */
   copyImageUrl: async (url: string) => {
     const res = await fetch(url);
-    if (!res.ok) throw new Error("Could not read the image.");
+    if (!res.ok) throw new Error(t("native.readImageFailed"));
     const png = await asPng(await res.blob());
     await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
   },
@@ -49,7 +50,7 @@ export const native = {
     area.select();
     const ok = document.execCommand("copy");
     area.remove();
-    if (!ok) throw new Error("Could not copy the text.");
+    if (!ok) throw new Error(t("native.copyTextFailed"));
   },
   readClipboardImage: async (): Promise<Uint8Array | null> => {
     if (inBrowser) return null;
@@ -67,7 +68,7 @@ export const native = {
   },
   /** Desktop: paths of the images picked. */
   pickImages: async (): Promise<string[]> => {
-    const r = await open({ multiple: true, directory: false, filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff", "heic", "heif"] }] });
+    const r = await open({ multiple: true, directory: false, filters: [{ name: t("native.imagesFilter"), extensions: ["png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff", "heic", "heif"] }] });
     if (!r) return [];
     return Array.isArray(r) ? r : [r];
   },
@@ -90,7 +91,7 @@ export const native = {
       document.body.appendChild(input);
       input.click();
     }),
-  pickFile: async (extensions: string[], defaultPath?: string, kind = "Model"): Promise<string | null> => {
+  pickFile: async (extensions: string[], defaultPath?: string, kind = t("native.modelFilter")): Promise<string | null> => {
     const r = await open({ multiple: false, directory: false, defaultPath, filters: [{ name: kind, extensions }] });
     return typeof r === "string" ? r : null;
   },

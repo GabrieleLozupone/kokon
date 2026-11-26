@@ -4,6 +4,7 @@ import { ASPECTS, LONG_SIDE_PRESETS, aspectLabel, parseRatio, planPipeline, size
 import { getState, updateComposer, useStore } from "../lib/store";
 import type { Plan, ResolutionMode } from "../lib/types";
 import { Option } from "./ui";
+import { t } from "../lib/i18n";
 
 /** A small rectangle with the ratio's shape. */
 export function RatioIcon({ ratio, size = 16 }: { ratio: number; size?: number }) {
@@ -41,7 +42,7 @@ export function AspectGrid(props: { value: string | null; onPick: (ratio: string
     <div className="aspect-menu">
       {props.auto && (
         <button className={`aspect-auto ${props.value === "auto" ? "on" : ""}`} onClick={() => props.onPick("auto")}>
-          <span>Auto</span>
+          <span>{t("common.auto")}</span>
           <span className="sub">{props.auto.sub}</span>
           {props.value === "auto" && <Check size={14} />}
         </button>
@@ -55,25 +56,25 @@ export function AspectGrid(props: { value: string | null; onPick: (ratio: string
         ))}
       </div>
       <div className="aspect-custom">
-        <span className="muted">Other</span>
-        <PairFields a={a} b={b} sep=":" max={100} onA={setA} onB={setB} label="Custom ratio" onEnter={() => ok && props.onPick(typed)} />
-        <button className="btn" disabled={!ok} onClick={() => props.onPick(typed)} title={typed && !ok ? "Use a ratio between 1:8 and 8:1" : undefined}>
-          Use
+        <span className="muted">{t("sizeMenus.otherRatio")}</span>
+        <PairFields a={a} b={b} sep=":" max={100} onA={setA} onB={setB} label={t("sizeMenus.customRatio")} onEnter={() => ok && props.onPick(typed)} />
+        <button className="btn" disabled={!ok} onClick={() => props.onPick(typed)} title={typed && !ok ? t("sizeMenus.ratioRange") : undefined}>
+          {t("sizeMenus.use")}
         </button>
       </div>
     </div>
   );
 }
 
-const RES_OPTIONS: { value: ResolutionMode; label: string; sub: string }[] = [
-  { value: "auto", label: "Auto", sub: "Set by the quality preset" },
+const resOptions = (): { value: ResolutionMode; label: string; sub: string }[] => [
+  { value: "auto", label: t("common.auto"), sub: t("sizeMenus.autoSub") },
   { value: "1k", label: "1K", sub: "~1 MP" },
   { value: "1.5k", label: "1.5K", sub: "~2.4 MP" },
-  { value: "2k", label: "2K", sub: "~4 MP · the model's native size" },
-  { value: "source", label: "Source", sub: "Same size as image 1" },
+  { value: "2k", label: "2K", sub: t("sizeMenus.twoKSub") },
+  { value: "source", label: t("sizeMenus.source"), sub: t("sizeMenus.sourceSub") },
 ];
 
-export const resolutionLabel = (r: ResolutionMode, w: number, h: number) => (r === "custom" ? `${w}×${h}` : RES_OPTIONS.find((o) => o.value === r)?.label ?? "Auto");
+export const resolutionLabel = (r: ResolutionMode, w: number, h: number) => (r === "custom" ? `${w}×${h}` : resOptions().find((o) => o.value === r)?.label ?? t("common.auto"));
 
 /** Output size: a preset level or an exact width × height (whose ratio is then shown). */
 export function ResolutionMenu({ plan, close }: { plan: Plan | null; close: () => void }) {
@@ -94,17 +95,17 @@ export function ResolutionMenu({ plan, close }: { plan: Plan | null; close: () =
   const ratio = valid ? (w as number) / (h as number) : 16 / 9;
   return (
     <div className="res-menu">
-      {RES_OPTIONS.filter((o) => o.value !== "source" || editing).map((o) => (
+      {resOptions().filter((o) => o.value !== "source" || editing).map((o) => (
         <Option key={o.value} selected={c.resolution === o.value} label={o.label} sub={o.sub} onClick={() => (updateComposer({ resolution: o.value }), close())} />
       ))}
       <div className={`res-custom ${c.resolution === "custom" ? "on" : ""}`}>
         <button className="res-custom-head" onClick={pick}>
           <span className="check">{c.resolution === "custom" && <Check size={15} />}</span>
-          Exact size
+          {t("sizeMenus.exactSize")}
         </button>
         <span className="res-custom-row">
-          <PairFields a={w} b={h} sep="×" max={4096} onA={(v) => apply(v, h)} onB={(v) => apply(w, v)} label="Width and height" onEnter={close} onFocus={pick} />
-          <button className="icon-btn sm" title="Swap width and height" onClick={() => apply(h, w)}>
+          <PairFields a={w} b={h} sep="×" max={4096} onA={(v) => apply(v, h)} onB={(v) => apply(w, v)} label={t("sizeMenus.widthHeight")} onEnter={close} onFocus={pick} />
+          <button className="icon-btn sm" title={t("sizeMenus.swap")} onClick={() => apply(h, w)}>
             <ArrowLeftRight size={14} />
           </button>
           {valid && (
@@ -128,7 +129,7 @@ export function ResolutionMenu({ plan, close }: { plan: Plan | null; close: () =
       </div>
       {plan && (
         <div className="res-foot muted">
-          Output {plan.output.width}×{plan.output.height} ({aspectLabel(plan.output.width, plan.output.height)}) · {planPipeline(plan)}
+          {t("sizeMenus.output", { width: plan.output.width, height: plan.output.height, ratio: aspectLabel(plan.output.width, plan.output.height), pipeline: planPipeline(plan) })}
         </div>
       )}
     </div>

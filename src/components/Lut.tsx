@@ -7,6 +7,7 @@ import { inBrowser } from "../lib/platform";
 import { toastError } from "../lib/store";
 import type { LutEntry } from "../lib/types";
 import { Popover } from "./ui";
+import { t } from "../lib/i18n";
 
 /** Asks for a .cube file and adds it to Kokon's LUT list. */
 async function openCubeFile(): Promise<LutEntry | null> {
@@ -41,21 +42,21 @@ function LutList({ current, onPick, close }: { current?: string; onPick: (lut: L
   return (
     <div className="lut-list">
       {items === null && <Loader2 className="spin" size={16} style={{ margin: 10 }} />}
-      {own.length > 0 && <span className="muted lut-list-title">Your LUTs</span>}
+      {own.length > 0 && <span className="muted lut-list-title">{t("lut.yourLuts")}</span>}
       {own.map((e) => (
         <div key={e.name} className="lut-row">
           {row(e)}
           <button
             className="icon-btn sm"
-            title="Remove from the list"
-            aria-label={`Remove ${e.name} from the list`}
+            title={t("lut.removeFromList")}
+            aria-label={t("lut.removeNamedFromList", { name: e.name })}
             onClick={() => api.removeLut(e.name).then(() => setItems((l) => l?.filter((x) => x.name !== e.name) ?? null), toastError)}
           >
             <X size={14} />
           </button>
         </div>
       ))}
-      {presets.length > 0 && <span className="muted lut-list-title">Kokon presets</span>}
+      {presets.length > 0 && <span className="muted lut-list-title">{t("lut.kokonPresets")}</span>}
       {presets.map((e) => (
         <div key={e.name} className="lut-row">
           {row(e)}
@@ -73,7 +74,7 @@ function LutList({ current, onPick, close }: { current?: string; onPick: (lut: L
           <span className="check">
             <FolderOpen size={15} />
           </span>
-          <span>Open a .cube file…</span>
+          <span>{t("lut.openCubeFile")}</span>
         </button>
       )}
     </div>
@@ -89,7 +90,7 @@ export function LutButton({ current, onPick }: { current?: LutEntry; onPick: (lu
       trigger={(open, toggle) => (
         <button
           className={`act ${open ? "active" : ""}`}
-          title={current ? "Choose another LUT" : "LUT: apply a colour look from a .cube file (preview first, the original is kept)"}
+          title={current ? t("lut.chooseAnother") : t("lut.buttonTooltip")}
           aria-label="LUT"
           onClick={toggle}
         >
@@ -116,7 +117,7 @@ export function LutOverlay({ src, opacity }: { src: string; opacity: number }) {
         draggable={false}
         style={{ opacity: loaded === src ? opacity : 0 }}
         onLoad={() => setLoaded(src)}
-        onError={() => toastError(new Error("The LUT preview could not be made."))}
+        onError={() => toastError(new Error(t("lut.previewFailed")))}
       />
       {loaded !== src && (
         <span className="lut-loading">
@@ -142,28 +143,28 @@ export function LutBar(props: {
   return (
     <div className="actions lut-bar">
       <LutButton current={props.lut} onPick={props.onPick} />
-      <label className="lut-intensity" title="Intensity">
-        <input type="range" min={0} max={100} value={pct} aria-label="Intensity" onChange={(e) => props.onIntensity(Number(e.target.value) / 100)} />
+      <label className="lut-intensity" title={t("lut.intensity")}>
+        <input type="range" min={0} max={100} value={pct} aria-label={t("lut.intensity")} onChange={(e) => props.onIntensity(Number(e.target.value) / 100)} />
         <span>{pct} %</span>
       </label>
       <button
         className="act"
-        title="Hold to see the image without the LUT (or hold B)"
+        title={t("lut.beforeTooltip")}
         onPointerDown={() => props.onBefore(true)}
         onPointerUp={() => props.onBefore(false)}
         onPointerLeave={() => props.onBefore(false)}
       >
         <Eye size={16} />
-        <span className="act-label">Before</span>
+        <span className="act-label">{t("lut.before")}</span>
       </button>
       <span className="sep" />
-      <button className="act" title="Cancel (Esc)" onClick={props.onCancel}>
+      <button className="act" title={t("lut.cancelEsc")} onClick={props.onCancel}>
         <X size={16} />
-        <span className="act-label">Cancel</span>
+        <span className="act-label">{t("common.cancel")}</span>
       </button>
-      <button className="btn primary" onClick={props.onSave} disabled={props.saving || pct === 0} title="Save as a new version (the original stays as it is)">
+      <button className="btn primary" onClick={props.onSave} disabled={props.saving || pct === 0} title={t("lut.saveTooltip")}>
         {props.saving ? <Loader2 className="spin" size={14} /> : null}
-        Save
+        {t("common.save")}
       </button>
     </div>
   );

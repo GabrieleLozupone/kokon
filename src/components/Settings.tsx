@@ -8,6 +8,7 @@ import { inBrowser } from "../lib/platform";
 import { getState, openModelSetup, refreshStatus, setState, startTour, toastError, toastInfo, useStore } from "../lib/store";
 import { formatBytes, macBenchProgress } from "../lib/logic";
 import { setThemeChoice, themeChoice, type ThemeChoice } from "../lib/theme";
+import { LANGUAGES, langChoice, setLangChoice, systemLang, t, type LangChoice } from "../lib/i18n";
 import { LoraSettings } from "./LoraSettings";
 import { RemoteAccess } from "./RemoteAccess";
 import { UpscalerControls } from "./Upscalers";
@@ -27,11 +28,11 @@ export function RepoCard() {
     <div className="repo-card">
       <GitHubMark />
       <div className="body">
-        <strong>Kokon is open source</strong>
-        <span className="muted">Code, issues and discussions are on GitHub. A star helps other people find it.</span>
+        <strong>{t("settings.openSourceTitle")}</strong>
+        <span className="muted">{t("settings.openSourceText")}</span>
       </div>
       <button className="btn primary" onClick={() => native.openLink(REPO_URL).catch(toastError)}>
-        Open GitHub
+        {t("settings.openGitHub")}
       </button>
     </div>
   );
@@ -43,11 +44,11 @@ export function SupportCard() {
     <div className="repo-card support-card">
       <Heart size={22} className="support-mark" aria-hidden />
       <div className="body">
-        <strong>Support Kokon</strong>
-        <span className="muted">Kokon is free and made by one person. If it's useful to you, a tip helps keep it that way.</span>
+        <strong>{t("settings.supportTitle")}</strong>
+        <span className="muted">{t("settings.supportText")}</span>
       </div>
       <button className="btn" onClick={() => native.openLink(SUPPORT_URL).catch(toastError)}>
-        Support
+        {t("settings.support")}
       </button>
     </div>
   );
@@ -74,7 +75,7 @@ function PathField(props: { label: string; value: string; onChange: (v: string) 
     return (
       <div className="field">
         <span>{props.label}</span>
-        <span className="muted">{props.value || "—"} (on the computer running Kokon)</span>
+        <span className="muted">{t("settings.pathOnServer", { path: props.value || "—" })}</span>
       </div>
     );
   }
@@ -90,11 +91,11 @@ function PathField(props: { label: string; value: string; onChange: (v: string) 
             if (p) props.onChange(p);
           }}
         >
-          Browse
+          {t("settings.browse")}
         </button>
         {props.open && (
-          <button className="btn" title="Open this folder" onClick={() => native.openFolder(props.value).catch(toastError)}>
-            <FolderOpen size={14} /> Open
+          <button className="btn" title={t("settings.openFolder")} onClick={() => native.openFolder(props.value).catch(toastError)}>
+            <FolderOpen size={14} /> {t("common.open")}
           </button>
         )}
       </div>
@@ -109,10 +110,10 @@ function EnhancerPrompt(props: { label: string; help: string; value: string; bui
     <div className="field">
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ flex: 1 }}>
-          {props.label} <span className="muted">· {custom ? "your instructions" : "built-in"}</span>
+          {props.label} <span className="muted">· {custom ? t("settings.enhancerCustom") : t("settings.enhancerBuiltin")}</span>
         </span>
-        <button className="btn" disabled={!custom} onClick={() => props.onChange("")} title="Go back to Kokon's built-in instructions">
-          <RotateCcw size={13} /> Restore default
+        <button className="btn" disabled={!custom} onClick={() => props.onChange("")} title={t("settings.restoreDefaultTitle")}>
+          <RotateCcw size={13} /> {t("settings.restoreDefault")}
         </button>
       </div>
       <textarea
@@ -121,7 +122,7 @@ function EnhancerPrompt(props: { label: string; help: string; value: string; bui
         spellCheck={false}
         maxLength={props.max}
         value={props.value || props.builtin || ""}
-        placeholder={props.builtin === null ? "Loading…" : ""}
+        placeholder={props.builtin === null ? t("common.loading") : ""}
         onChange={(e) => props.onChange(e.target.value.trim() === props.builtin?.trim() ? "" : e.target.value)}
       />
       <span className="muted">{props.help}</span>
@@ -141,8 +142,8 @@ function MacBench({ blocked }: { blocked: string | null }) {
   const running = bench?.state === "running";
   useEffect(() => {
     if (!running) return;
-    const t = window.setInterval(() => setNow(Date.now()), 15000);
-    return () => window.clearInterval(t);
+    const timer = window.setInterval(() => setNow(Date.now()), 15000);
+    return () => window.clearInterval(timer);
   }, [running]);
   const progress = bench && macBenchProgress(bench, now);
   const act = async (f: () => Promise<MacBenchState>) => {
@@ -162,19 +163,16 @@ function MacBench({ blocked }: { blocked: string | null }) {
     <div className="field">
       <div className="setting-card">
         <div className="setting-card-text">
-          <strong>Benchmark this Mac</strong>
-          <span className="muted">
-            Measures Kokon's Mac engine on this Mac: speed, memory and accuracy, with each chip-specific path on and off. It takes about 10 minutes and
-            uses the whole Mac: close other apps and keep it plugged in. Images can't be made while it runs.
-          </span>
+          <strong>{t("settings.benchTitle")}</strong>
+          <span className="muted">{t("settings.benchText")}</span>
         </div>
         {running ? (
           <button className="btn" onClick={() => act(api.cancelMacBench)}>
-            <X size={15} /> Cancel
+            <X size={15} /> {t("common.cancel")}
           </button>
         ) : (
           <button className="btn primary" disabled={!!blocked || starting} title={blocked ?? undefined} onClick={run}>
-            <Activity size={15} /> {bench?.state === "done" ? "Run again" : "Run"}
+            <Activity size={15} /> {bench?.state === "done" ? t("settings.benchRunAgain") : t("settings.benchRun")}
           </button>
         )}
       </div>
@@ -195,14 +193,14 @@ function MacBench({ blocked }: { blocked: string | null }) {
       {report && (
         <>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button className="btn" onClick={async () => (await writeText(report), toastInfo("Report copied"))}>
-              <Copy size={14} /> Copy report
+            <button className="btn" onClick={async () => (await writeText(report), toastInfo(t("settings.reportCopied")))}>
+              <Copy size={14} /> {t("settings.copyReport")}
             </button>
             <button className="btn" onClick={() => native.openLink(BENCH_DISCUSSION_URL).catch(toastError)}>
-              Share on GitHub
+              {t("settings.shareOnGitHub")}
             </button>
           </div>
-          <span className="muted">Paste the report in the GitHub discussion: it shows which paths suit this chip. Nothing is sent by Kokon.</span>
+          <span className="muted">{t("settings.benchPasteHint")}</span>
           <pre className="diag" style={{ maxHeight: 260 }}>{report}</pre>
         </>
       )}
@@ -229,12 +227,12 @@ function Diagnostics() {
     <>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {(!inBrowser || window.isSecureContext) && (
-          <button className="btn" disabled={!text} onClick={async () => (await (inBrowser ? navigator.clipboard.writeText(text ?? "") : writeText(text ?? "")), toastInfo("Diagnostics copied"))}>
-            <Copy size={14} /> Copy
+          <button className="btn" disabled={!text} onClick={async () => (await (inBrowser ? navigator.clipboard.writeText(text ?? "") : writeText(text ?? "")), toastInfo(t("settings.diagnosticsCopied")))}>
+            <Copy size={14} /> {t("common.copy")}
           </button>
         )}
         <button className="btn" onClick={load}>
-          <RefreshCw size={14} /> Refresh
+          <RefreshCw size={14} /> {t("settings.refresh")}
         </button>
         <button
           className="btn"
@@ -243,7 +241,7 @@ function Diagnostics() {
             setBusy(true);
             try {
               await api.restartBackend();
-              toastInfo("Inference server restarted");
+              toastInfo(t("settings.serverRestarted"));
               load();
             } catch (e) {
               toastError(e);
@@ -253,15 +251,15 @@ function Diagnostics() {
             }
           }}
         >
-          <RotateCcw size={14} /> {busy ? "Restarting…" : "Restart server"}
+          <RotateCcw size={14} /> {busy ? t("settings.restarting") : t("settings.restartServer")}
         </button>
         {!inBrowser && (
           <button className="btn" onClick={async () => native.openFolder(await native.dataFolder().then((d) => `${d}${d.includes("\\") ? "\\" : "/"}logs`)).catch(toastError)}>
-            <FolderOpen size={14} /> Logs
+            <FolderOpen size={14} /> {t("settings.logs")}
           </button>
         )}
       </div>
-      <pre className="diag">{text ?? "Collecting…"}</pre>
+      <pre className="diag">{text ?? t("settings.collecting")}</pre>
     </>
   );
 }
@@ -269,8 +267,8 @@ function Diagnostics() {
 export function Settings() {
   // Opened on a tab by `openSettings` (e.g. the LoRA badge), else General.
   const [tab, setTab] = useState<Tab>(() => {
-    const t = getState().settingsTab as Tab | null;
-    return t && TABS.includes(t) ? t : "general";
+    const initial = getState().settingsTab as Tab | null;
+    return initial && TABS.includes(initial) ? initial : "general";
   });
   useEffect(() => setState({ settingsTab: null }), []);
   const [cfg, setCfg] = useState<AppConfig | null>(null);
@@ -291,6 +289,7 @@ export function Settings() {
   const [legacy, setLegacy] = useState<{ files: string[]; bytes: number } | null>(null);
   const [dirty, setDirty] = useState(false);
   const [theme, setTheme] = useState(themeChoice);
+  const [language, setLanguage] = useState(langChoice);
   const [enhancerDefaults, setEnhancerDefaults] = useState<{ t2i: string; edit: string; compose?: string; max_chars: number } | null>(null);
   const textGeneration = useStore((s) => s.status?.server.text_generation);
 
@@ -313,10 +312,10 @@ export function Settings() {
   }, [draftModel]);
 
   const removeLegacy = async () => {
-    if (!cfg || !legacy || !window.confirm(`Delete the upscaler files not in use (${formatBytes(legacy.bytes)})?\n\n${legacy.files.join("\n")}`)) return;
+    if (!cfg || !legacy || !window.confirm(t("settings.deleteLegacyConfirm", { size: formatBytes(legacy.bytes), files: legacy.files.join("\n") }))) return;
     try {
       const r = await api.removeLegacyUpscalers(cfg.upscalerModel);
-      toastInfo(`Deleted (${formatBytes(r.freed_bytes)} freed)`);
+      toastInfo(t("settings.deletedFreed", { size: formatBytes(r.freed_bytes) }));
       api.legacyUpscalers(cfg.upscalerModel).then(setLegacy, () => {});
     } catch (e) {
       toastError(e);
@@ -338,7 +337,7 @@ export function Settings() {
         setProgress(total ? st.items.reduce((a, i) => a + i.received, 0) / total : 0);
       }
       const failed = st.items.find((i) => i.state === "failed");
-      if (failed) toastError(new Error(`${failed.label}: ${failed.error}`));
+      if (failed) toastError(new Error(t("settings.downloadFailedNamed", { name: failed.label, error: failed.error ?? "" })));
       else if (st.complete) toastInfo(done);
       api.models().then(setMs, () => {});
       api.config().then(setCfg, () => {});
@@ -348,8 +347,8 @@ export function Settings() {
       setProgress(null);
     }
   };
-  const improveVae = () => switchFile(api.improveVae, setVaeProgress, "The new decoder is in use");
-  const newImageModel = () => switchFile(api.newImageModel, setDitProgress, "The Q4_K_M image model is in use");
+  const improveVae = () => switchFile(api.improveVae, setVaeProgress, t("settings.newDecoderInUse"));
+  const newImageModel = () => switchFile(api.newImageModel, setDitProgress, t("settings.newImageModelInUse"));
 
   // Leaving with unsaved changes asks first (people forgot Save): `then` runs after Save or
   // Discard, Cancel stays here.
@@ -393,7 +392,7 @@ export function Settings() {
       const r = await api.saveConfig(cfg);
       setDirty(false);
       api.setup().then((s: SetupReport) => setUpscaler(s.checks.find((c) => c.id === "upscaler") ?? null), () => {});
-      toastInfo(r.backend_restart_needed ? "Saved. The model reloads with the new settings on the next generation." : "Saved");
+      toastInfo(r.backend_restart_needed ? t("settings.savedReload") : t("settings.saved"));
       refreshStatus();
       return true;
     } catch (e) {
@@ -403,35 +402,35 @@ export function Settings() {
   };
 
   const nav: [Tab, string, React.ReactNode][] = [
-    ["general", "General", <Settings2 size={16} key="g" />],
-    ["models", "Models", <HardDrive size={16} key="m" />],
-    ["lora", "LoRA (beta)", <Layers size={16} key="l" />],
-    ["performance", "Performance", <Cpu size={16} key="p" />],
+    ["general", t("settings.tabGeneral"), <Settings2 size={16} key="g" />],
+    ["models", t("settings.tabModels"), <HardDrive size={16} key="m" />],
+    ["lora", t("settings.tabLora"), <Layers size={16} key="l" />],
+    ["performance", t("settings.tabPerformance"), <Cpu size={16} key="p" />],
     // Only the computer running Kokon decides who else can use it.
-    ...(inBrowser ? [] : ([["devices", "Other devices", <MonitorSmartphone size={16} key="o" />]] as [Tab, string, React.ReactNode][])),
-    ["diagnostics", "Diagnostics", <Activity size={16} key="d" />],
+    ...(inBrowser ? [] : ([["devices", t("settings.tabDevices"), <MonitorSmartphone size={16} key="o" />]] as [Tab, string, React.ReactNode][])),
+    ["diagnostics", t("settings.tabDiagnostics"), <Activity size={16} key="d" />],
   ];
 
   return (
     <div className="modal-scrim" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div className="modal" role="dialog" aria-label="Settings">
+      <div className="modal" role="dialog" aria-label={t("settings.title")}>
         <div className="modal-nav">
-          {nav.map(([t, label, icon]) => (
-            <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
+          {nav.map(([id, label, icon]) => (
+            <button key={id} className={tab === id ? "on" : ""} onClick={() => setTab(id)}>
               {icon} {label}
             </button>
           ))}
           <span style={{ flex: 1 }} />
           {tab !== "diagnostics" && tab !== "lora" && tab !== "devices" && (
             <button className="btn primary nav-save" style={{ justifyContent: "center" }} disabled={!dirty} onClick={save}>
-              Save
+              {t("common.save")}
             </button>
           )}
         </div>
         <div className="modal-body">
           <div style={{ display: "flex", alignItems: "center" }}>
             <h3 style={{ flex: 1 }}>{nav.find((n) => n[0] === tab)?.[1]}</h3>
-            <IconButton title="Close" onClick={close}>
+            <IconButton title={t("common.close")} onClick={close}>
               <X size={18} />
             </IconButton>
           </div>
@@ -441,109 +440,119 @@ export function Settings() {
               <RepoCard />
               <SupportCard />
               <AiMarkingCard />
-              <PathField label="Save images to" value={cfg.outputDir} folder open onChange={(v) => set({ outputDir: v })} />
+              <PathField label={t("settings.saveImagesTo")} value={cfg.outputDir} folder open onChange={(v) => set({ outputDir: v })} />
               <div className="field-row">
-                <span>A folder for each project</span>
+                <span>{t("settings.projectFolders")}</span>
                 <Switch on={!!cfg.projectFolders} onChange={(v) => set({ projectFolders: v })} />
               </div>
-              <span className="muted" style={{ marginTop: -10 }}>New images go to a folder named after their project, with the date in the file name, instead of one folder per day. Images already saved stay where they are.</span>
+              <span className="muted" style={{ marginTop: -10 }}>{t("settings.projectFoldersHint")}</span>
+              <label className="field">
+                <span>{t("settings.language")}</span>
+                <select className="input" value={language} onChange={(e) => {
+                  const v = e.target.value as LangChoice;
+                  setLanguage(v);
+                  setLangChoice(v);
+                }}>
+                  <option value="system">{t("settings.languageSystem", { name: LANGUAGES.find((l) => l.code === systemLang())!.name })}</option>
+                  {LANGUAGES.map((l) => (
+                    <option key={l.code} value={l.code}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+                <span className="muted">{t("settings.languageHint")}</span>
+              </label>
               <div className="field">
-                <span>Appearance</span>
+                <span>{t("settings.appearance")}</span>
                 <Seg<ThemeChoice>
                   value={theme}
                   options={[
-                    { value: "system", label: "System" },
-                    { value: "light", label: "Light" },
-                    { value: "dark", label: "Dark" },
+                    { value: "system", label: t("settings.themeSystem") },
+                    { value: "light", label: t("settings.themeLight") },
+                    { value: "dark", label: t("settings.themeDark") },
                   ]}
                   onChange={(v) => (setThemeChoice(v), setTheme(v))}
                 />
-                <span className="muted">System follows your computer's light or dark mode. Applies at once.</span>
+                <span className="muted">{t("settings.appearanceHint")}</span>
               </div>
               <div className="field-row">
-                <span>Keep inference server running after closing the app</span>
+                <span>{t("settings.keepServerRunning")}</span>
                 <Switch on={cfg.keepServerRunning} onChange={(v) => set({ keepServerRunning: v })} />
               </div>
-              <span className="muted" style={{ marginTop: -10 }}>Keeps the model loaded so the next start is instant.</span>
+              <span className="muted" style={{ marginTop: -10 }}>{t("settings.keepServerRunningHint")}</span>
               <label className="field-row">
-                <span>Free the graphics card after idle minutes</span>
+                <span>{t("settings.idleUnload")}</span>
                 <input className="input" type="number" min={0} max={1440} style={{ width: 90 }} value={cfg.idleUnloadMinutes} onChange={(e) => set({ idleUnloadMinutes: Math.max(0, Number(e.target.value) || 0) })} />
               </label>
-              <span className="muted" style={{ marginTop: -10 }}>When nothing is being made for this long, the model leaves the graphics card's memory, even with Kokon open, so other programs can use it. The next image loads it again first. 0 keeps it loaded.</span>
+              <span className="muted" style={{ marginTop: -10 }}>{t("settings.idleUnloadHint")}</span>
               {inBrowser ? (
                 <div className="field-row">
-                  <span>Kokon {appVersion} on the computer running it. It updates there.</span>
+                  <span>{t("settings.browserVersion", { version: appVersion })}</span>
                   <button className="btn" onClick={() => api.logout().then(() => location.reload(), toastError)}>
-                    Sign out
+                    {t("settings.signOut")}
                   </button>
                 </div>
               ) : (
                 <>
                   <div className="field-row">
-                    <span>Check for updates once a day</span>
+                    <span>{t("settings.updateCheck")}</span>
                     <Switch on={autoCheckEnabled(cfg.ui)} onChange={(v) => set({ ui: { ...cfg.ui, updateCheck: v } })} />
                   </div>
-                  <span className="muted" style={{ marginTop: -10 }}>
-                    Only asks GitHub for the latest version number; nothing about you or your images is sent. Updates install when you click them.
-                  </span>
+                  <span className="muted" style={{ marginTop: -10 }}>{t("settings.updateCheckHint")}</span>
                   <div className="field-row">
-                    <span>You have Kokon {appVersion}</span>
+                    <span>{t("settings.youHave", { version: appVersion })}</span>
                     <button className="btn" onClick={() => checkForUpdate(true)}>
-                      Check now
+                      {t("settings.checkNow")}
                     </button>
                   </div>
                 </>
               )}
               <div className="field-row">
-                <span>What's new in Kokon {WHATS_NEW_VERSION}</span>
+                <span>{t("settings.whatsNew", { version: WHATS_NEW_VERSION })}</span>
                 <button className="btn" onClick={() => leave(() => setState({ overlay: "whats-new" }))}>
-                  Show
+                  {t("settings.show")}
                 </button>
               </div>
               <div className="field-row">
-                <span>Welcome screen: what Kokon is and how it keeps your work private</span>
+                <span>{t("settings.welcomeScreen")}</span>
                 <button className="btn" onClick={() => leave(() => setState({ overlay: "welcome" }))}>
-                  Show
+                  {t("settings.show")}
                 </button>
               </div>
               <div className="field-row">
-                <span>Tour: a short walk through an example project (adds the examples again if you removed them)</span>
+                <span>{t("settings.tour")}</span>
                 <button className="btn" onClick={() => leave(startTour)}>
-                  Start
+                  {t("settings.start")}
                 </button>
               </div>
 
               <h4 id="settings-prompt-plus" style={{ margin: "14px 0 0", fontSize: 14, fontWeight: 600, scrollMarginTop: 12 }}>Prompt+</h4>
               <span className="muted" style={{ marginTop: -8 }}>
-                With Prompt+ on (next to the prompt), the model's own language model rewrites your prompt before making the image, following these instructions. It
-                always writes in English. Its menu also lets you read and change the prompt before the image is made.
-                {textGeneration === false && " The inference engine in use cannot write prompts: Prompt+ appears with an engine that can."}
+                {t("settings.promptPlusIntro")}
+                {textGeneration === false && ` ${t("settings.promptPlusNoEngine")}`}
               </span>
               <div className="setting-card" style={{ alignItems: "flex-start" }}>
-                <span className="muted">
-                  Kokon was tested only with its built-in instructions. Your own can make results worse, or make the model answer with something that is not a prompt; Restore
-                  default brings the built-in ones back.
-                </span>
+                <span className="muted">{t("settings.promptPlusWarning")}</span>
               </div>
               <EnhancerPrompt
-                label="New images"
-                help="Used when creating an image from the prompt alone."
+                label={t("settings.enhancerT2i")}
+                help={t("settings.enhancerT2iHelp")}
                 value={cfg.enhancerT2iPrompt ?? ""}
                 builtin={enhancerDefaults?.t2i ?? null}
                 max={enhancerDefaults?.max_chars ?? 20000}
                 onChange={(v) => set({ enhancerT2iPrompt: v })}
               />
               <EnhancerPrompt
-                label="Edits"
-                help="Used when editing or combining images; the model sees the images."
+                label={t("settings.enhancerEdit")}
+                help={t("settings.enhancerEditHelp")}
                 value={cfg.enhancerEditPrompt ?? ""}
                 builtin={enhancerDefaults?.edit ?? null}
                 max={enhancerDefaults?.max_chars ?? 20000}
                 onChange={(v) => set({ enhancerEditPrompt: v })}
               />
               <EnhancerPrompt
-                label="New images from references"
-                help="Used for a new image that uses your images as references (New image with images added). Each image is first labelled on its own; these instructions then write the scene from the labels."
+                label={t("settings.enhancerCompose")}
+                help={t("settings.enhancerComposeHelp")}
                 value={cfg.enhancerComposePrompt ?? ""}
                 builtin={enhancerDefaults?.compose ?? null}
                 max={enhancerDefaults?.max_chars ?? 20000}
@@ -558,20 +567,20 @@ export function Settings() {
             <>
               <div className="setting-card">
                 <div className="setting-card-text">
-                  <strong>Model setup</strong>
-                  <span className="muted">Downloads the official Qwen-Image 2.1 weights for your graphics card, uses model files you already have, or switches between the 12, 16, 24 and 32 GB presets.</span>
+                  <strong>{t("settings.modelSetup")}</strong>
+                  <span className="muted">{t("settings.modelSetupText")}</span>
                 </div>
                 <button
                   className="btn primary"
                   onClick={() => leave(() => setState({ overlay: null, needsSetup: true }))}
                 >
-                  <Download size={15} /> Set up models…
+                  <Download size={15} /> {t("settings.setUpModels")}
                 </button>
               </div>
-              <PathField label="stable-diffusion.cpp folder" value={cfg.sdcppDir} folder onChange={(v) => set({ sdcppDir: v })} />
+              <PathField label={t("settings.sdcppFolder")} value={cfg.sdcppDir} folder onChange={(v) => set({ sdcppDir: v })} />
               {cfg.profiles.length > 1 ? (
                 <label className="field-row">
-                  <span>Model</span>
+                  <span>{t("settings.model")}</span>
                   <select className="select" value={profile.id} onChange={(e) => set({ activeProfile: e.target.value })}>
                     {cfg.profiles.map((p) => (
                       <option key={p.id} value={p.id}>
@@ -581,22 +590,22 @@ export function Settings() {
                   </select>
                 </label>
               ) : (
-                <span className="muted">Model: {profile.displayName}</span>
+                <span className="muted">{t("settings.modelNamed", { name: profile.displayName })}</span>
               )}
               {profile.source === "official" ? (
                 // The official files follow the install folder and preset; own files get their own profile.
                 <div className="setting-card">
                   <div className="setting-card-text">
-                    <strong>Official model</strong>
+                    <strong>{t("settings.officialModel")}</strong>
                     <span className="muted">
                       {ms === null
-                        ? "Qwen-Image 2.1 Turbo, tested with Kokon."
+                        ? t("settings.officialModelText")
                         : ms.official_installed
-                          ? "Qwen-Image 2.1 Turbo, tested with Kokon. Downloaded."
-                          : "Qwen-Image 2.1 Turbo, tested with Kokon. Not downloaded into this folder yet: Download… gets it, or use model files you already have."}
+                          ? t("settings.officialModelDownloaded")
+                          : t("settings.officialModelNotDownloaded")}
                     </span>
                     <details className="model-files">
-                      <summary>Files</summary>
+                      <summary>{t("settings.files")}</summary>
                       {[profile.diffusionModel, profile.vae, profile.textEncoder, profile.visionProjector].filter(Boolean).map((p) => (
                         <span key={p}>{p}</span>
                       ))}
@@ -607,43 +616,43 @@ export function Settings() {
                       <button
                         className="btn primary"
                         onClick={() => {
-                          if (dirty && !window.confirm("Discard the unsaved changes and open the model setup?")) return;
+                          if (dirty && !window.confirm(t("settings.discardOpenSetup"))) return;
                           openModelSetup("official");
                         }}
                       >
-                        <Download size={15} /> Download…
+                        <Download size={15} /> {t("settings.downloadEllipsis")}
                       </button>
                     )}
                     {!inBrowser && (
                       <button
                         className="btn"
                         onClick={() => {
-                          if (dirty && !window.confirm("Discard the unsaved changes and choose your own model files?")) return;
+                          if (dirty && !window.confirm(t("settings.discardOwnFiles"))) return;
                           openModelSetup("own");
                         }}
                       >
-                        <FolderOpen size={15} /> Use my own files…
+                        <FolderOpen size={15} /> {t("settings.useOwnFiles")}
                       </button>
                     )}
                   </div>
                 </div>
               ) : (
                 <>
-                  <span className="muted">Your own files: not tested by Kokon. Set up models… checks them and finds them again if they move.</span>
-                  <PathField label="Diffusion model" value={profile.diffusionModel} onChange={(v) => setProfile({ diffusionModel: v })} />
-                  <PathField label="VAE" value={profile.vae} onChange={(v) => setProfile({ vae: v })} />
-                  <PathField label="Text encoder (Qwen3-VL)" value={profile.textEncoder} onChange={(v) => setProfile({ textEncoder: v })} />
-                  <PathField label="Vision projector (mmproj)" value={profile.visionProjector ?? ""} onChange={(v) => setProfile({ visionProjector: v || null })} />
+                  <span className="muted">{t("settings.ownFilesText")}</span>
+                  <PathField label={t("settings.diffusionModel")} value={profile.diffusionModel} onChange={(v) => setProfile({ diffusionModel: v })} />
+                  <PathField label={t("settings.vae")} value={profile.vae} onChange={(v) => setProfile({ vae: v })} />
+                  <PathField label={t("settings.textEncoderFile")} value={profile.textEncoder} onChange={(v) => setProfile({ textEncoder: v })} />
+                  <PathField label={t("settings.visionProjector")} value={profile.visionProjector ?? ""} onChange={(v) => setProfile({ visionProjector: v || null })} />
                 </>
               )}
               {ms?.dit.update && (
                 <div className="setting-card">
                   <div className="setting-card-text">
-                    <strong>Image model file</strong>
+                    <strong>{t("settings.imageModelFile")}</strong>
                     <span className="muted">
                       {ms.dit.update === "official"
-                        ? "Kokon now uses unsloth's Q4_K_M of the image model: better supported, slightly better, the same 4-bit size. Switching downloads it and deletes the old file from Kokon's folder."
-                        : "Your image model is the Q4_K file Kokon used before. Kokon now uses unsloth's Q4_K_M: better supported, slightly better, the same 4-bit size. Switching downloads it into Kokon's folder; your own file stays where it is."}
+                        ? t("settings.imageModelUpdateOfficial")
+                        : t("settings.imageModelUpdateOwn")}
                     </span>
                     {ditProgress !== null && (
                       <div className="progress" style={{ marginTop: 6 }}>
@@ -651,20 +660,21 @@ export function Settings() {
                       </div>
                     )}
                   </div>
-                  <button className="btn primary" disabled={ditProgress !== null || vaeProgress !== null || dirty} title={dirty ? "Save or discard your changes first" : undefined} onClick={newImageModel}>
-                    <Download size={15} /> {ditProgress !== null ? `${Math.floor(ditProgress * 100)}%` : `Switch${ms.dit.download_bytes ? ` · ${formatBytes(ms.dit.download_bytes)}` : ""}`}
+                  <button className="btn primary" disabled={ditProgress !== null || vaeProgress !== null || dirty} title={dirty ? t("settings.saveOrDiscardFirst") : undefined} onClick={newImageModel}>
+                    <Download size={15} /> {ditProgress !== null ? t("settings.percent", { percent: Math.floor(ditProgress * 100) }) : ms.dit.download_bytes ? t("settings.switchSize", { size: formatBytes(ms.dit.download_bytes) }) : t("settings.switch")}
                   </button>
                 </div>
               )}
               {ms && (
                 <div className="setting-card">
                   <div className="setting-card-text">
-                    <strong>Image decoder (VAE)</strong>
+                    <strong>{t("settings.imageDecoder")}</strong>
                     <span className="muted">
                       {ms.vae.improved
-                        ? "The new decoder: no fine grid pattern on skin, hair and smooth areas."
-                        : "A new decoder removes the fine grid pattern on skin, hair and smooth areas, with the same speed and colours. Switching downloads it and deletes the old one from Kokon's folder" +
-                          (profile.source === "official" ? "." : "; your own VAE file stays where it is.")}
+                        ? t("settings.decoderImproved")
+                        : profile.source === "official"
+                          ? t("settings.decoderUpdateOfficial")
+                          : t("settings.decoderUpdateOwn")}
                     </span>
                     {vaeProgress !== null && (
                       <div className="progress" style={{ marginTop: 6 }}>
@@ -673,8 +683,8 @@ export function Settings() {
                     )}
                   </div>
                   {!ms.vae.improved && (
-                    <button className="btn primary" disabled={vaeProgress !== null || ditProgress !== null || dirty} title={dirty ? "Save or discard your changes first" : undefined} onClick={improveVae}>
-                      <Download size={15} /> {vaeProgress !== null ? `${Math.floor(vaeProgress * 100)}%` : `Switch${ms.vae.download_bytes ? ` · ${formatBytes(ms.vae.download_bytes)}` : ""}`}
+                    <button className="btn primary" disabled={vaeProgress !== null || ditProgress !== null || dirty} title={dirty ? t("settings.saveOrDiscardFirst") : undefined} onClick={improveVae}>
+                      <Download size={15} /> {vaeProgress !== null ? t("settings.percent", { percent: Math.floor(vaeProgress * 100) }) : ms.vae.download_bytes ? t("settings.switchSize", { size: formatBytes(ms.vae.download_bytes) }) : t("settings.switch")}
                     </button>
                   )}
                 </div>
@@ -688,20 +698,18 @@ export function Settings() {
               />
               {upscaler && !upscaler.ok && <span className="muted">{upscaler.detail}</span>}
               <div className="field-row">
-                <span>Shrink the image before upscaling</span>
+                <span>{t("settings.upscalePrescale")}</span>
                 <Switch on={cfg.upscalePrescale} onChange={(v) => applyNow({ upscalePrescale: v })} />
               </div>
-              <span className="muted" style={{ marginTop: -10 }}>
-                Gives the upscaler a smaller image, like the ones it was trained on: fewer invented patterns on clean renders and faster, slightly less fine detail. Only for enlargements under 2.8×.
-              </span>
+              <span className="muted" style={{ marginTop: -10 }}>{t("settings.upscalePrescaleHint")}</span>
               {legacy && legacy.files.length > 0 && (
                 <div className="setting-card">
                   <div className="setting-card-text">
-                    <strong>Upscaler files not in use</strong>
-                    <span className="muted">{legacy.files.map((f) => f.split(/[\\/]/).pop()).join(", ")}: not the selected model. Only Kokon's own folder is checked.</span>
+                    <strong>{t("settings.legacyTitle")}</strong>
+                    <span className="muted">{t("settings.legacyText", { files: legacy.files.map((f) => f.split(/[\\/]/).pop()).join(", ") })}</span>
                   </div>
                   <button className="btn" onClick={removeLegacy}>
-                    <Trash2 size={15} /> Delete ({formatBytes(legacy.bytes)})
+                    <Trash2 size={15} /> {t("settings.deleteSize", { size: formatBytes(legacy.bytes) })}
                   </button>
                 </div>
               )}
@@ -711,35 +719,31 @@ export function Settings() {
           {tab === "performance" && mac && (
             <>
               <div className="field">
-                <span>Engine</span>
-                <span>{cfg.macEngine ? "Kokon's Mac engine (experimental)" : "Metal (Apple Silicon GPU, beta)"}</span>
+                <span>{t("settings.engine")}</span>
+                <span>{cfg.macEngine ? t("settings.macEngine") : t("settings.metalEngine")}</span>
               </div>
               <div className="field-row">
-                <span>Kokon's Mac engine (experimental)</span>
+                <span>{t("settings.macEngine")}</span>
                 <Switch on={!!cfg.macEngine} onChange={(v) => set({ macEngine: v })} />
               </div>
-              <span className="muted" style={{ marginTop: -10 }}>
-                Kokon's own engine for Apple Silicon: the GPU, the CPU's matrix unit and the Neural Engine work together, about 4 times faster. New images, edits, brushed edits, extending and Prompt+ work on it; LoRAs and the upscaler model still need it off.
-              </span>
-              {!inBrowser && <MacBench blocked={dirty ? "Save or discard your changes first" : !cfg.macEngine ? "Turn on Kokon's Mac engine and save first" : null} />}
+              <span className="muted" style={{ marginTop: -10 }}>{t("settings.macEngineHint")}</span>
+              {!inBrowser && <MacBench blocked={dirty ? t("settings.saveOrDiscardFirst") : !cfg.macEngine ? t("settings.benchNeedsMacEngine") : null} />}
               {!cfg.macEngine && (
               <div className="field">
-                <span>Model memory</span>
+                <span>{t("settings.modelMemory")}</span>
                 <Seg<TextEncoderPlacement>
                   value={cfg.textEncoderPlacement === "disk" ? "disk" : "gpu"}
                   options={[
-                    { value: "gpu", label: "Keep loaded" },
-                    { value: "disk", label: "Load when needed" },
+                    { value: "gpu", label: t("settings.keepLoaded") },
+                    { value: "disk", label: t("settings.loadWhenNeeded") },
                   ]}
                   onChange={(v) => set({ textEncoderPlacement: v })}
                 />
-                <span className="muted">
-                  Keep loaded: every model stays in memory, fastest between steps; needs 24 GB or more. Load when needed: each model (text encoder, image model, decoder) is loaded from the SSD when it runs and released after, so the image model has room to work on 16 GB Macs. It adds a few seconds per image. macOS cannot swap memory the GPU is using, so this is what makes 16 GB work.
-                </span>
+                <span className="muted">{t("settings.modelMemoryHint")}</span>
               </div>
               )}
               <label className="field-row">
-                <span>Memory kept free for macOS (GiB)</span>
+                <span>{t("settings.macReserve")}</span>
                 <input className="input" type="number" min={0} max={16} step={0.5} style={{ width: 90 }} value={cfg.vramReserveGib} onChange={(e) => set({ vramReserveGib: Math.max(0, Number(e.target.value) || 0) })} />
               </label>
             </>
@@ -748,12 +752,12 @@ export function Settings() {
           {tab === "performance" && !mac && (
             <>
               <div className="field">
-                <span>Engine</span>
+                <span>{t("settings.engine")}</span>
                 <span>{cfg.gpuBackend === "vulkan" ? "Vulkan" : "CUDA (NVIDIA)"}</span>
-                <span className="muted">To switch engine, use Models → Set up models…: it downloads the other engine if needed. Both can stay installed.</span>
+                <span className="muted">{t("settings.switchEngineHint")}</span>
               </div>
               <label className="field-row">
-                <span>GPU device</span>
+                <span>{t("settings.gpuDevice")}</span>
                 <select className="select" value={cfg.device} onChange={(e) => set({ device: e.target.value })}>
                   {(devices.length ? devices : [[cfg.device, ""] as [string, string]]).map(([n, d]) => (
                     <option key={n} value={n.toLowerCase()}>
@@ -764,23 +768,21 @@ export function Settings() {
                 </select>
               </label>
               <div className="field">
-                <span>Text encoder weights</span>
+                <span>{t("settings.textEncoderWeights")}</span>
                 <Seg<TextEncoderPlacement>
                   value={cfg.textEncoderPlacement}
                   options={[
                     { value: "ram", label: "RAM" },
                     { value: "gpu", label: "GPU" },
                     { value: "cpu", label: "CPU" },
-                    { value: "auto", label: "Auto" },
+                    { value: "auto", label: t("common.auto") },
                   ]}
                   onChange={(v) => set({ textEncoderPlacement: v })}
                 />
-                <span className="muted">
-                  RAM (recommended): weights in system memory, computed on the GPU. CPU uses the least VRAM but makes image editing several times slower.
-                </span>
+                <span className="muted">{t("settings.textEncoderWeightsHint")}</span>
               </div>
               <label className="field-row">
-                <span>VRAM reserve (GiB)</span>
+                <span>{t("settings.vramReserve")}</span>
                 <input className="input" type="number" min={0} max={16} step={0.5} style={{ width: 90 }} value={cfg.vramReserveGib} onChange={(e) => set({ vramReserveGib: Math.max(0, Number(e.target.value) || 0) })} />
               </label>
             </>
@@ -789,74 +791,70 @@ export function Settings() {
           {tab === "performance" && (
             <>
               <div className="field-row">
-                <span>Flash attention</span>
+                <span>{t("settings.flashAttention")}</span>
                 <Switch on={cfg.flashAttention} onChange={(v) => set({ flashAttention: v })} />
               </div>
               {cfg.gpuBackend === "cuda" && (
                 <>
                   <div className="field-row">
-                    <span>SageAttention (faster sampling)</span>
+                    <span>{t("settings.sageAttention")}</span>
                     <Switch on={cfg.sageAttention && !cfg.sageUnsupported} disabled={cfg.sageUnsupported} onChange={(v) => set({ sageAttention: v })} />
                   </div>
-                  {cfg.sageUnsupported && <span className="muted" style={{ marginTop: -10 }}>Needs an RTX 30 series or newer card; off on this one.</span>}
+                  {cfg.sageUnsupported && <span className="muted" style={{ marginTop: -10 }}>{t("settings.sageUnsupported")}</span>}
                 </>
               )}
               <label className="field-row">
-                <span>VAE tile size (px, 0 = off)</span>
+                <span>{t("settings.vaeTileSize")}</span>
                 <input className="input" type="number" min={0} max={2048} step={128} style={{ width: 90 }} value={cfg.vaeTileSize} onChange={(e) => set({ vaeTileSize: Math.max(0, Math.round(Number(e.target.value) || 0)) })} />
               </label>
-              {cfg.gpuBackend === "vulkan" && <span className="muted" style={{ marginTop: -10 }}>With Vulkan, images are decoded in tiles of 512 px at most: larger tiles exceed the driver's buffer limit on AMD cards and get much slower.</span>}
+              {cfg.gpuBackend === "vulkan" && <span className="muted" style={{ marginTop: -10 }}>{t("settings.vulkanTileHint")}</span>}
               <div className="field">
-                <span>Edit prefix cache</span>
+                <span>{t("settings.prefixCache")}</span>
                 <Seg<string>
                   value={cfg.prefixCacheType}
                   options={[
-                    { value: "q8_0", label: "8-bit" },
+                    { value: "q8_0", label: t("settings.prefixCache8bit") },
                     { value: "f16", label: "FP16" },
-                    { value: "auto", label: "Auto" },
-                    { value: "off", label: "Off" },
+                    { value: "auto", label: t("common.auto") },
+                    { value: "off", label: t("common.off") },
                   ]}
                   onChange={(v) => set({ prefixCacheType: v })}
                 />
-                <span className="muted">
-                  Reuses the reference image and prompt across steps so each step only computes the new image. 8-bit (recommended) uses the least memory; FP16 is more exact but needs twice the memory{cfg.gpuBackend === "cuda" ? "; Auto uses FP32 when SageAttention is on and usually does not fit" : ""}.
-                </span>
+                <span className="muted">{cfg.gpuBackend === "cuda" ? t("settings.prefixCacheHintCuda") : t("settings.prefixCacheHint")}</span>
               </div>
               {cfg.textEncoderPlacement !== "disk" && (
                 <div className="field-row">
-                  <span>Load all weights at startup</span>
+                  <span>{t("settings.eagerLoad")}</span>
                   <Switch on={cfg.eagerLoad} onChange={(v) => set({ eagerLoad: v })} />
                 </div>
               )}
               <label className="field-row">
-                <span>Upscaler tile size (px, 0 = automatic)</span>
+                <span>{t("settings.upscaleTileSize")}</span>
                 <input className="input" type="number" min={0} max={1024} step={64} style={{ width: 90 }} value={cfg.upscaleTileSize} onChange={(e) => set({ upscaleTileSize: Math.max(0, Math.round(Number(e.target.value) || 0)) })} />
               </label>
-              <span className="muted" style={{ marginTop: -10 }}>Automatic: 768 px with 16 GB of GPU memory or more (fastest), 256 px below (about 1 GB less).</span>
+              <span className="muted" style={{ marginTop: -10 }}>{t("settings.upscaleTileSizeHint")}</span>
               {!mac && (
                 <>
                   <label className="field-row">
-                    <span>Simulated VRAM for testing (MiB, 0 = detect)</span>
+                    <span>{t("settings.vramOverride")}</span>
                     <input className="input" type="number" min={0} max={196608} step={1024} style={{ width: 100 }} value={cfg.vramOverrideMib} onChange={(e) => set({ vramOverrideMib: Math.max(0, Math.round(Number(e.target.value) || 0)) })} />
                   </label>
-                  <span className="muted" style={{ marginTop: -10 }}>
-                    Plans image sizes as if the card had this much memory (e.g. 12288 to test a 12 GB card). Combine with the VRAM ballast script in scripts/dev so the memory is really unavailable.
-                  </span>
+                  <span className="muted" style={{ marginTop: -10 }}>{t("settings.vramOverrideHint")}</span>
                 </>
               )}
               {!inBrowser && (
               <>
               <label className="field-row">
-                <span>Inference server port</span>
+                <span>{t("settings.serverPort")}</span>
                 <input className="input" type="number" min={1024} max={65535} style={{ width: 100 }} value={cfg.serverPort} onChange={(e) => set({ serverPort: Number(e.target.value) || cfg.serverPort })} />
               </label>
               <label className="field">
-                <span>Extra server arguments</span>
-                <input className="input" type="text" spellCheck={false} placeholder="e.g. --vae-conv-direct" value={cfg.extraServerArgs.join(" ")} onChange={(e) => set({ extraServerArgs: e.target.value.split(/\s+/).filter(Boolean) })} />
+                <span>{t("settings.extraServerArgs")}</span>
+                <input className="input" type="text" spellCheck={false} placeholder={t("settings.extraServerArgsPlaceholder")} value={cfg.extraServerArgs.join(" ")} onChange={(e) => set({ extraServerArgs: e.target.value.split(/\s+/).filter(Boolean) })} />
               </label>
               </>
               )}
-              {!inBrowser && <span className="muted">The server always listens on 127.0.0.1 only.</span>}
+              {!inBrowser && <span className="muted">{t("settings.serverLocalOnly")}</span>}
             </>
           )}
 
@@ -866,19 +864,19 @@ export function Settings() {
           {tab !== "diagnostics" && tab !== "lora" && tab !== "devices" && (
             <div className="modal-save">
               <button className="btn primary" disabled={!dirty} onClick={save}>
-                Save
+                {t("common.save")}
               </button>
             </div>
           )}
         </div>
         {leaving && (
-          <div className="modal-ask" role="alertdialog" aria-label="Unsaved changes">
+          <div className="modal-ask" role="alertdialog" aria-label={t("settings.unsavedChanges")}>
             <div className="modal-ask-box">
-              <strong>Save your changes?</strong>
-              <span className="muted">Some settings were changed and not saved.</span>
+              <strong>{t("settings.saveChangesQuestion")}</strong>
+              <span className="muted">{t("settings.saveChangesText")}</span>
               <div className="modal-ask-actions">
                 <button className="btn ghost" onClick={() => setLeaving(null)}>
-                  Cancel
+                  {t("common.cancel")}
                 </button>
                 <button
                   className="btn"
@@ -889,7 +887,7 @@ export function Settings() {
                     then();
                   }}
                 >
-                  Discard
+                  {t("settings.discard")}
                 </button>
                 <button
                   className="btn primary"
@@ -900,7 +898,7 @@ export function Settings() {
                     if (await save()) then();
                   }}
                 >
-                  Save
+                  {t("common.save")}
                 </button>
               </div>
             </div>

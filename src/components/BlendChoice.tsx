@@ -7,6 +7,7 @@ import { Loader2, Sun, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { blendEffects, FALLS, SURFACES } from "../lib/blend";
 import type { SceneReading } from "../lib/types";
+import { t } from "../lib/i18n";
 import { IconButton } from "./ui";
 
 export interface BlendRow {
@@ -40,23 +41,21 @@ export function BlendChoice({ rows, onChange, onBlend, onCancel }: { rows: Blend
     return () => window.removeEventListener("keydown", onKey, true);
   }, [onCancel]);
   const s = EDIT_SECONDS + rows.length * READ_SECONDS;
-  const time = s < 60 ? `about ${Math.max(5, Math.round(s / 5) * 5)} s` : `about ${Math.round(s / 60)} min`;
+  const time = s < 60 ? t("blendChoice.aboutSeconds", { n: Math.max(5, Math.round(s / 5) * 5) }) : t("blendChoice.aboutMinutes", { n: Math.round(s / 60) });
 
   return (
     <div className="modal-scrim" onPointerDown={(e) => e.target === e.currentTarget && onCancel()}>
       <div className="split-choice blend-choice" role="dialog" aria-modal="true" aria-labelledby="blend-choice-title">
         <span className="split-choice-close">
-          <IconButton title="Cancel (Esc)" onClick={onCancel}>
+          <IconButton title={t("blendChoice.cancelEsc")} onClick={onCancel}>
             <X size={18} />
           </IconButton>
         </span>
         <h2 id="blend-choice-title">
-          Blend into the scene <span className="exp-tag">Experimental</span>
+          {t("blendChoice.title")} <span className="exp-tag">{t("blendChoice.experimental")}</span>
         </h2>
         <p className="split-choice-lead">
-          The AI looked at where {rows.length === 1 ? "the object stands" : "each object stands"}. It redraws the scene with what that place does: the contact shadow, the
-          shadow, a reflection on wet or shiny ground. Check what it read and change anything that is wrong. It is
-          experimental and often does not work yet: blending all the objects at once works best.
+          {t("blendChoice.lead", { count: rows.length })}
         </p>
         <div className="blend-rows">
           {rows.map((row) => {
@@ -68,20 +67,20 @@ export function BlendChoice({ rows, onChange, onBlend, onCancel }: { rows: Blend
                   <span className={`blend-row-state ${row.failed ? "warn" : ""}`} title={row.failed}>
                     {!r ? (
                       <>
-                        <Loader2 size={13} className="spin" /> Reading the scene…
+                        <Loader2 size={13} className="spin" /> {t("blendChoice.readingScene")}
                       </>
                     ) : row.failed ? (
-                      "Could not read it: check these"
+                      t("blendChoice.readFailed")
                     ) : r.complete ? (
-                      "Read by the AI"
+                      t("blendChoice.readByAi")
                     ) : (
-                      "Partly read: check these"
+                      t("blendChoice.partlyRead")
                     )}
                   </span>
                 </div>
                 <div className={`blend-fields ${r ? "" : "waiting"}`}>
                   <label>
-                    <span>Ground</span>
+                    <span>{t("blendChoice.ground")}</span>
                     <select className="select" value={r?.surface ?? ""} disabled={!r} onChange={(e) => r && onChange(row.id, { ...r, surface: e.target.value as SceneReading["surface"] })}>
                       {!r && <option value="" />}
                       {SURFACES.map((o) => (
@@ -92,17 +91,17 @@ export function BlendChoice({ rows, onChange, onBlend, onCancel }: { rows: Blend
                     </select>
                   </label>
                   <label>
-                    <span>Shadows</span>
+                    <span>{t("blendChoice.shadows")}</span>
                     <div className="seg">
                       {([false, true] as const).map((hard) => (
                         <button key={String(hard)} className={r && r.hard_shadows === hard ? "on" : ""} disabled={!r} onClick={() => r && onChange(row.id, { ...r, hard_shadows: hard })}>
-                          {hard ? "Hard (sun)" : "Soft"}
+                          {hard ? t("blendChoice.hardShadows") : t("blendChoice.softShadows")}
                         </button>
                       ))}
                     </div>
                   </label>
                   <label>
-                    <span>They fall</span>
+                    <span>{t("blendChoice.theyFall")}</span>
                     <select className="select" value={r?.shadows_fall ?? ""} disabled={!r} onChange={(e) => r && onChange(row.id, { ...r, shadows_fall: e.target.value as SceneReading["shadows_fall"] })}>
                       {!r && <option value="" />}
                       {FALLS.map((o) => (
@@ -115,7 +114,7 @@ export function BlendChoice({ rows, onChange, onBlend, onCancel }: { rows: Blend
                 </div>
                 {r && (
                   <details className="blend-prompt">
-                    <summary>What the AI is asked</summary>
+                    <summary>{t("blendChoice.whatAiIsAsked")}</summary>
                     <p>{blendEffects(row.name, r)}</p>
                   </details>
                 )}
@@ -125,14 +124,14 @@ export function BlendChoice({ rows, onChange, onBlend, onCancel }: { rows: Blend
         </div>
         <div className="split-choice-foot">
           <span>
-            {time} · the rest of the picture stays as it is · moved it later? Blend again
+            {t("blendChoice.foot", { time })}
           </span>
           <span className="blend-buttons">
             <button className="btn ghost" onClick={onCancel}>
-              Cancel
+              {t("common.cancel")}
             </button>
             <button ref={go} className="btn primary" onClick={onBlend} disabled={reading}>
-              <Sun size={15} /> Blend
+              <Sun size={15} /> {t("blendChoice.blend")}
             </button>
           </span>
         </div>

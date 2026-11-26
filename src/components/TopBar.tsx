@@ -14,6 +14,7 @@ import { ProjectTitle, Wordmark } from "./Sidebar";
 import { WindowControls } from "./TitleBar";
 import { VIDEOS } from "../lib/videos";
 import { IconButton, Popover } from "./ui";
+import { t } from "../lib/i18n";
 
 /** `quiet`: nothing while the model is loaded and idle (the phone bar has no room for "all is well"). */
 export function StatusIndicator({ quiet = false }: { quiet?: boolean }) {
@@ -21,27 +22,27 @@ export function StatusIndicator({ quiet = false }: { quiet?: boolean }) {
   const server = useStore((s) => s.server);
   const busy = useStore((s) => Object.values(s.jobs).some((j) => !["done", "failed", "cancelled"].includes(j.status)));
   let cls = "dot";
-  let text = "Connecting";
+  let text = t("topBar.connecting");
   let title = "";
   if (connected) {
     switch (server.state) {
       case "ready":
         cls = "dot ready";
-        text = busy ? "Working" : "Ready";
-        title = server.owned ? "Model loaded" : "Using an inference server that was already running";
+        text = busy ? t("topBar.working") : t("topBar.ready");
+        title = server.owned ? t("topBar.modelLoaded") : t("topBar.externalServer");
         break;
       case "starting":
         cls = "dot busy";
-        text = "Loading model";
+        text = t("topBar.loadingModel");
         break;
       case "error":
         cls = "dot error";
-        text = server.error?.message ?? "Inference server error";
-        title = isMissingModel(server.error) ? "Find or download the missing file" : "Open Diagnostics";
+        text = server.error?.message ?? t("topBar.serverError");
+        title = isMissingModel(server.error) ? t("topBar.findMissingFile") : t("topBar.openDiagnostics");
         break;
       default:
-        text = "Model not loaded";
-        title = "Click to load the model now";
+        text = t("topBar.modelNotLoaded");
+        title = t("topBar.clickToLoad");
     }
   }
   if (quiet && cls === "dot ready" && !busy) return null;
@@ -68,10 +69,10 @@ function HistoryButtons() {
   if (!canUndo && !canRedo) return null;
   return (
     <>
-      <IconButton title={`Undo: back to the previous version (${shortcut("Z")})`} onClick={undoVersion} disabled={!canUndo}>
+      <IconButton title={t("topBar.undo", { shortcut: shortcut("Z") })} onClick={undoVersion} disabled={!canUndo}>
         <Undo2 size={18} />
       </IconButton>
-      <IconButton title={`Redo (${shortcut("Y")})`} onClick={redoVersion} disabled={!canRedo}>
+      <IconButton title={t("topBar.redo", { shortcut: shortcut("Y") })} onClick={redoVersion} disabled={!canRedo}>
         <Redo2 size={18} />
       </IconButton>
     </>
@@ -85,16 +86,19 @@ function UpdatePill() {
   const busy = update.phase !== "available";
   const click = async () => {
     const running = Object.values(getState().jobs).some((j) => !["done", "failed", "cancelled"].includes(j.status));
-    const msg = `Install Kokon ${update.version} now? Kokon closes and restarts in a few seconds${running ? "; the images being made now are stopped" : ""}. Your images, settings and models stay.`;
-    if (await native.confirm(update.notes ? `${msg}
-
-What's new:
-${update.notes}` : msg, "Update Kokon")) installUpdate();
+    const msg = running ? t("topBar.installConfirmRunning", { version: update.version }) : t("topBar.installConfirm", { version: update.version });
+    if (await native.confirm(update.notes ? t("topBar.installConfirmNotes", { message: msg, notes: update.notes }) : msg, t("topBar.updateKokon"))) installUpdate();
   };
   const label =
-    update.phase === "downloading" ? `Downloading${update.progress != null ? ` ${Math.round(update.progress * 100)}%` : "…"}` : update.phase === "installing" ? "Installing…" : `Update to ${update.version}`;
+    update.phase === "downloading"
+      ? update.progress != null
+        ? t("topBar.downloadingPercent", { percent: Math.round(update.progress * 100) })
+        : t("topBar.downloading")
+      : update.phase === "installing"
+        ? t("topBar.installing")
+        : t("topBar.updateTo", { version: update.version });
   return (
-    <button className="update-pill" onClick={click} disabled={busy} title={`Kokon ${update.version} is available`}>
+    <button className="update-pill" onClick={click} disabled={busy} title={t("topBar.updateAvailable", { version: update.version })}>
       <ArrowDownToLine size={14} /> {label}
     </button>
   );
@@ -103,11 +107,11 @@ ${update.notes}` : msg, "Update Kokon")) installUpdate();
 function PrivateToggle() {
   const on = useStore((s) => s.privateMode);
   return on ? (
-    <button className="private-pill" onClick={togglePrivateMode} title="Private mode is on: images are not saved and are deleted when you turn it off or close the app. Click to turn it off.">
-      <EyeOff size={15} /> Private
+    <button className="private-pill" onClick={togglePrivateMode} title={t("topBar.privateOnTooltip")}>
+      <EyeOff size={15} /> {t("topBar.private")}
     </button>
   ) : (
-    <IconButton title="Private mode: nothing is saved to the gallery or your Pictures folder" onClick={togglePrivateMode}>
+    <IconButton title={t("topBar.privateOffTooltip")} onClick={togglePrivateMode}>
       <EyeOff size={18} />
     </IconButton>
   );
@@ -116,7 +120,7 @@ function PrivateToggle() {
 /** Private mode from the phone's library: turning it off asks first (its images are deleted). */
 export function togglePrivateMode() {
   if (isNarrow()) haptic();
-  setPrivateMode(!getState().privateMode, () => native.confirm("Turn off private mode? The images made in private mode will be deleted.", "Private mode"));
+  setPrivateMode(!getState().privateMode, () => native.confirm(t("topBar.privateOffConfirm"), t("topBar.privateMode")));
 }
 
 /** The "?" button: shortcuts, the video guides on YouTube (opened in the browser) and the prompt tips. */
@@ -135,17 +139,17 @@ export function HelpMenu() {
       className="help-menu"
       placement="bottom-end"
       trigger={(open, toggle) => (
-        <button className={`icon-btn ${open ? "active" : ""}`} title="Help" aria-label="Help" aria-haspopup="menu" aria-expanded={open} onClick={toggle}>
+        <button className={`icon-btn ${open ? "active" : ""}`} title={t("topBar.help")} aria-label={t("topBar.help")} aria-haspopup="menu" aria-expanded={open} onClick={toggle}>
           <CircleHelp size={18} />
         </button>
       )}
     >
       {(close) => (
-        <div role="menu" aria-label="Help">
-          {item(<Keyboard size={15} />, "Keyboard shortcuts", () => (close(), setState({ overlay: "shortcuts" })), "?")}
-          {item(<Lightbulb size={15} />, "Prompt tips", () => (close(), setState({ overlay: "prompt-tips" })))}
+        <div role="menu" aria-label={t("topBar.help")}>
+          {item(<Keyboard size={15} />, t("topBar.keyboardShortcuts"), () => (close(), setState({ overlay: "shortcuts" })), "?")}
+          {item(<Lightbulb size={15} />, t("topBar.promptTips"), () => (close(), setState({ overlay: "prompt-tips" })))}
           <div className="menu-sep" />
-          <div className="label">Video guides · YouTube</div>
+          <div className="label">{t("topBar.videoGuides")}</div>
           {video(VIDEOS.useCases, close)}
           {video(VIDEOS.update012, close)}
           {video(VIDEOS.remote011, close)}
@@ -165,15 +169,15 @@ export function TopBar() {
         {(!sidebar || needsSetup) && <Wordmark />}
         {!sidebar && !needsSetup && (
           <>
-            <IconButton title="Show sidebar" onClick={() => setState({ sidebar: true })}>
+            <IconButton title={t("topBar.showSidebar")} onClick={() => setState({ sidebar: true })}>
               <PanelLeft size={18} />
             </IconButton>
-            <IconButton title="New image" onClick={newProject}>
+            <IconButton title={t("topBar.newImage")} onClick={newProject}>
               <SquarePen size={18} />
             </IconButton>
           </>
         )}
-        {overlay === "gallery" ? <span className="project-title">All images</span> : !needsSetup && <ProjectTitle />}
+        {overlay === "gallery" ? <span className="project-title">{t("topBar.allImages")}</span> : !needsSetup && <ProjectTitle />}
       </div>
       <div className="toolbar" data-tauri-drag-region>
         {!needsSetup && <HistoryButtons />}
@@ -183,7 +187,7 @@ export function TopBar() {
         <HelpMenu />
         {/* Settings lives at the foot of the sidebar; here only while the sidebar is hidden. */}
         {(!sidebar || needsSetup) && (
-          <IconButton title="Settings" onClick={() => setState({ overlay: "settings" })}>
+          <IconButton title={t("topBar.settings")} onClick={() => setState({ overlay: "settings" })}>
             <Settings size={18} />
           </IconButton>
         )}

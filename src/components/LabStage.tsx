@@ -13,6 +13,7 @@ import { useJobPercent } from "./jobMotion";
 import { DevelopImg } from "./Develop";
 import { useNarrow } from "../lib/platform";
 import { renderDoc } from "./LayerDoc";
+import { t } from "../lib/i18n";
 
 /** Opens `doc`'s layers: the prompt goes to its photo (or one of its layers), which picks the
  * document (LayersEditor). */
@@ -125,7 +126,19 @@ export function useLabJobs(lab: Lab): LabJob[] {
   );
 }
 
-const PHASE: Partial<Record<JobView["status"], string>> = { queued: "Waiting", starting_backend: "Starting the engine", enhancing_prompt: "Writing the prompt" };
+/** A job's phase before it generates, as shown on its pill (null: generating). */
+function phaseText(status: JobView["status"]): string | null {
+  switch (status) {
+    case "queued":
+      return t("lab.phaseWaiting");
+    case "starting_backend":
+      return t("lab.phaseStarting");
+    case "enhancing_prompt":
+      return t("lab.phasePrompt");
+    default:
+      return null;
+  }
+}
 
 /** The edit's percentage, the same as its job card's. */
 export function JobPct({ job, item }: { job: JobView; item: SessionItem }) {
@@ -136,13 +149,14 @@ export function JobPct({ job, item }: { job: JobView; item: SessionItem }) {
 function JobPill({ j }: { j: LabJob }) {
   const layer = j.doc.layers.find((l) => l.id === j.layer);
   const auto = j.layer === "scene" ? j.doc.scenes?.find((e) => e.one && e.source === j.item.request?.images?.[0]) : undefined;
-  const what = auto?.blend ? "the blend" : j.layer === "shadows" || auto ? "the shadows" : j.layer === "scene" ? "the scene" : layer ? (layer.base ? "the background" : layer.name) : "";
+  const what = auto?.blend ? t("lab.whatBlend") : j.layer === "shadows" || auto ? t("lab.whatShadows") : j.layer === "scene" ? t("lab.whatScene") : layer ? (layer.base ? t("lab.whatBackground") : layer.name) : "";
+  const phase = phaseText(j.job.status);
+  const error = j.job.error?.message ?? t("lab.editFailed");
   if (j.job.status === "failed")
     return (
       <span className="lab-progress failed" title={j.job.error?.detail ?? undefined}>
-        {what ? `${what}: ` : ""}
-        {j.job.error?.message ?? "the edit failed"}
-        <button className="lab-dismiss" title="Dismiss" onClick={() => removeSessionItem(j.item.key)}>
+        {what ? t("lab.failedWhat", { what, error }) : error}
+        <button className="lab-dismiss" title={t("lab.dismiss")} onClick={() => removeSessionItem(j.item.key)}>
           <X size={13} />
         </button>
       </span>
@@ -150,10 +164,10 @@ function JobPill({ j }: { j: LabJob }) {
   return (
     <span className="lab-progress">
       <Loader2 className="spin" size={13} />
-      {PHASE[j.job.status] ? `${PHASE[j.job.status]}${what ? ` · ${what}` : ""}` : `Generating${what ? ` ${what}` : ""}`}
+      {phase ? (what ? t("lab.phaseWhat", { phase, what }) : phase) : what ? t("lab.generatingWhat", { what }) : t("lab.generating")}
       {jobStepText(j.job) ? ` · ${jobStepText(j.job)}` : ""} · <JobPct job={j.job} item={j.item} />
       {/* Stop: a queued edit leaves the queue, a running one stops in the engine; the layers stay as they are. */}
-      <button className="lab-dismiss" title="Stop this edit (the layers stay as they are)" aria-label="Stop" onClick={() => cancelJob(j.job.id)}>
+      <button className="lab-dismiss" title={t("lab.stopEditTitle")} aria-label={t("common.stop")} onClick={() => cancelJob(j.job.id)}>
         <Square size={11} />
       </button>
     </span>
@@ -184,12 +198,12 @@ export function LabFrame({ doc, lab }: { doc: LayerDoc; lab: Lab }) {
     <div className="stage-frame">
       <LabJobs lab={lab} doc={doc} className="on-stage" />
       <div className="lab-frame" style={{ aspectRatio: `${doc.width} / ${doc.height}` }}>
-        <DevelopImg key={docId(doc)} src={url ?? undefined} placeholder={thumb ?? undefined} alt="The layered image" />
+        <DevelopImg key={docId(doc)} src={url ?? undefined} placeholder={thumb ?? undefined} alt={t("lab.layeredImageAlt")} />
         {/* The pencil's marks sent for new objects, until the objects are there. */}
         {url && waitingMarks(doc).map((m) => <img key={m} className="lab-marks" src={urls.input(m)} alt="" draggable={false} />)}
         {!narrow && (
-          <button className="lab-open" onClick={() => openLab(doc)} title="Open this image's layers in the Layers lab">
-            <Layers size={14} /> Open Layers lab
+          <button className="lab-open" onClick={() => openLab(doc)} title={t("lab.openLabTitle")}>
+            <Layers size={14} /> {t("lab.openLab")}
           </button>
         )}
       </div>

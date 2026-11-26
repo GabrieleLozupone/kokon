@@ -31,6 +31,8 @@ import { JobPct, LabJobs, useLab, useLabJobs } from "./LabStage";
 import { IconButton } from "./ui";
 import { isTyping } from "./Viewer";
 import { ZoomPan } from "./ZoomPan";
+import { formatNumber, t } from "../lib/i18n";
+import { Trans } from "./Trans";
 
 /** Clean edges' prompt, on the object in its scene (cropOf "clean"). No "sticker" and no "no outline"
  * (11-01): a sticker has a border, and "no outline" took off a lettering's own outline; with the scene
@@ -55,7 +57,7 @@ function StickerRing({ job, item }: { job: JobView; item: SessionItem }) {
   const r = 22;
   const len = 2 * Math.PI * r;
   return (
-    <svg width="56" height="56" viewBox="0 0 56 56" className="sticker-progress" aria-label={`${Math.floor(pct)} percent`}>
+    <svg width="56" height="56" viewBox="0 0 56 56" className="sticker-progress" aria-label={t("layerDoc.percentAria", { pct: Math.floor(pct) })}>
       <circle cx="28" cy="28" r={r} className="track" />
       <circle cx="28" cy="28" r={r} className="bar" strokeDasharray={len} strokeDashoffset={len * (1 - pct / 100)} transform="rotate(-90 28 28)" />
       <text x="28" y="32" textAnchor="middle">
@@ -68,23 +70,19 @@ function StickerRing({ job, item }: { job: JobView; item: SessionItem }) {
 /** Where the blend's edit is: "Blending into the scene · 38%". */
 function ShadowPhase({ job, item }: { job: JobView; item: SessionItem }) {
   const { pct } = useJobPercent(job, item.request);
-  if (job.status === "queued") return <>Waiting for the edits before it</>;
-  if (job.status === "starting_backend") return <>Starting the engine</>;
-  if (job.status === "done") return <>Reading what the AI added</>;
+  if (job.status === "queued") return <>{t("layerDoc.phaseWaiting")}</>;
+  if (job.status === "starting_backend") return <>{t("layerDoc.phaseStarting")}</>;
+  if (job.status === "done") return <>{t("layerDoc.phaseReading")}</>;
   const step = jobStepText(job);
-  return (
-    <>
-      Blending into the scene{step ? ` · ${step}` : ""} · {Math.floor(pct)}%
-    </>
-  );
+  return <>{step ? t("layerDoc.phaseBlendingStep", { step, pct: Math.floor(pct) }) : t("layerDoc.phaseBlending", { pct: Math.floor(pct) })}</>;
 }
 
 /** "waiting", "starting the engine", "step 3 of 8 · 38%": where a lab job is. */
 function JobProgressText({ job, item }: { job: JobView; item?: SessionItem }) {
   const { pct } = useJobPercent(job, item?.request);
-  if (job.status === "queued") return <>waiting for the edits before it</>;
-  if (job.status === "starting_backend") return <>starting the engine</>;
-  if (job.status === "enhancing_prompt") return <>writing the prompt</>;
+  if (job.status === "queued") return <>{t("layerDoc.progressWaiting")}</>;
+  if (job.status === "starting_backend") return <>{t("layerDoc.progressStarting")}</>;
+  if (job.status === "enhancing_prompt") return <>{t("layerDoc.progressPrompt")}</>;
   const step = jobStepText(job);
   return (
     <>
@@ -130,7 +128,7 @@ export function drawSource(ctx: CanvasRenderingContext2D, info: SourceInfo) {
 }
 
 const ALPHA_SIDE = 512;
-export const toPng = (c: HTMLCanvasElement) => new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error("export failed"))), "image/png"));
+export const toPng = (c: HTMLCanvasElement) => new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error(t("layerDoc.exportFailed")))), "image/png"));
 const cache = new Map<string, Promise<SourceInfo>>();
 
 export function sourceInfo(src: string, W: number, H: number): Promise<SourceInfo> {
@@ -142,7 +140,7 @@ export function sourceInfo(src: string, W: number, H: number): Promise<SourceInf
       const img = new Image();
       img.crossOrigin = "anonymous";
       img.onload = () => res(img);
-      img.onerror = () => rej(new Error("A layer's image could not be loaded."));
+      img.onerror = () => rej(new Error(t("layerDoc.layerImageFailed")));
       img.src = urls.source(src);
     }).then((img) => {
       // The alpha map covers the image's own rect (the frame, or more for an expanded object).
@@ -193,7 +191,7 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => res(img);
-    img.onerror = () => rej(new Error("An image could not be loaded."));
+    img.onerror = () => rej(new Error(t("layerDoc.imageFailed")));
     img.src = src;
   });
 }
@@ -372,7 +370,7 @@ export async function pasteRedraw(f: Feed, result: string, W: number, H: number,
   const h = img.naturalHeight;
   const before = pixels(sent, w, h);
   const { kept, painted } = redrawCheck(before, pixels(img, w, h));
-  if (kept < REDRAW_MIN_KEPT) throw new Error(`The redraw of ${name} did not keep the object (${Math.round(kept * 100)} % of it): the layer is unchanged. Try again, or with another quality.`);
+  if (kept < REDRAW_MIN_KEPT) throw new Error(t("layerDoc.redrawLost", { name, pct: Math.round(kept * 100) }));
   if (painted < REDRAW_PAINTED) return pasteCrop(f, result, W, H, name, undefined, img);
   const c = document.createElement("canvas");
   c.width = w;
@@ -438,6 +436,23 @@ function drawMark(ctx: CanvasRenderingContext2D, m: Mark, from = 0) {
   for (let i = from + 1; i < m.pts.length; i++) ctx.lineTo(m.pts[i].x, m.pts[i].y);
   ctx.stroke();
 }
+
+/** A pencil colour's name, as the user reads it (lowercase: it goes inside sentences). */
+export function colourName(c: MarkColour): string {
+  switch (c) {
+    case "red":
+      return t("layerDoc.colourRed");
+    case "blue":
+      return t("layerDoc.colourBlue");
+    case "green":
+      return t("layerDoc.colourGreen");
+    case "yellow":
+      return t("layerDoc.colourYellow");
+  }
+}
+
+/** A scale shown to the user ("1.5"). */
+const scaleText = (s: number) => formatNumber(s, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 type Drag = { mode: "move" | "scale"; ids: string[]; x0: number; y0: number; l0: Record<string, DocLayer>; c: { x: number; y: number } };
 
@@ -745,10 +760,10 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     setBusy(true);
     try {
       const f = await cropOf(l, "clean");
-      if (!editSource(f.source, false)) throw new Error("The object could not be opened.");
+      if (!editSource(f.source, false)) throw new Error(t("layerDoc.objectOpenFailed"));
       updateComposer({ mask: null, outpaint: null, prompt: stickerPrompt(l.name) });
       focusPrompt(true);
-      toastInfo("The object is ready to clean at its own size: check the prompt, then Generate. The result replaces the layer, inside its outline.");
+      toastInfo(t("layerDoc.cleanReady"));
     } catch (e) {
       toastError(e);
     } finally {
@@ -764,8 +779,8 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
   const redrawOf = async (l: DocLayer): Promise<Feed> => {
     const info = await sourceInfo(l.source, W, H);
     const c0 = centre(info.box);
-    const t: Xf = { c: c0, s: l.s, dx: l.dx, dy: l.dy };
-    const { rect, scale } = redrawCrop(mapBox(info.box, t), W, H);
+    const tf: Xf = { c: c0, s: l.s, dx: l.dx, dy: l.dy };
+    const { rect, scale } = redrawCrop(mapBox(info.box, tf), W, H);
     const cw = Math.max(1, Math.round(rect.w * scale));
     const ch = Math.max(1, Math.round(rect.h * scale));
     const c = document.createElement("canvas");
@@ -774,9 +789,9 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     const ctx = c.getContext("2d")!;
     ctx.imageSmoothingQuality = "high";
     ctx.setTransform(cw / rect.w, 0, 0, ch / rect.h, (-rect.x * cw) / rect.w, (-rect.y * ch) / rect.h);
-    ctx.translate(t.c.x + t.dx, t.c.y + t.dy);
-    ctx.scale(t.s, t.s);
-    ctx.translate(-t.c.x, -t.c.y);
+    ctx.translate(tf.c.x + tf.dx, tf.c.y + tf.dy);
+    ctx.scale(tf.s, tf.s);
+    ctx.translate(-tf.c.x, -tf.c.y);
     drawSource(ctx, info);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     // The clip: the object's outline (alpha > 16) grown ~3 px of the frame (pasteCrop drops faint
@@ -784,7 +799,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     const px = ctx.getImageData(0, 0, cw, ch).data;
     const sel0 = new Uint8Array(cw * ch);
     for (let i = 0; i < sel0.length; i++) sel0[i] = px[i * 4 + 3] > 16 ? 255 : 0;
-    if (!sel0.some((v) => v)) throw new Error(`${l.name} has no pixels to redraw.`);
+    if (!sel0.some((v) => v)) throw new Error(t("layerDoc.noPixelsToRedraw", { name: l.name }));
     const g = Math.max(2, Math.round(3 * scale));
     const grown = dilate(sel0, cw, ch, g);
     const mk = document.createElement("canvas");
@@ -817,14 +832,14 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
         if (!l) continue;
         const f = await redrawOf(l);
         const it = getState().session.find((i) => itemSource(i) === f.source);
-        if (!it?.input) throw new Error(`The crop of ${l.name} is not in the project.`);
+        if (!it?.input) throw new Error(t("layerDoc.cropMissing", { name: l.name }));
         const c = getState().composer;
         // The crop's own shape: no ratio, and a size of your own becomes the level nearest its area.
         const res = c.resolution !== "custom" ? c.resolution : c.customWidth * c.customHeight <= 1.3 * 1024 * 1024 ? "1k" : c.customWidth * c.customHeight <= 3 * 1024 * 1024 ? "1.5k" : "2k";
         const req = buildRequest({ ...c, prompt: redrawPrompt(l.name), refs: [refFromInput(it.input)], mask: null, outpaint: null, create: false, mode: "auto", aspect: "auto", resolution: res, enhance: false, enhancedFrom: null, seed: null });
         await submitRequest({ ...req, hidden: true });
       }
-      toastInfo(ls.length > 1 ? "Redrawing the objects at their size: each one replaces its layer when it is done." : `Redrawing ${ls[0]?.name ?? "the object"} at this size: it replaces the layer when it is done (Versions keeps the stretched one).`);
+      toastInfo(ls.length > 1 ? t("layerDoc.redrawingMany") : t("layerDoc.redrawingOne", { name: ls[0]?.name ?? t("layerDoc.theObject") }));
     } catch (e) {
       toastError(e);
     } finally {
@@ -838,7 +853,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
   const fastSticker = async (l: DocLayer, ctl?: CutControl) => {
     ctl?.phase("preparing");
     const e = extOf(liveRef.current, l.source);
-    if (e.x < 0 || e.y < 0 || e.w > W || e.h > H) throw new Error(`${l.name} reaches past the photo: use Clean edges.`);
+    if (e.x < 0 || e.y < 0 || e.w > W || e.h > H) throw new Error(t("layerDoc.pastPhoto", { name: l.name }));
     const info = await sourceInfo(l.source, W, H);
     const b = info.box;
     const m = Math.round(Math.max(b.x1 - b.x0, b.y1 - b.y0) * 0.1) + 8;
@@ -846,7 +861,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     const y0 = Math.max(0, Math.floor(b.y0 - m));
     const cw = Math.min(W, Math.ceil(b.x1 + m)) - x0;
     const ch = Math.min(H, Math.ceil(b.y1 + m)) - y0;
-    if (cw < 8 || ch < 8) throw new Error(`${l.name} is too small for a sticker.`);
+    if (cw < 8 || ch < 8) throw new Error(t("layerDoc.tooSmallSticker", { name: l.name }));
     // Worked on at most 1600 px (the model sees 1024 anyway); solid parts keep full-size pixels.
     const k = Math.min(1, 1600 / Math.max(cw, ch));
     const w = Math.max(1, Math.round(cw * k));
@@ -868,7 +883,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     for (let i = 0; i < sel.length; i++) sel[i] = own[i * 4 + 3] > 127 ? 255 : 0;
     // The object in its scene (a new object drawn by the lab is over the photo too).
     const rgba = scene(w, h, true).getContext("2d")!.getImageData(0, 0, w, h).data;
-    if (!sel.some((v) => v)) throw new Error(`${l.name} has no pixels to cut out.`);
+    if (!sel.some((v) => v)) throw new Error(t("layerDoc.noPixelsToCut", { name: l.name }));
     checkStop(ctl);
     const matte = await modelMatte(focusPixels(rgba, sel, w, h), w, h, ctl);
     ctl?.phase("edges");
@@ -877,7 +892,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     const { alpha } = stickerAlpha(matte, sel, w, h);
     // Checked before anything changes: a cut-out that kept (almost) nothing leaves the layer as it was.
     const kept = keptShare(alpha, sel);
-    if (kept < MIN_KEPT) throw new Error(`The quick cut-out found almost nothing of ${l.name} (${Math.round(kept * 100)} % kept): the layer is unchanged. Try Clean edges.`);
+    if (kept < MIN_KEPT) throw new Error(t("layerDoc.quickCutEmpty", { name: l.name, pct: Math.round(kept * 100) }));
     const small = document.createElement("canvas");
     small.width = w;
     small.height = h;
@@ -926,11 +941,11 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
         const st = await api.installStatus();
         const it = st.items.find((i) => i.id === "birefnet_lite");
         if (it?.state === "cancelled") throw new Stopped();
-        if (it?.state === "failed") throw new Error(it.error ?? "The sticker model could not be downloaded.");
+        if (it?.state === "failed") throw new Error(it.error ?? t("layerDoc.stickerModelFailed"));
         if (it?.state === "done" || it?.state === "present") return;
         if (!st.running) {
           if ((await api.matteStatus()).installed) return;
-          throw new Error("The sticker model could not be downloaded.");
+          throw new Error(t("layerDoc.stickerModelFailed"));
         }
         if (it?.size) setMatteDl(Math.floor((100 * it.received) / it.size));
       }
@@ -973,9 +988,9 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       ctl.phase("model");
       await ensureMatteModel(ctl.signal);
       await fastSticker(l, ctl);
-      toastInfo(`${l.name}: quick cut-out done.`);
+      toastInfo(t("layerDoc.quickCutDone", { name: l.name }));
     } catch (e) {
-      if (isStopped(e)) toastInfo(`Quick cut-out stopped: ${l.name} is as it was.`);
+      if (isStopped(e)) toastInfo(t("layerDoc.quickCutStopped", { name: l.name }));
       else toastError(e);
     } finally {
       endCut(ctl);
@@ -1028,7 +1043,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       const sideBySide = !getState().status?.gpu?.unified;
       if (sideBySide) await sendFill();
       let ready = true;
-      const dl = startCut("", "Stickers");
+      const dl = startCut("", t("layerDoc.stickers"));
       try {
         dl.phase("model");
         await ensureMatteModel(dl.signal);
@@ -1070,7 +1085,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       try {
         const f = await cropOf(liveRef.current.layers.find((x) => x.id === l.id) ?? l, "clean");
         const it = getState().session.find((i) => itemSource(i) === f.source);
-        if (!it?.input) throw new Error(`The crop of ${l.name} is not in the project.`);
+        if (!it?.input) throw new Error(t("layerDoc.cropMissing", { name: l.name }));
         // Skipped while its crop was made.
         if (liveRef.current.stickers?.find((s) => s.layer === l.id)?.skipped) continue;
         const c = getState().composer;
@@ -1129,7 +1144,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       const rec = gen.request?.images?.[0] && session.find((i) => itemSource(i) === gen.request!.images[0])?.input;
       // 20 %: the two failed Halloween fills scored 72 %, a clean one 4.6 % (grey pavement).
       if (copiedShare(a, b, w * h) < 0.2 || !rec) return setSticker(s.layer, { checked: true });
-      toastInfo("The background fill copied the grey or the marking instead of a background: trying once more.");
+      toastInfo(t("layerDoc.fillRetry"));
       const job = await submitRequest(fillRequest(rec, mask));
       setSticker(s.layer, job ? { job, retried: true } : { checked: true });
     })().catch((e) => {
@@ -1152,7 +1167,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     if (marks && !sketch.marks.length) setSketch(marks);
     for (const e of gone) sentScene.current.delete(e.source);
     commit({ ...d, layers: d.layers.map((l) => (unhide.has(l.id) ? { ...l, hidden: false } : l)), scenes: (d.scenes ?? []).filter((e) => !gone.includes(e)) });
-    toastInfo("Stopped: the layers are as they were before that edit.");
+    toastInfo(t("layerDoc.sceneStopped"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobs, session]);
 
@@ -1197,7 +1212,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
   useEffect(() => {
     if (!stickerRows.length || stickersLeft) return;
     const failed = stickerRows.filter((_, i) => stickerStates[i] === "failed").map((s) => live.layers.find((l) => l.id === s.layer)?.name ?? "");
-    toastInfo(failed.length ? `Stickers done; not cleaned: ${failed.join(", ")}. Select one and use Clean edges.` : "Stickers done. Not clean enough? Select the object and use Clean edges, or the Eraser.");
+    toastInfo(failed.length ? t("layerDoc.stickersDoneFailed", { names: failed.join(", ") }) : t("layerDoc.stickersDone"));
     const d = { ...liveRef.current, stickers: undefined };
     liveRef.current = d;
     setLive(d);
@@ -1627,12 +1642,12 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     setBusy(true);
     try {
       const { target, mask } = await prepareFill(l);
-      if (!editSource(target, false)) throw new Error("The background to fill could not be opened.");
+      if (!editSource(target, false)) throw new Error(t("layerDoc.fillOpenFailed"));
       const refKey = getState().composer.refs[0]?.key;
       // Kokon wraps it: "In <image1>, add {this} inside the area marked …" (pipeline.rs inpaint_prompt).
       if (refKey) updateComposer({ mask: { inputId: mask, refKey }, outpaint: null, mode: "auto", inpaintAction: "add", prompt: FILL_PROMPT });
       focusPrompt(true);
-      toastInfo("The holes are painted as an Add with a prompt to fine-tune (e.g. name the surfaces: “the wooden table top and the tiled floor”), then Generate. The result becomes the background here.");
+      toastInfo(t("layerDoc.fillReady"));
     } catch (e) {
       toastError(e);
     } finally {
@@ -1713,7 +1728,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       addVersions([source], 0);
       const target = `input:${source.id}`;
       if (!o.send) {
-        if (!editSource(target, false)) throw new Error("The flattened layers could not be opened.");
+        if (!editSource(target, false)) throw new Error(t("layerDoc.flatOpenFailed"));
         updateComposer({ mask: null, outpaint: null, mode: "auto", prompt: o.prompt });
       }
       const scene: SceneEdit = {
@@ -1743,11 +1758,11 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
         const req = buildRequest({ ...c, prompt: o.prompt, refs: [refFromInput(source)], mask: null, outpaint: null, create: false, mode: "auto", enhance: false, enhancedFrom: null, seed: null });
         await submitRequest({ ...req, hidden: true });
         setState((st) => ({ selected: st.session.some((i) => i.key === keep.selected) ? keep.selected : st.selected, composer: { ...st.composer, refs: keep.refs } }));
-        toastInfo((await hasHoles()) ? "Making the shadows, but the background still has holes (grey in the image): fill them first for real shadows." : o.hint);
+        toastInfo((await hasHoles()) ? t("layerDoc.shadowsHoles") : o.hint);
         return;
       }
       focusPrompt(true);
-      toastInfo((await hasHoles()) ? "Ready in the prompt, but the background still has holes (grey in the image): Fill the holes first." : o.hint);
+      toastInfo((await hasHoles()) ? t("layerDoc.promptHoles") : o.hint);
     } catch (e) {
       toastError(e);
     } finally {
@@ -1781,7 +1796,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
         job = await api.job(job.id);
       }
       if (job.scene) reading = job.scene;
-      else failed = job.error?.message ?? job.notes[job.notes.length - 1] ?? "no answer";
+      else failed = job.error?.message ?? job.notes[job.notes.length - 1] ?? t("layerDoc.noAnswer");
     } catch (e) {
       failed = e instanceof Error ? e.message : String(e);
     }
@@ -1793,7 +1808,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
   const startBlend = async () => {
     const all = live.layers.filter((l) => !l.base && !l.effect && !l.hidden);
     const chosen = sels.some((id) => all.some((l) => l.id === id)) ? all.filter((l) => sels.includes(l.id)) : all;
-    if (!chosen.length) return toastInfo("No visible objects to blend in.");
+    if (!chosen.length) return toastInfo(t("layerDoc.nothingToBlend"));
     setBusy(true);
     try {
       // What the AI reads: the background and the chosen objects (as sendScene sends them), without the
@@ -1840,7 +1855,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
         send: true,
         one: true,
         blend: true,
-        hint: `Blending ${items.length === 1 ? "it" : `the ${items.length} objects`} into the scene${hideAuto ? "; the old Shadows layer is hidden" : ""}. Moved something later? Blend again.`,
+        hint: hideAuto ? t("layerDoc.blendHintHidden", { count: items.length }) : t("layerDoc.blendHint", { count: items.length }),
       });
     } finally {
       setBlendSending(false);
@@ -1853,7 +1868,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       look: [],
       marks: true,
       prompt: marksPrompt(wantsNow()),
-      hint: "The whole scene with your marks is in the prompt (Prompt+ sees the marks too), then Generate. Each new object comes back as its own layer at the marks' place and size (no shadow: Automatic shadows makes them).",
+      hint: t("layerDoc.newObjectsHint"),
     });
 
   /** Several objects edited as one scene: the prompt is the user's; they take the edit's look. */
@@ -1863,20 +1878,20 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       look: objects.map((l) => l.id),
       marks: sketch.marks.length > 0,
       prompt: sketch.marks.length ? marksPrompt(wantsNow()) : "",
-      hint: `Write what to change in the whole scene, then Generate: the ${objects.length} selected objects take the result's look, the other layers stay.`,
+      hint: t("layerDoc.editTogetherHint", { count: objects.length }),
     });
 
   const setGroup = (ids: string[], group: string | undefined) => commit({ ...live, layers: live.layers.map((l) => (ids.includes(l.id) && !l.base ? { ...l, group } : l)) });
 
   const flatten = async () => {
     setBusy(true);
-    setWorking("Saving the image…");
+    setWorking(t("layerDoc.savingImage"));
     try {
       // The one image of the lab that goes to the gallery (its steps are kept out of it).
       const rec = await api.upload(await toPng(await render(W, H)), "Layers flattened.png");
       addResult(await api.saveLayers(`input:${rec.id}`, live.photo ?? null, getState().privateMode, projectTitle()));
       setState({ overlay: null });
-      toastInfo("Saved the layers as one image: a new version, and in All images (the layers stay: open Layers lab again).");
+      toastInfo(t("layerDoc.savedFlat"));
     } catch (e) {
       toastError(e);
     } finally {
@@ -1891,7 +1906,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
     try {
       const layers = [];
       for (const [k, l] of live.layers.entries()) {
-        setWorking(`Writing the PSD · layer ${k + 1} of ${live.layers.length}`);
+        setWorking(t("layerDoc.psdLayer", { n: k + 1, total: live.layers.length }));
         // Lets the status show before the layer is drawn.
         await new Promise((r) => window.setTimeout(r, 0));
         const c = await render(W, H, undefined, [{ ...l, hidden: false }]);
@@ -1905,9 +1920,9 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       fx.fillRect(0, 0, W, H);
       fx.drawImage(await render(W, H), 0, 0);
       const xmp = aiMarkingXmp(getState().status?.service.version ?? "");
-      setWorking("Writing the PSD · choose where to save it");
+      setWorking(t("layerDoc.psdChoose"));
       const path = await native.savePsd(writePsd(W, H, layers, fx.getImageData(0, 0, W, H).data, xmp));
-      if (path) toastInfo(`Saved ${path.split(/[\\/]/).pop()}: each layer is its own layer in Photoshop.`);
+      if (path) toastInfo(t("layerDoc.psdSaved", { file: path.split(/[\\/]/).pop() ?? "" }));
     } catch (e) {
       toastError(e);
     } finally {
@@ -1977,21 +1992,23 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
   const groupable = selLayers.filter((l) => !l.base).length > 1;
 
   const status = areaOn
-    ? "Area brush: paint to add to the pink area · right-click takes out · [ ] size · then Generate"
+    ? t("layerDoc.statusArea")
     : brushOn
-    ? `${tool === "erase" ? "Eraser" : "Shadow brush"} on “${sel!.name}”: paint · [ ] size · V to select and move`
+    ? tool === "erase"
+      ? t("layerDoc.statusEraserOn", { name: sel!.name })
+      : t("layerDoc.statusShadeOn", { name: sel!.name })
     : tool === "erase"
-      ? "Eraser: select an object or shadow layer in the list"
+      ? t("layerDoc.statusEraser")
       : tool === "shade"
-        ? "Shadow brush: select a shadow layer in the list"
+        ? t("layerDoc.statusShade")
         : tool === "sketch"
-          ? "Pencil: draw where a new object goes, one colour per object · [ ] size · then say what it is on the right"
-          : "Click a layer to select it · Shift+click adds · drag to move · a corner scales · Ctrl+A all · Ctrl+G group";
+          ? t("layerDoc.statusPencil")
+          : t("layerDoc.statusMove");
 
   return (
     <div className="overlay">
       <div className="overlay-head">
-        <h2>Layers (lab)</h2>
+        <h2>{t("layerDoc.title")}</h2>
         {working ? (
           <span className="layers-status">
             <Loader2 size={13} className="spin" /> {working}
@@ -1999,13 +2016,13 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
         ) : labJobs.length && !stickering ? (
           <LabJobs lab={lab} doc={doc} />
         ) : (
-          <span className="layers-status">{stickering ? "Making stickers: each object is redrawn on its own; the background comes back when they are in" : status}</span>
+          <span className="layers-status">{stickering ? t("layerDoc.makingStickers") : status}</span>
         )}
         <span className="spacer" />
-        <button className="btn" onClick={onNewSplit} title="Split this image again (replaces these layers; other images keep theirs)">
-          <Scissors size={14} /> New split
+        <button className="btn" onClick={onNewSplit} title={t("layerDoc.newSplitTitle")}>
+          <Scissors size={14} /> {t("layerDoc.newSplit")}
         </button>
-        <IconButton title="Close (Esc)" onClick={() => setState({ overlay: null })}>
+        <IconButton title={t("layerDoc.closeEsc")} onClick={() => setState({ overlay: null })}>
           <X size={18} />
         </IconButton>
       </div>
@@ -2017,15 +2034,15 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
               <Loader2 size={14} className="spin" />
               <span>
                 {cut?.layer === "" ? (
-                  <>Getting the sticker model (once, 224 MB){matteDl !== null ? ` · ${matteDl}%` : ""}</>
+                  <>{matteDl !== null ? t("layerDoc.gettingModelPct", { pct: matteDl }) : t("layerDoc.gettingModel")}</>
                 ) : (
                   <>
-                    Making stickers · {stickerRows.length - stickersLeft} of {stickerRows.length}
+                    {t("layerDoc.makingStickersCount", { done: stickerRows.length - stickersLeft, total: stickerRows.length })}
                     {cut && cut.layer === stickerNow?.layer ? (
                       ` · ${cutLine}`
                     ) : stickerNow ? (
                       <>
-                        {` · ${stickerNow.kind ? "filling the background" : (live.layers.find((l) => l.id === stickerNow.layer)?.name ?? "")}`}
+                        {` · ${stickerNow.kind ? t("layerDoc.fillingBackground") : (live.layers.find((l) => l.id === stickerNow.layer)?.name ?? "")}`}
                         {stickerNow.job && jobs[stickerNow.job] && (
                           <>
                             {" · "}
@@ -2040,8 +2057,8 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
                 )}
               </span>
               {stickerNow && cut?.layer !== "" && (
-                <button className="btn" onClick={() => skipSticker(stickerNow)} title={stickerNow.kind ? "Stop the fill: the background keeps its holes" : "Stop this one: the object keeps its rough cut-out"}>
-                  Skip
+                <button className="btn" onClick={() => skipSticker(stickerNow)} title={stickerNow.kind ? t("layerDoc.skipFillTitle") : t("layerDoc.skipObjectTitle")}>
+                  {t("layerDoc.skip")}
                 </button>
               )}
               <button
@@ -2050,18 +2067,18 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
                   if (cutRef.current?.layer === "") stopCut();
                   stickerRows.forEach((s, i) => (stickerStates[i] === "waiting" || stickerStates[i] === "making") && skipSticker(s));
                 }}
-                title="Stop everything still to do: the objects keep their rough cut-outs, the background is not filled"
+                title={t("layerDoc.stopAllTitle")}
               >
-                <Square size={12} /> Stop all
+                <Square size={12} /> {t("layerDoc.stopAll")}
               </button>
             </div>
           )}
           {cut && !stickering && (
             <div className="sticker-strip">
               <Loader2 size={14} className="spin" />
-              <span>Quick cut-out · {cutLine}</span>
-              <button className="btn" onClick={stopCut} title="Stop the cut-out: the layer stays as it was">
-                <Square size={12} /> Stop
+              <span>{t("layerDoc.quickCutLine", { line: cutLine })}</span>
+              <button className="btn" onClick={stopCut} title={t("layerDoc.stopCutTitle")}>
+                <Square size={12} /> {t("common.stop")}
               </button>
             </div>
           )}
@@ -2070,19 +2087,19 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
               <div className="doc-lock-card">
                 <Loader2 size={18} className="spin" />
                 <span>
-                  {shadowJob ? <ShadowPhase job={shadowJob.job} item={shadowJob.item} /> : blendSending ? "Sending the scene" : "Reading what the AI added"}
-                  <small>The layers stay where they are until it is in</small>
+                  {shadowJob ? <ShadowPhase job={shadowJob.job} item={shadowJob.item} /> : blendSending ? t("layerDoc.sendingScene") : t("layerDoc.phaseReading")}
+                  <small>{t("layerDoc.lockNote")}</small>
                 </span>
                 {shadowJob && !["done", "failed", "cancelled"].includes(shadowJob.job.status) && (
-                  <button className="btn" onClick={() => cancelJob(shadowJob.job.id)} title="Stop the blend: the layers stay as they are">
-                    <Square size={12} /> Stop
+                  <button className="btn" onClick={() => cancelJob(shadowJob.job.id)} title={t("layerDoc.stopBlendTitle")}>
+                    <Square size={12} /> {t("common.stop")}
                   </button>
                 )}
               </div>
             </div>
           )}
-          {maskTint && !stickering && <span className="doc-mask-chip">Painted area: Generate redoes what is pink · brush it here to change it (A)</span>}
-          {!maskTint && waitingMarks(live).length > 0 && <span className="doc-mask-chip">Your marks: Generate adds the new objects there</span>}
+          {maskTint && !stickering && <span className="doc-mask-chip">{t("layerDoc.paintedChip")}</span>}
+          {!maskTint && waitingMarks(live).length > 0 && <span className="doc-mask-chip">{t("layerDoc.marksChip")}</span>}
           <ZoomPan contentSize={contentSize} resetKey="layer-doc" enableToggleZoom={false} enablePan={panning} className="inpaint-zoom-viewport" minimapSrc={base ? urls.source(base.source) : undefined}>
             {({ transform, isPanning }) => {
               const k = transform.scale;
@@ -2182,7 +2199,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
                           <div
                             key={at}
                             className={`doc-handle ${at}`}
-                            title="Drag to scale"
+                            title={t("layerDoc.dragToScale")}
                             style={{ width: 12 / k, height: 12 / k, [at[0] === "t" ? "top" : "bottom"]: -6 / k, [at[1] === "l" ? "left" : "right"]: -6 / k, borderWidth: 1.5 / k }}
                             onPointerDown={(e) => startDrag(e, "scale", sels)}
                             onPointerMove={onMove}
@@ -2198,7 +2215,7 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
         </div>
 
         <aside className={`layers-panel ${shadowing ? "locked" : ""}`}>
-          <div className="layers-title">Layers</div>
+          <div className="layers-title">{t("layerDoc.layers")}</div>
           {live.layers.map((l, i) => {
             const info = infos[l.source];
             const mark = rowDrag && rowDrag.from !== i && rowDrag.over === i ? (rowDrag.over > rowDrag.from ? "drop-below" : "drop-above") : "";
@@ -2218,11 +2235,11 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
                 }}
               >
                 {l.base ? (
-                  <span className="grip" title="The background stays at the bottom">
+                  <span className="grip" title={t("layerDoc.backgroundStays")}>
                     <Lock size={13} />
                   </span>
                 ) : (
-                  <span className="grip" title="Drag to reorder" onPointerDown={(e) => onGripDown(e, i)} onPointerMove={onGripMove} onPointerUp={onGripUp}>
+                  <span className="grip" title={t("layerDoc.dragToReorder")} onPointerDown={(e) => onGripDown(e, i)} onPointerMove={onGripMove} onPointerUp={onGripUp}>
                     <GripVertical size={14} />
                   </span>
                 )}
@@ -2237,30 +2254,30 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
                     spellCheck={false}
                   />
                 ) : (
-                  <span className="doc-name" title="Double-click to rename" onDoubleClick={() => setRenaming(l.id)}>
+                  <span className="doc-name" title={t("layerDoc.doubleClickRename")} onDoubleClick={() => setRenaming(l.id)}>
                     {l.name}
                   </span>
                 )}
                 {l.group && (
-                  <span className="doc-group" title="In a group: a click selects the whole group (Alt+click: this layer alone)">
+                  <span className="doc-group" title={t("layerDoc.inGroup")}>
                     <Link2 size={12} />
                   </span>
                 )}
                 {rowJob(l) ? (
-                  <span className="layer-pct doc-running" title="An edit of this layer is being made">
+                  <span className="layer-pct doc-running" title={t("layerDoc.rowRunning")}>
                     <Loader2 className="spin" size={12} /> <JobPct job={rowJob(l)!.job} item={rowJob(l)!.item} />
                   </span>
                 ) : (
                   <>
                     {!l.base && !l.effect && l.s > STRETCHED && (
-                      <span className="layer-pct doc-stretched" title="Scaled up: stretched pixels. Select it, then Redraw at this size">
-                        {l.s.toFixed(1)}×
+                      <span className="layer-pct doc-stretched" title={t("layerDoc.stretchedTitle")}>
+                        {t("layerDoc.scaleBadge", { scale: scaleText(l.s) })}
                       </span>
                     )}
-                    {l.history.length > 1 && <span className="layer-pct" title="Versions">v{l.history.indexOf(l.source) + 1}</span>}
+                    {l.history.length > 1 && <span className="layer-pct" title={t("layerDoc.versions")}>{t("layerDoc.versionShort", { n: l.history.indexOf(l.source) + 1 })}</span>}
                   </>
                 )}
-                <IconButton title={l.hidden ? "Show" : "Hide"} onClick={() => patchLayer(l.id, { hidden: !l.hidden })}>
+                <IconButton title={l.hidden ? t("layerDoc.show") : t("layerDoc.hide")} onClick={() => patchLayer(l.id, { hidden: !l.hidden })}>
                   {l.hidden ? <EyeOff size={14} /> : <Eye size={14} />}
                 </IconButton>
               </div>
@@ -2270,19 +2287,19 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
           {(tool === "sketch" || sketch.marks.length > 0) && (
             <div className="doc-actions doc-new">
               <div className="doc-actions-title">
-                <Pencil size={13} /> New objects
+                <Pencil size={13} /> {t("layerDoc.newObjects")}
               </div>
               <p className="layers-help">
                 {sketch.marks.length
-                  ? "Say what goes at each colour. The whole scene goes to Qwen with your marks; each object comes back as its own layer at that place and size, without a shadow (Automatic shadows makes them). Prompt+ sees the marks too."
-                  : "Draw where a new object goes (an outline or a scribble), one colour per object."}
+                  ? t("layerDoc.newObjectsHelp")
+                  : t("layerDoc.newObjectsDraw")}
               </p>
               {usedColours.map((c) => (
                 <label key={c} className="doc-want">
                   <span className="doc-swatch" style={{ background: MARK_COLOURS.find((m) => m.name === c)!.css }} />
                   <input
                     value={sketch.wants[c] ?? ""}
-                    placeholder={`What goes at the ${c} marks, e.g. “a green glass bottle”`}
+                    placeholder={t("layerDoc.wantPlaceholder", { colour: colourName(c) })}
                     onChange={(e) => setSketch({ ...sketch, wants: { ...sketch.wants, [c]: e.target.value } })}
                     spellCheck={false}
                   />
@@ -2290,14 +2307,14 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
               ))}
               {sketch.marks.length > 0 && (
                 <div className="doc-grid">
-                  <button className="btn" onClick={() => setSketch({ ...sketch, marks: sketch.marks.slice(0, -1) })} title="Take back the last mark">
-                    <Undo2 size={14} /> Undo mark
+                  <button className="btn" onClick={() => setSketch({ ...sketch, marks: sketch.marks.slice(0, -1) })} title={t("layerDoc.undoMarkTitle")}>
+                    <Undo2 size={14} /> {t("layerDoc.undoMark")}
                   </button>
-                  <button className="btn" onClick={() => setSketch({ marks: [], wants: sketch.wants })} title="Remove every mark">
-                    <Trash2 size={14} /> Clear marks
+                  <button className="btn" onClick={() => setSketch({ marks: [], wants: sketch.wants })} title={t("layerDoc.clearMarksTitle")}>
+                    <Trash2 size={14} /> {t("layerDoc.clearMarks")}
                   </button>
-                  <button className="btn primary doc-wide" onClick={newObjects} disabled={busy} title="The flattened layers with your marks as the image to edit, and a prompt naming each colour's object">
-                    <WandSparkles size={14} /> Set up the prompt
+                  <button className="btn primary doc-wide" onClick={newObjects} disabled={busy} title={t("layerDoc.setUpPromptTitle")}>
+                    <WandSparkles size={14} /> {t("layerDoc.setUpPrompt")}
                   </button>
                 </div>
               )}
@@ -2306,36 +2323,36 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
 
           {multi ? (
             <div className="doc-actions">
-              <div className="doc-actions-title">{sels.length} layers</div>
-              <p className="layers-help">Moved and scaled together. Edit together gives Qwen the whole scene; the selected objects take the result's look.</p>
+              <div className="doc-actions-title">{t("layerDoc.layersCount", { count: sels.length })}</div>
+              <p className="layers-help">{t("layerDoc.multiHelp")}</p>
               <div className="doc-grid">
                 {groupable &&
                   (grouped ? (
-                    <button className="btn" onClick={() => setGroup(sels, undefined)} title={`Ungroup (${shortcut("Shift+G")})`}>
-                      <Ungroup size={14} /> Ungroup
+                    <button className="btn" onClick={() => setGroup(sels, undefined)} title={t("layerDoc.ungroupTitle", { key: shortcut("Shift+G") })}>
+                      <Ungroup size={14} /> {t("layerDoc.ungroup")}
                     </button>
                   ) : (
-                    <button className="btn" onClick={() => setGroup(sels, `g-${Date.now()}`)} title={`Keep them together: a click on one selects all (${shortcut("G")})`}>
-                      <Group size={14} /> Group
+                    <button className="btn" onClick={() => setGroup(sels, `g-${Date.now()}`)} title={t("layerDoc.groupTitle", { key: shortcut("G") })}>
+                      <Group size={14} /> {t("layerDoc.group")}
                     </button>
                   ))}
                 {selObjects.length > 0 && (
-                  <button className="btn" onClick={() => editTogether(selObjects)} disabled={busy} title="The whole scene as the image to edit; the selected objects take the result's look, the other layers stay">
-                    <Sparkles size={14} /> Edit together
+                  <button className="btn" onClick={() => editTogether(selObjects)} disabled={busy} title={t("layerDoc.editTogetherTitle")}>
+                    <Sparkles size={14} /> {t("layerDoc.editTogether")}
                   </button>
                 )}
                 {selObjects.some((l) => l.s > STRETCHED) && (
-                  <button className="btn primary" onClick={() => void redraw(selObjects.filter((l) => l.s > STRETCHED && !rowJob(l)))} disabled={busy} title="The AI draws each scaled-up object again at the size it has now, sharp (one edit each). Quality and the size menu under the prompt apply">
-                    <Maximize2 size={14} /> Redraw at this size
+                  <button className="btn primary" onClick={() => void redraw(selObjects.filter((l) => l.s > STRETCHED && !rowJob(l)))} disabled={busy} title={t("layerDoc.redrawManyTitle")}>
+                    <Maximize2 size={14} /> {t("layerDoc.redraw")}
                   </button>
                 )}
                 {selObjects.length > 0 && (
-                  <button className="btn" onClick={() => commit({ ...live, layers: live.layers.map((l) => (selObjects.some((o) => o.id === l.id) ? { ...l, dx: 0, dy: 0, s: 1 } : l)) })} title="Back to where they were in the photo">
-                    <RotateCcw size={14} /> Reset place
+                  <button className="btn" onClick={() => commit({ ...live, layers: live.layers.map((l) => (selObjects.some((o) => o.id === l.id) ? { ...l, dx: 0, dy: 0, s: 1 } : l)) })} title={t("layerDoc.resetPlaceManyTitle")}>
+                    <RotateCcw size={14} /> {t("layerDoc.resetPlace")}
                   </button>
                 )}
-                <button className="btn" onClick={() => removeLayers(sels)} title="Remove them from the layers (with their shadows; the versions stay in the project)">
-                  <Trash2 size={14} /> Delete
+                <button className="btn" onClick={() => removeLayers(sels)} title={t("layerDoc.deleteManyTitle")}>
+                  <Trash2 size={14} /> {t("common.delete")}
                 </button>
               </div>
             </div>
@@ -2344,24 +2361,24 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
               <div className="doc-actions-title">{sel.name}</div>
               <p className="layers-help">
                 {sel.base
-                  ? "The prompt edits the background. Fill the holes sets up the fill; widen the area with Paint area (shadows too) before Generate."
+                  ? t("layerDoc.helpBackground")
                   : sel.effect
                     ? sel.follows
-                      ? "Moves and scales with its object. Make it again after a big move."
+                      ? t("layerDoc.helpFollows")
                       : sel.blend
-                        ? "The AI's redrawn scene round the objects (their shadows, reflections, where they touch the ground), on top of them. Something wrong? The Eraser (E) takes it out of this layer. Moved an object? Blend again."
-                        : "Made where the objects are: make them again after moving objects."
-                    : `The prompt edits this layer at its own size, e.g. “Complete the ${sel.name.toLowerCase()}, keep the transparent background”.`}
+                        ? t("layerDoc.helpBlend")
+                        : t("layerDoc.helpEffect")
+                    : t("layerDoc.helpObject", { name: sel.name.toLowerCase() })}
               </p>
               {!sel.base && !sel.effect && sel.s > STRETCHED && (
                 <p className="layers-help doc-stretched-help">
-                  Scaled up {sel.s.toFixed(1)}×: its pixels are stretched, so it looks soft. <b>Redraw at this size</b> has the AI draw it again at this size, sharp. For more detail pick 1.5K or 2K in the size menu under the prompt first.
+                  <Trans k="layerDoc.stretchedHelp" vars={{ scale: scaleText(sel.s) }} tags={{ b: (s) => <b>{s}</b> }} />
                 </p>
               )}
               <div className="doc-grid">
                 {sel.base && (
-                  <button className="btn" onClick={() => fillHoles(sel)} disabled={busy} title="Paints the holes as an Add with a prompt to fine-tune, ready to generate">
-                    <Eraser size={14} /> Fill the holes
+                  <button className="btn" onClick={() => fillHoles(sel)} disabled={busy} title={t("layerDoc.fillHolesTitle")}>
+                    <Eraser size={14} /> {t("layerDoc.fillHoles")}
                   </button>
                 )}
                 {!sel.base && !sel.effect && (
@@ -2369,34 +2386,34 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
                     className={`btn ${sel.s > STRETCHED ? "primary" : ""}`}
                     onClick={() => void redraw([sel])}
                     disabled={busy || !!rowJob(sel)}
-                    title="The AI draws this object again at the size it has now, sharp: same shape and colours. Quality and the size menu under the prompt apply. The result replaces the layer at this size (scale back to 100 %); Versions keeps the stretched one"
+                    title={t("layerDoc.redrawOneTitle")}
                   >
-                    <Maximize2 size={14} /> Redraw at this size
+                    <Maximize2 size={14} /> {t("layerDoc.redraw")}
                   </button>
                 )}
                 {!sel.base && !sel.effect && (
-                  <button className="btn" onClick={() => cleanEdges(sel)} disabled={busy} title="Quality: the AI redraws the object's border at its own size, as a cut-out on transparency; the result stays inside its outline (grown ~3 px)">
-                    <Sparkles size={14} /> Clean edges
+                  <button className="btn" onClick={() => cleanEdges(sel)} disabled={busy} title={t("layerDoc.cleanEdgesTitle")}>
+                    <Sparkles size={14} /> {t("layerDoc.cleanEdges")}
                   </button>
                 )}
                 {!sel.base && !sel.effect && (
-                  <button className="btn" onClick={() => quickClean(sel)} disabled={busy} title="Fast: a quick cut-out from the photo, a few seconds (the first time, the sticker model is downloaded: 224 MB)">
-                    <Scissors size={14} /> {matteDl !== null ? `Getting the model · ${matteDl}%` : "Quick cut-out"}
+                  <button className="btn" onClick={() => quickClean(sel)} disabled={busy} title={t("layerDoc.quickCutTitle")}>
+                    <Scissors size={14} /> {matteDl !== null ? t("layerDoc.gettingModelShort", { pct: matteDl }) : t("layerDoc.quickCut")}
                   </button>
                 )}
                 {sel.history.length > 1 && (
-                  <button className={`btn ${versionsOpen ? "on" : ""}`} onClick={() => setVersionsOpen((o) => !o)} aria-expanded={versionsOpen} title="Show an earlier version of this layer">
-                    <History size={14} /> Versions · {sel.history.length}
+                  <button className={`btn ${versionsOpen ? "on" : ""}`} onClick={() => setVersionsOpen((o) => !o)} aria-expanded={versionsOpen} title={t("layerDoc.versionsTitle")}>
+                    <History size={14} /> {t("layerDoc.versionsCount", { n: sel.history.length })}
                   </button>
                 )}
                 {!sel.base && !sel.effect && (
-                  <button className="btn" onClick={() => patchLayer(sel.id, { dx: 0, dy: 0, s: 1 })} disabled={!sel.dx && !sel.dy && sel.s === 1} title="Back to where it was in the photo">
-                    <RotateCcw size={14} /> Reset place
+                  <button className="btn" onClick={() => patchLayer(sel.id, { dx: 0, dy: 0, s: 1 })} disabled={!sel.dx && !sel.dy && sel.s === 1} title={t("layerDoc.resetPlaceTitle")}>
+                    <RotateCcw size={14} /> {t("layerDoc.resetPlace")}
                   </button>
                 )}
                 {!sel.base && (
-                  <button className="btn" onClick={() => removeLayers([sel.id])} title="Remove it from the layers (the version stays in the project)">
-                    <Trash2 size={14} /> Delete
+                  <button className="btn" onClick={() => removeLayers([sel.id])} title={t("layerDoc.deleteTitle")}>
+                    <Trash2 size={14} /> {t("common.delete")}
                   </button>
                 )}
               </div>
@@ -2404,16 +2421,16 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
               {versionsOpen && sel.history.length > 1 && (
                 <div className="doc-versions">
                   {[...sel.history].reverse().map((v) => (
-                    <button key={v} className={`doc-version ${v === sel.source ? "on" : ""}`} onClick={() => commit(showVersion(live, sel.id, v, (src) => infos[src]?.box, W, H))} title={v === sel.source ? "Shown now" : "Show this version"}>
+                    <button key={v} className={`doc-version ${v === sel.source ? "on" : ""}`} onClick={() => commit(showVersion(live, sel.id, v, (src) => infos[src]?.box, W, H))} title={v === sel.source ? t("layerDoc.shownNow") : t("layerDoc.showVersion")}>
                       <img src={urls.source(v)} alt="" />
-                      <span>v{sel.history.indexOf(v) + 1}</span>
+                      <span>{t("layerDoc.versionShort", { n: sel.history.indexOf(v) + 1 })}</span>
                     </button>
                   ))}
                 </div>
               )}
             </div>
           ) : (
-            <p className="layers-help doc-none">Select a layer (here or on the image) to edit it with the prompt below. Shift+click selects more; the pencil (P) draws new objects.</p>
+            <p className="layers-help doc-none">{t("layerDoc.selectHelp")}</p>
           )}
 
         </aside>
@@ -2422,23 +2439,23 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
       {blendRows && <BlendChoice rows={blendRows} onChange={(id, r) => setBlendRows((rows) => rows && rows.map((x) => (x.id === id ? { ...x, reading: r } : x)))} onBlend={() => void sendBlend()} onCancel={cancelBlend} />}
       <div className={`editor-tools ${shadowing ? "locked" : ""}`}>
         <div className="group">
-          <IconButton title="Select and move (V)" active={tool === "move" && !spacePressed} onClick={() => setTool("move")}>
+          <IconButton title={t("layerDoc.toolMove")} active={tool === "move" && !spacePressed} onClick={() => setTool("move")}>
             <MousePointer2 size={17} />
           </IconButton>
-          <IconButton title="Pan (H) · or hold Space" active={tool === "pan" || spacePressed} onClick={() => setTool((t) => (t === "pan" ? "move" : "pan"))}>
+          <IconButton title={t("layerDoc.toolPan")} active={tool === "pan" || spacePressed} onClick={() => setTool((t) => (t === "pan" ? "move" : "pan"))}>
             <Hand size={17} />
           </IconButton>
-          <IconButton title="Eraser (E): erase part of the selected layer (an object or a shadow)" active={tool === "erase" && !spacePressed} onClick={() => setTool("erase")}>
+          <IconButton title={t("layerDoc.toolEraser")} active={tool === "erase" && !spacePressed} onClick={() => setTool("erase")}>
             <Eraser size={17} />
           </IconButton>
-          <IconButton title="Shadow brush (B): paint soft shadow on the selected shadow layer" active={tool === "shade" && !spacePressed} onClick={() => setTool("shade")}>
+          <IconButton title={t("layerDoc.toolShade")} active={tool === "shade" && !spacePressed} onClick={() => setTool("shade")}>
             <Brush size={17} />
           </IconButton>
-          <IconButton title="Pencil (P): draw where a new object goes, one colour per object" active={tool === "sketch" && !spacePressed} onClick={() => setTool("sketch")}>
+          <IconButton title={t("layerDoc.toolPencil")} active={tool === "sketch" && !spacePressed} onClick={() => setTool("sketch")}>
             <Pencil size={17} />
           </IconButton>
           {maskTint && (
-            <IconButton title="Area brush (A): change the pink area of the next edit · right-click takes out" active={tool === "area" && !spacePressed} onClick={() => setTool("area")}>
+            <IconButton title={t("layerDoc.toolArea")} active={tool === "area" && !spacePressed} onClick={() => setTool("area")}>
               <Paintbrush size={17} />
             </IconButton>
           )}
@@ -2446,23 +2463,23 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
         {tool === "sketch" && (
           <div className="group">
             {MARK_COLOURS.map((c) => (
-              <button key={c.name} className={`doc-colour ${markColour === c.name ? "on" : ""}`} style={{ background: c.css }} title={`${c.name[0].toUpperCase()}${c.name.slice(1)}: one object`} aria-label={c.name} onClick={() => setMarkColour(c.name)} />
+              <button key={c.name} className={`doc-colour ${markColour === c.name ? "on" : ""}`} style={{ background: c.css }} title={t("layerDoc.colourTitle", { colour: colourName(c.name)[0].toUpperCase() + colourName(c.name).slice(1) })} aria-label={colourName(c.name)} onClick={() => setMarkColour(c.name)} />
             ))}
           </div>
         )}
         {(tool === "erase" || tool === "shade" || tool === "sketch" || areaOn) && (
           <div className="group">
-            <label className="slider" title="Brush size ( [ and ] )">
-              Size
+            <label className="slider" title={t("layerDoc.brushSizeTitle")}>
+              {t("layerDoc.size")}
               <input type="range" min={4} max={400} value={brush} onChange={(e) => setBrush(() => Number(e.target.value))} />
             </label>
           </div>
         )}
         <div className="group">
-          <IconButton title={`Undo (${shortcut("Z")})`} onClick={() => (tool === "area" && areaStep(true)) || undo()} disabled={!undoStack.current.length && !(tool === "area" && areaUndo.current.length)}>
+          <IconButton title={t("layerDoc.undoTitle", { key: shortcut("Z") })} onClick={() => (tool === "area" && areaStep(true)) || undo()} disabled={!undoStack.current.length && !(tool === "area" && areaUndo.current.length)}>
             <Undo2 size={17} />
           </IconButton>
-          <IconButton title={`Redo (${shortcut("Y")})`} onClick={() => (tool === "area" && areaStep(false)) || redo()} disabled={!redoStack.current.length && !(tool === "area" && areaRedo.current.length)}>
+          <IconButton title={t("layerDoc.redoTitle", { key: shortcut("Y") })} onClick={() => (tool === "area" && areaStep(false)) || redo()} disabled={!redoStack.current.length && !(tool === "area" && areaRedo.current.length)}>
             <Redo2 size={17} />
           </IconButton>
         </div>
@@ -2474,25 +2491,25 @@ export function LayerDoc({ projectId, doc, onChange, onNewSplit }: { projectId: 
             disabled={busy || shadowing}
             title={
               blendStale
-                ? "Something moved since the blend: its shadows and reflections no longer fit. Blend again (the selected objects, else all)"
-                : "Experimental: often does not work yet. The AI reads where each object stands (you can correct it), then redraws the scene with their shadows, reflections on wet or shiny ground, grass round their feet; only that is kept, as the Blend layer (the selected objects, else all)"
+                ? t("layerDoc.blendStaleTitle")
+                : t("layerDoc.blendTitle")
             }
           >
-            <Sun size={15} /> {blendStale ? "Blend again" : "Blend into scene"}
-            <span className="exp-tag">Experimental</span>
+            <Sun size={15} /> {blendStale ? t("layerDoc.blendAgain") : t("layerDoc.blend")}
+            <span className="exp-tag">{t("layerDoc.experimental")}</span>
           </button>
           {autoShadows && (
-            <label className="slider" title="How strong the blend's shadows and reflections are, without making them again (0 %: none, 100 %: as the model made them, 200 %: twice as strong)">
-              Strength
+            <label className="slider" title={t("layerDoc.strengthTitle")}>
+              {t("layerDoc.strength")}
               <input type="range" min={0} max={200} step={10} value={strengthShown} onChange={(e) => setStrengthShown(Number(e.target.value))} />
               <span className="doc-cmd-val">{strengthShown}%</span>
             </label>
           )}
-          <button className="pill doc-cmd" onClick={exportPsd} disabled={busy || shadowing} title="Save the layers as a Photoshop file (.psd), each one a layer, to open in Photoshop, Photopea, GIMP or Krita">
-            <FileDown size={15} /> Export PSD
+          <button className="pill doc-cmd" onClick={exportPsd} disabled={busy || shadowing} title={t("layerDoc.exportPsdTitle")}>
+            <FileDown size={15} /> {t("layerDoc.exportPsd")}
           </button>
           <button className="pill doc-cmd primary" onClick={flatten} disabled={busy || shadowing}>
-            <ImageDown size={15} /> Save as image
+            <ImageDown size={15} /> {t("layerDoc.saveAsImage")}
           </button>
         </div>
       </div>

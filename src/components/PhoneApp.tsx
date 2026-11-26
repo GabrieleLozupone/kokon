@@ -21,6 +21,7 @@ import { ProjectTitle } from "./Sidebar";
 import { Stage } from "./Stage";
 import { StatusIndicator, togglePrivateMode } from "./TopBar";
 import { KokonMark } from "./Welcome";
+import { t } from "../lib/i18n";
 
 /** The layout follows the visible part of the screen: when the keyboard opens, the app shrinks
  * above it (iOS keeps the page's height and slides it up instead), so the prompt and the image
@@ -83,20 +84,20 @@ function ProjectScreen() {
   return (
     <div className="phone-screen project">
       <header className="phone-top">
-        <button className="glass-btn" title="Projects" aria-label="Projects" onClick={() => setState({ sidebar: true })}>
+        <button className="glass-btn" title={t("phoneApp.projects")} aria-label={t("phoneApp.projects")} onClick={() => setState({ sidebar: true })}>
           <ChevronLeft size={24} strokeWidth={2.2} />
         </button>
         <div className="phone-title">
           <ProjectTitle />
           {privateMode && (
-            <button className="private-tag" onClick={togglePrivateMode} title="Private mode is on: tap to turn it off">
-              <EyeOff size={12} /> Private
+            <button className="private-tag" onClick={togglePrivateMode} title={t("phoneApp.privateOnTooltip")}>
+              <EyeOff size={12} /> {t("phoneApp.privateTag")}
             </button>
           )}
         </div>
         <div className="phone-top-end">
           <StatusIndicator quiet />
-          <button className="glass-btn" title="New image" aria-label="New image" onClick={newProject}>
+          <button className="glass-btn" title={t("phoneApp.newImage")} aria-label={t("phoneApp.newImage")} onClick={newProject}>
             <SquarePen size={19} />
           </button>
         </div>
@@ -212,7 +213,7 @@ function Library() {
   const removePicked = async () => {
     if (!picked?.size) return;
     const n = picked.size;
-    if (!(await native.confirm(`Remove ${n} ${n === 1 ? "project" : "projects"} from the list? Their images stay in All images.`, "Remove projects"))) return;
+    if (!(await native.confirm(t("phoneApp.removeProjectsConfirm", { count: n }), t("phoneApp.removeProjectsTitle")))) return;
     deleteProjects([...picked]);
     setPicked(null);
   };
@@ -227,22 +228,22 @@ function Library() {
           </h1>
           {!images && projects.length > 0 && (
             <button className="lib-text-btn" onClick={() => setPicked(selecting ? null : new Set())}>
-              {selecting ? "Done" : "Select"}
+              {selecting ? t("common.done") : t("phoneApp.select")}
             </button>
           )}
-          <button className={`glass-btn ${privateMode ? "on" : ""}`} title={privateMode ? "Private mode is on: tap to turn it off" : "Private mode: nothing is saved"} aria-label="Private mode" aria-pressed={privateMode} onClick={togglePrivateMode}>
+          <button className={`glass-btn ${privateMode ? "on" : ""}`} title={privateMode ? t("phoneApp.privateOnTooltip") : t("phoneApp.privateOffTooltip")} aria-label={t("phoneApp.privateMode")} aria-pressed={privateMode} onClick={togglePrivateMode}>
             <EyeOff size={19} />
           </button>
-          <button className="glass-btn" title="Settings" aria-label="Settings" onClick={() => setState({ overlay: "settings" })}>
+          <button className="glass-btn" title={t("phoneApp.settings")} aria-label={t("phoneApp.settings")} onClick={() => setState({ overlay: "settings" })}>
             <Settings size={19} />
           </button>
         </div>
         <div className="seg lib-seg" role="tablist">
           <button role="tab" aria-selected={!images} className={images ? "" : "on"} onClick={() => showTab(false)}>
-            Projects
+            {t("phoneApp.projects")}
           </button>
           <button role="tab" aria-selected={images} className={images ? "on" : ""} onClick={() => showTab(true)}>
-            All images
+            {t("phoneApp.allImages")}
           </button>
         </div>
       </header>
@@ -255,18 +256,18 @@ function Library() {
               <div className="lib-private">
                 <EyeOff size={18} />
                 <span>
-                  <strong>Private mode is on</strong>
-                  Images are not saved, and are deleted when you turn it off.
+                  <strong>{t("phoneApp.privateOnTitle")}</strong>
+                  {t("phoneApp.privateOnText")}
                 </span>
                 <button className="lib-text-btn" onClick={togglePrivateMode}>
-                  Turn off
+                  {t("phoneApp.turnOff")}
                 </button>
               </div>
             )}
             {projects.length === 0 ? (
               <div className="lib-empty">
-                <strong>No projects yet</strong>
-                <span>Each image you make or bring in starts one; its versions stay together.</span>
+                <strong>{t("phoneApp.noProjects")}</strong>
+                <span>{t("phoneApp.noProjectsText")}</span>
               </div>
             ) : (
               <div className="lib-grid">
@@ -288,9 +289,9 @@ function Library() {
       {!images &&
         (selecting ? (
           <div className="lib-dock select">
-            <span className="select-count">{picked.size ? `${picked.size} selected` : "Tap projects to select"}</span>
+            <span className="select-count">{picked.size ? t("phoneApp.selectedCount", { count: picked.size }) : t("phoneApp.tapToSelect")}</span>
             <button className="btn danger" disabled={!picked.size} onClick={removePicked}>
-              <Trash2 size={15} /> Remove
+              <Trash2 size={15} /> {t("common.remove")}
             </button>
           </div>
         ) : (
@@ -302,7 +303,7 @@ function Library() {
                 setState({ sidebar: false });
               }}
             >
-              <Plus size={20} strokeWidth={2.4} /> New image
+              <Plus size={20} strokeWidth={2.4} /> {t("phoneApp.newImage")}
             </button>
           </div>
         ))}
@@ -341,7 +342,7 @@ function ProjectSheet({ p, onOpen, onClose }: { p: ProjectMeta; onOpen: () => vo
       <div className="sheet-head">
         <span className="sheet-cover">{p.cover && <img src={urls.sourceThumb(p.cover)} alt="" draggable={false} />}</span>
         <label className="sheet-name">
-          <span>Name</span>
+          <span>{t("phoneApp.name")}</span>
           <input
             className="input"
             value={name}
@@ -359,7 +360,7 @@ function ProjectSheet({ p, onOpen, onClose }: { p: ProjectMeta; onOpen: () => vo
         <span className="check">
           <ChevronLeft size={17} style={{ transform: "scaleX(-1)" }} />
         </span>
-        <span>Open</span>
+        <span>{t("common.open")}</span>
       </button>
       <button
         className="opt danger"
@@ -371,8 +372,8 @@ function ProjectSheet({ p, onOpen, onClose }: { p: ProjectMeta; onOpen: () => vo
         <span className="check">
           <X size={17} />
         </span>
-        <span>Remove from list</span>
-        <span className="sub">Images stay in All images</span>
+        <span>{t("phoneApp.removeFromList")}</span>
+        <span className="sub">{t("phoneApp.removeFromListSub")}</span>
       </button>
     </Sheet>
   );

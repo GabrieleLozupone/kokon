@@ -19,14 +19,12 @@ import { DevelopImg } from "./Develop";
 import { LutButton } from "./Lut";
 import { ActionButton, InfoPanel, sourceSize, UpscaleButton } from "./Stage";
 import { Popover } from "./ui";
+import { Trans } from "./Trans";
 import { KokonMark } from "./Welcome";
+import { t } from "../lib/i18n";
 
 /** Short prompts that show what a good one looks like (subject, action, place). */
-const IDEAS = [
-  "A red fox curled up asleep in fresh snow at sunrise",
-  "A cosy reading nook by a rainy window, warm lamp light",
-  "A monkey dribbling a basketball on an outdoor court",
-];
+const ideas = () => [t("phoneStage.ideaFox"), t("phoneStage.ideaReadingNook"), t("phoneStage.ideaMonkey")];
 
 /** A new project: start from a photo, or from words (an idea fills the prompt). */
 export function PhoneEmpty() {
@@ -39,20 +37,20 @@ export function PhoneEmpty() {
   return (
     <div className="phone-empty">
       <KokonMark size={34} />
-      <h1>What should we make?</h1>
-      <p>Describe a new image below, or start from a photo.</p>
+      <h1>{t("phoneStage.emptyTitle")}</h1>
+      <p>{t("phoneStage.emptyText")}</p>
       <button className="phone-photo" onClick={pick}>
         <span className="phone-photo-icon">
           <ImagePlus size={22} />
         </span>
         <span className="phone-photo-text">
-          <strong>Edit a photo</strong>
-          <span>From your photos or the camera</span>
+          <strong>{t("phoneStage.editPhoto")}</strong>
+          <span>{t("phoneStage.editPhotoHint")}</span>
         </span>
       </button>
       <div className="ideas">
-        <span className="ideas-label">Or try</span>
-        {IDEAS.map((p) => (
+        <span className="ideas-label">{t("phoneStage.orTry")}</span>
+        {ideas().map((p) => (
           <button key={p} className="idea" onClick={() => idea(p)}>
             {p}
           </button>
@@ -189,17 +187,17 @@ function HoldToSave({ src, thumb, onClose }: { src: string; thumb?: string; onCl
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   return createPortal(
-    <div className="hold-save" role="dialog" aria-label="Save the image">
+    <div className="hold-save" role="dialog" aria-label={t("phoneStage.saveImageDialog")}>
       <div className="hold-save-head">
         <span>
-          Press and hold the picture, then tap <strong>Save to Photos</strong>.
+          <Trans k="phoneStage.holdToSave" tags={{ b: (s) => <strong>{s}</strong> }} />
         </span>
-        <button className="glass-btn" title="Done" aria-label="Done" onClick={onClose}>
+        <button className="glass-btn" title={t("common.done")} aria-label={t("common.done")} onClick={onClose}>
           <X size={20} />
         </button>
       </div>
       <div className="hold-save-img">
-        <DevelopImg src={src} placeholder={thumb} alt="Image to save" />
+        <DevelopImg src={src} placeholder={thumb} alt={t("phoneStage.imageToSave")} />
       </div>
     </div>,
     document.body,
@@ -231,24 +229,24 @@ export function PhoneActions({ item, showOriginal, onLut }: { item: SessionItem;
     <div className="actions phone-actions">
       {g?.request && g.mode !== "upscale" && g.mode !== "lut" && g.mode !== "layers" && (
         <ActionButton
-          title="Again: same prompt and settings, new seed"
+          title={t("phoneStage.againTooltip")}
           icon={<RefreshCw size={17} />}
-          label="Again"
+          label={t("phoneStage.again")}
           onClick={() => {
             const r = variationRequest(g);
             if (r) submitRequest(r);
           }}
         />
       )}
-      <ActionButton title="Paint the area to change" icon={<Brush size={17} />} label="Paint" onClick={() => paint("inpaint")} />
-      <ActionButton title="Extend the image beyond its borders" icon={<Expand size={17} />} label="Expand" onClick={() => paint("expand")} />
+      <ActionButton title={t("phoneStage.paintTooltip")} icon={<Brush size={17} />} label={t("phoneStage.paint")} onClick={() => paint("inpaint")} />
+      <ActionButton title={t("phoneStage.expandTooltip")} icon={<Expand size={17} />} label={t("phoneStage.expand")} onClick={() => paint("expand")} />
       <UpscaleButton source={source} size={g ? { width: g.width, height: g.height } : { width: item.input!.width, height: item.input!.height }} original={g ? sourceSize(g) : null} parentId={g?.id} />
       <LutButton onPick={onLut} />
       {g && (
         <ActionButton
-          title={fav ? "Remove from favorites" : "Favorite"}
+          title={fav ? t("phoneStage.unfavorite") : t("phoneStage.favorite")}
           icon={<Heart size={17} fill={fav ? "currentColor" : "none"} />}
-          label="Favorite"
+          label={t("phoneStage.favorite")}
           active={fav}
           onClick={async () => {
             try {
@@ -260,7 +258,7 @@ export function PhoneActions({ item, showOriginal, onLut }: { item: SessionItem;
           }}
         />
       )}
-      <ActionButton title="Save to this device" icon={<Download size={17} />} label="Save" onClick={save} />
+      <ActionButton title={t("phoneStage.saveTooltip")} icon={<Download size={17} />} label={t("common.save")} onClick={save} />
       <PhoneMore item={item} g={g} showOriginal={showOriginal} />
       {hold && <HoldToSave src={hold.src} thumb={hold.thumb} onClose={() => setHold(null)} />}
     </div>
@@ -275,9 +273,9 @@ function PhoneMore({ item, g, showOriginal }: { item: SessionItem; g?: Generatio
       className={info ? "info-sheet" : undefined}
       trigger={(open, toggle) => (
         <ActionButton
-          title="More"
+          title={t("phoneStage.more")}
           icon={<Ellipsis size={17} />}
-          label="More"
+          label={t("phoneStage.more")}
           active={open}
           onClick={() => {
             setInfo(false);
@@ -296,7 +294,7 @@ function PhoneMore({ item, g, showOriginal }: { item: SessionItem; g?: Generatio
                 <span className="check">
                   <TextCursorInput size={17} />
                 </span>
-                <span>Reuse prompt</span>
+                <span>{t("phoneStage.reusePrompt")}</span>
               </button>
             )}
             {g && g.mode !== "lut" && g.mode !== "layers" && (
@@ -310,7 +308,7 @@ function PhoneMore({ item, g, showOriginal }: { item: SessionItem; g?: Generatio
                 <span className="check">
                   <SlidersHorizontal size={17} />
                 </span>
-                <span>Reuse prompt and settings</span>
+                <span>{t("phoneStage.reusePromptSettings")}</span>
               </button>
             )}
             {canCopyImage && (
@@ -320,7 +318,7 @@ function PhoneMore({ item, g, showOriginal }: { item: SessionItem; g?: Generatio
                   close();
                   try {
                     await native.copyImageUrl(g ? (showOriginal ? urls.genOriginal(g.id) : urls.gen(g.id)) : urls.input(item.input!.id));
-                    toastInfo("Image copied");
+                    toastInfo(t("phoneStage.imageCopied"));
                   } catch (e) {
                     toastError(e);
                   }
@@ -329,7 +327,7 @@ function PhoneMore({ item, g, showOriginal }: { item: SessionItem; g?: Generatio
                 <span className="check">
                   <Copy size={17} />
                 </span>
-                <span>Copy image</span>
+                <span>{t("phoneStage.copyImage")}</span>
               </button>
             )}
             {g && (
@@ -337,14 +335,14 @@ function PhoneMore({ item, g, showOriginal }: { item: SessionItem; g?: Generatio
                 <span className="check">
                   <Info size={17} />
                 </span>
-                <span>Details</span>
+                <span>{t("phoneStage.details")}</span>
               </button>
             )}
             <button className="opt danger" onClick={() => (close(), removeSessionItem(item.key))}>
               <span className="check">
                 <Trash2 size={17} />
               </span>
-              <span>Remove from project</span>
+              <span>{t("phoneStage.removeFromProject")}</span>
             </button>
           </>
         )

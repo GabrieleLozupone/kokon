@@ -4,44 +4,21 @@
 import { X } from "lucide-react";
 import { useEffect, useLayoutEffect, useState } from "react";
 import { endTour, setState, useStore } from "../lib/store";
+import { t } from "../lib/i18n";
 
 interface Step {
   target: string;
-  title: string;
-  text: string;
+  title: () => string;
+  text: () => string;
 }
 
 const STEPS: Step[] = [
-  {
-    target: ".stage-frame",
-    title: "An example project",
-    text: "Kokon made these images on a PC like yours, about half a minute each. This project is yours to look around in, edit further or delete.",
-  },
-  {
-    target: ".timeline",
-    title: "Every version is kept",
-    text: "A sentence made the first image. Painting an area then removed the scooter and added the cat. Click any version to go back to it and continue from there.",
-  },
-  {
-    target: ".compare-bar",
-    title: "Before and after",
-    text: "Press and hold the image (or hold B) to see the version it was made from. Slider, Flicker and Changes compare the two in other ways.",
-  },
-  {
-    target: ".composer",
-    title: "Describe a change",
-    text: "Type what should change in plain words, like “make it a rainy evening”, and press Enter. New image starts from a sentence instead of a picture.",
-  },
-  {
-    target: '[data-tour="paint"]',
-    title: "Change just one area",
-    text: "Paint area: brush over part of the image and only that part changes. Remove, replace, add or change what is there.",
-  },
-  {
-    target: ".side-list",
-    title: "Your projects",
-    text: "More examples are here. Start your own with New image, or drop or paste a photo anywhere in the window.",
-  },
+  { target: ".stage-frame", title: () => t("tour.exampleTitle"), text: () => t("tour.exampleText") },
+  { target: ".timeline", title: () => t("tour.versionsTitle"), text: () => t("tour.versionsText") },
+  { target: ".compare-bar", title: () => t("tour.compareTitle"), text: () => t("tour.compareText") },
+  { target: ".composer", title: () => t("tour.describeTitle"), text: () => t("tour.describeText") },
+  { target: '[data-tour="paint"]', title: () => t("tour.paintTitle"), text: () => t("tour.paintText") },
+  { target: ".side-list", title: () => t("tour.projectsTitle"), text: () => t("tour.projectsText") },
 ];
 
 const PAD = 6;
@@ -73,10 +50,10 @@ export function Tour() {
     if (step === null) return;
     const measure = () => setBox(find(step));
     measure();
-    const t = window.setInterval(measure, 250);
+    const timer = window.setInterval(measure, 250);
     window.addEventListener("resize", measure);
     return () => {
-      window.clearInterval(t);
+      window.clearInterval(timer);
       window.removeEventListener("resize", measure);
     };
   }, [step]);
@@ -106,10 +83,10 @@ export function Tour() {
   // A step whose target is gone (sidebar hidden, nothing to compare) moves on by itself.
   useEffect(() => {
     if (step === null || box) return;
-    const t = window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
       if (!find(step)) go(1);
     }, 400);
-    return () => window.clearTimeout(t);
+    return () => window.clearTimeout(timer);
   }, [step, box]);
 
   if (step === null || overlay) return null;
@@ -135,17 +112,17 @@ export function Tour() {
   }
 
   return (
-    <div className="tour" role="dialog" aria-label="Tour">
+    <div className="tour" role="dialog" aria-label={t("tour.dialogLabel")}>
       {box ? <div className="tour-hole" style={{ left: box.x, top: box.y, width: box.w, height: box.h }} /> : <div className="tour-dim" />}
       {box && (
         <div className="tour-card" style={{ left, top, width: CARD_W }}>
           <div className="tour-head">
-            <strong>{s.title}</strong>
-            <button className="tour-x" onClick={endTour} title="Close the tour (Esc)" aria-label="Close the tour">
+            <strong>{s.title()}</strong>
+            <button className="tour-x" onClick={endTour} title={t("tour.closeTitle")} aria-label={t("tour.closeLabel")}>
               <X size={15} />
             </button>
           </div>
-          <p>{s.text}</p>
+          <p>{s.text()}</p>
           <div className="tour-foot">
             <span className="tour-dots" aria-hidden>
               {shown.map((i) => (
@@ -154,11 +131,11 @@ export function Tour() {
             </span>
             {shown[0] !== step && (
               <button className="btn" onClick={() => go(-1)}>
-                Back
+                {t("common.back")}
               </button>
             )}
             <button className="btn primary" onClick={() => go(1)}>
-              {last ? "Start creating" : "Next"}
+              {last ? t("tour.startCreating") : t("common.next")}
             </button>
           </div>
         </div>

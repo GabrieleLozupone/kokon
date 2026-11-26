@@ -91,6 +91,10 @@ working title and are kept on purpose.
 - Comments explain *why*, especially for defaults that come from measurements. If you change a
   measured default (sizes, memory budget, backend flags), say what you measured it on.
 - UI text and docs: plain, short English.
+- UI text goes in `src/locales/en.json` and is shown with `t("area.name")`, never written in a
+  component. A text you add or change must be added or changed in every language in
+  `src/locales/` in the same pull request (if you don't speak one, say so in the PR and we'll
+  translate it before merging). `node scripts/dev/i18n-check.mjs` and `npm test` check the keys.
 
 ## Good places to start
 
@@ -104,8 +108,8 @@ picked to be approachable. Also welcome:
 - **Hardware reports:** how Kokon runs on AMD and Intel cards (Vulkan) or on Macs other than
   an M2 Pro. These are still unverified.
 - **Small UI fixes:** layout glitches, keyboard shortcuts, accessibility labels.
-- **Translations:** the UI is English only today. Please open an issue before starting, since
-  there is no translation system yet.
+- **Translations:** the UI is in English, Italian, Spanish and French (`src/locales/`). Reviews by
+  native speakers are very welcome; for a new language, please open an issue first.
 
 ## Licenses
 

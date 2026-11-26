@@ -8,6 +8,7 @@ import { createPortal } from "react-dom";
 import { haptic } from "../lib/haptics";
 import { isNarrow } from "../lib/platform";
 import { useBlackStatusBar } from "../lib/theme";
+import { t } from "../lib/i18n";
 
 interface Pending {
   file: File;
@@ -64,7 +65,7 @@ async function mirrored(file: File): Promise<File> {
   bmp.close();
   const blob = await new Promise<Blob | null>((ok) => cv.toBlob(ok, "image/jpeg", 0.92));
   cv.width = cv.height = 0;
-  if (!blob) throw new Error("Could not flip the photo.");
+  if (!blob) throw new Error(t("photoReview.flipFailed"));
   return new File([blob], file.name, { type: "image/jpeg" });
 }
 
@@ -92,15 +93,15 @@ function Review({ p, flip, setFlip, busy, setBusy }: { p: Pending; flip: boolean
     }
   };
   return createPortal(
-    <div className="photo-review" role="dialog" aria-label="Use this photo">
+    <div className="photo-review" role="dialog" aria-label={t("photoReview.useThisPhotoAria")}>
       <div className="hold-save-head">
-        <span>Use this photo?</span>
-        <button className="glass-btn" title="Cancel" aria-label="Cancel" onClick={() => settle(null)}>
+        <span>{t("photoReview.useThisPhoto")}</span>
+        <button className="glass-btn" title={t("common.cancel")} aria-label={t("common.cancel")} onClick={() => settle(null)}>
           <X size={20} />
         </button>
       </div>
       <div className="photo-review-img">
-        <img src={p.url} alt="Photo just taken" draggable={false} style={flip ? { transform: "scaleX(-1)" } : undefined} />
+        <img src={p.url} alt={t("photoReview.photoAlt")} draggable={false} style={flip ? { transform: "scaleX(-1)" } : undefined} />
       </div>
       <div className="photo-review-bar">
         <button
@@ -112,10 +113,10 @@ function Review({ p, flip, setFlip, busy, setBusy }: { p: Pending; flip: boolean
           }}
         >
           {/* lucide's FlipVertical2 is the left-right mirror (its FlipHorizontal2 draws a horizontal axis) */}
-          <FlipVertical2 size={18} /> Flip
+          <FlipVertical2 size={18} /> {t("photoReview.flip")}
         </button>
         <button className="btn big primary" disabled={busy} onClick={use}>
-          Use photo
+          {t("photoReview.usePhoto")}
         </button>
       </div>
     </div>,

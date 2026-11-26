@@ -5,13 +5,43 @@ import { formatBytes } from "../lib/logic";
 import { native } from "../lib/native";
 import { toastError } from "../lib/store";
 import type { GpuBackend, InstallItem, ModelFileInfo, ModelRole, ModelScan, ModelSlot, ModelsStatus } from "../lib/types";
+import { t } from "../lib/i18n";
+import { Trans } from "./Trans";
 
-const ROLES: { role: ModelRole; label: string; official: string }[] = [
-  { role: "diffusion", label: "Image model", official: "turbo_q4_k" },
-  { role: "vae", label: "VAE", official: "vae" },
-  { role: "text_encoder", label: "Text encoder", official: "text_encoder" },
-  { role: "vision_projector", label: "Vision projector", official: "vision_projector" },
+const ROLES: { role: ModelRole; official: string }[] = [
+  { role: "diffusion", official: "turbo_q4_k" },
+  { role: "vae", official: "vae" },
+  { role: "text_encoder", official: "text_encoder" },
+  { role: "vision_projector", official: "vision_projector" },
 ];
+
+/** The name of each piece, shown on its row. */
+function roleLabel(role: ModelRole): string {
+  switch (role) {
+    case "diffusion":
+      return t("ownModels.roleImageModel");
+    case "vae":
+      return t("ownModels.roleVae");
+    case "text_encoder":
+      return t("ownModels.roleTextEncoder");
+    case "vision_projector":
+      return t("ownModels.roleVisionProjector");
+  }
+}
+
+/** "<file> is a <kind> file": a file of another piece chosen for this row. */
+function wrongRole(file: string, role: ModelRole): string {
+  switch (role) {
+    case "diffusion":
+      return t("ownModels.wrongRoleDiffusion", { file });
+    case "vae":
+      return t("ownModels.wrongRoleVae", { file });
+    case "text_encoder":
+      return t("ownModels.wrongRoleTextEncoder", { file });
+    case "vision_projector":
+      return t("ownModels.wrongRoleVisionProjector", { file });
+  }
+}
 
 /** A file of the user's, the official file downloaded into `downloadDir`, or (vision projector
  * only) nothing because the text encoder has the vision weights. */
@@ -20,8 +50,14 @@ type Choice = { kind: "path"; path: string } | { kind: "download" } | { kind: "n
 const fileName = (p: string) => p.split(/[\\/]/).pop() ?? p;
 const folderName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
 
+/** "Found 3 of 4; 1 piece will be downloaded · 2 files of other models skipped". */
+function foundSummary(found: number, downloads: number, skipped: number): string {
+  const head = downloads ? t("ownModels.foundWithDownloads", { found, count: downloads }) : t("ownModels.found", { found });
+  return skipped ? t("ownModels.foundSkipped", { summary: head, count: skipped }) : head;
+}
+
 function describe(f: ModelFileInfo): string {
-  return [f.weights, formatBytes(f.size), f.official ? "official file" : null].filter(Boolean).join(" · ");
+  return [f.weights, formatBytes(f.size), f.official ? t("ownModels.officialFile") : null].filter(Boolean).join(" · ");
 }
 
 /** Setup's "Use models I already have", as a guided flow: choose the folder (e.g. ComfyUI's
@@ -140,22 +176,23 @@ export function OwnModels(props: {
   };
 
   // What each row says, and whether the set can be used.
-  const rows = ROLES.map(({ role, label }) => {
+  const rows = ROLES.map(({ role }) => {
+    const label = roleLabel(role);
     const c = role === "vision_projector" && teHasVision ? ({ kind: "none" } as Choice) : choice[role];
     let state: "ok" | "download" | "bad";
     let text: string;
     let detail: string | null = null;
-    if (c.kind === "none" && teHasVision) [state, text] = ["ok", "Not needed: included in your text encoder"];
-    else if (c.kind === "none") [state, text] = ["bad", "Needed for editing: this text encoder has no vision weights"];
-    else if (c.kind === "download") [state, text] = ["download", `${scan ? "Not found in this folder: " : ""}the official file will be downloaded (${formatBytes(officialSize(role))})`];
+    if (c.kind === "none" && teHasVision) [state, text] = ["ok", t("ownModels.notNeededIncluded")];
+    else if (c.kind === "none") [state, text] = ["bad", t("ownModels.neededForEditing")];
+    else if (c.kind === "download") [state, text] = ["download", scan ? t("ownModels.notFoundWillDownload", { size: formatBytes(officialSize(role)) }) : t("ownModels.willDownload", { size: formatBytes(officialSize(role)) })];
     else {
       const f = info(c.path);
       const slot = models.slots.find((s) => s.path === c.path);
       detail = c.path;
-      if (slot && !slot.exists) [state, text] = ["bad", "Not found"];
+      if (slot && !slot.exists) [state, text] = ["bad", t("ownModels.notFound")];
       else if (!f) [state, text] = ["ok", fileName(c.path)];
-      else if (f.role !== role) [state, text] = ["bad", f.role ? `${fileName(c.path)} is a ${f.role.replace("_", " ")} file` : f.problem ?? "Not a Qwen-Image 2.1 file"];
-      else if (!f.compatible) [state, text] = ["bad", f.problem ?? "Not usable with Qwen-Image 2.1"];
+      else if (f.role !== role) [state, text] = ["bad", f.role ? wrongRole(fileName(c.path), f.role) : f.problem ?? t("ownModels.notQwenFile")];
+      else if (!f.compatible) [state, text] = ["bad", f.problem ?? t("ownModels.notUsable")];
       else [state, text] = ["ok", `${fileName(c.path)} · ${describe(f)}`];
     }
     const candidates = known.filter((f) => f.role === role && f.compatible);
@@ -197,15 +234,15 @@ export function OwnModels(props: {
     return (
       <div className="own-start">
         <FolderOpen size={26} strokeWidth={1.6} />
-        <strong>Choose the folder with your models</strong>
+        <strong>{t("ownModels.chooseFolderTitle")}</strong>
         <span className="muted">
-          For example <code>ComfyUI\models</code>. Kokon finds the Qwen-Image 2.1 files in it and in its sub-folders, as GGUF or safetensors. Nothing is copied or moved.
+          <Trans k="ownModels.chooseFolderHint" tags={{ code: (s) => <code>{s}</code> }} />
         </span>
         <button className="btn primary big" onClick={chooseFolder} disabled={scanning}>
-          {scanning ? <Loader2 className="spin" size={16} /> : <FolderOpen size={16} />} {scanning ? "Looking for models…" : "Choose folder…"}
+          {scanning ? <Loader2 className="spin" size={16} /> : <FolderOpen size={16} />} {scanning ? t("ownModels.lookingForModels") : t("ownModels.chooseFolder")}
         </button>
         <button className="link-btn" onClick={() => setManual(true)}>
-          or pick each file yourself
+          {t("ownModels.pickEachFile")}
         </button>
       </div>
     );
@@ -215,22 +252,22 @@ export function OwnModels(props: {
     <div className="own-models">
       <div className="own-head">
         <div>
-          <strong>{!editing ? "Using your own files" : scan ? `In ${folderName(scan.dir)}` : "Your files"}</strong>
+          <strong>{!editing ? t("ownModels.usingOwnFiles") : scan ? t("ownModels.inFolder", { folder: folderName(scan.dir) }) : t("ownModels.yourFiles")}</strong>
           <span className="muted">
             {!editing
-              ? "Not tested by Kokon. Change them at any time, or switch back to the official files above."
+              ? t("ownModels.notTestedSummary")
               : scan
-                ? `Found ${found} of 4${downloads.length ? `; ${downloads.length === 1 ? "1 piece" : `${downloads.length} pieces`} will be downloaded` : ""}${skipped ? ` · ${skipped} file${skipped === 1 ? "" : "s"} of other models skipped` : ""}`
-                : "Choose a file for each piece, or download the official one."}
+                ? foundSummary(found, downloads.length, skipped)
+                : t("ownModels.chooseEachPiece")}
           </span>
         </div>
         {editing ? (
           <button className="btn" onClick={chooseFolder} disabled={scanning}>
-            {scanning ? <Loader2 className="spin" size={14} /> : <FolderOpen size={14} />} {scan || inUse ? "Another folder…" : "Search a folder…"}
+            {scanning ? <Loader2 className="spin" size={14} /> : <FolderOpen size={14} />} {scan || inUse ? t("ownModels.anotherFolder") : t("ownModels.searchFolder")}
           </button>
         ) : (
           <button className="btn" onClick={() => setEditing(true)}>
-            Change files
+            {t("ownModels.changeFiles")}
           </button>
         )}
       </div>
@@ -247,7 +284,7 @@ export function OwnModels(props: {
               </div>
               {editing && (
                 <button className="btn small" onClick={() => setOpen(open === r.role ? null : r.role)} aria-expanded={open === r.role}>
-                  Change
+                  {t("ownModels.change")}
                 </button>
               )}
             </div>
@@ -261,21 +298,21 @@ export function OwnModels(props: {
                 ))}
                 {r.role === "vision_projector" && teHasVision && (
                   <button className={`own-option ${r.c.kind === "none" ? "on" : ""}`} onClick={() => pick(r.role, { kind: "none" })}>
-                    <span>Not needed</span>
-                    <span className="muted">your text encoder includes the vision weights</span>
+                    <span>{t("ownModels.notNeeded")}</span>
+                    <span className="muted">{t("ownModels.visionIncluded")}</span>
                   </button>
                 )}
                 <button className={`own-option ${r.c.kind === "download" ? "on" : ""}`} onClick={() => pick(r.role, { kind: "download" })}>
                   <span>
-                    <Download size={13} /> Download the official file
+                    <Download size={13} /> {t("ownModels.downloadOfficial")}
                   </span>
                   <span className="muted">{formatBytes(officialSize(r.role))}</span>
                 </button>
                 <button className="own-option" onClick={() => browse(r.role)}>
                   <span>
-                    <FileSearch size={13} /> Choose a file…
+                    <FileSearch size={13} /> {t("ownModels.chooseFile")}
                   </span>
-                  <span className="muted">.gguf or .safetensors</span>
+                  <span className="muted">{t("ownModels.fileTypes")}</span>
                 </button>
               </div>
             )}
@@ -286,7 +323,7 @@ export function OwnModels(props: {
       {editing && downloads.length > 0 && (
         <div className="own-download">
           <span className="muted">
-            Downloads go to <strong>{downloadDir}</strong>
+            <Trans k="ownModels.downloadsGoTo" vars={{ dir: downloadDir }} tags={{ strong: (s) => <strong>{s}</strong> }} />
           </span>
           <button
             className="link-btn"
@@ -295,35 +332,34 @@ export function OwnModels(props: {
               if (d) setDownloadDir(d);
             }}
           >
-            Change
+            {t("ownModels.change")}
           </button>
         </div>
       )}
 
       {editing && tooLarge && (
         <div className="setup-note">
-          This image model is {formatBytes(dit!.size)}, probably too large for {Math.round((props.vramMib ?? 0) / 1024)} GB of VRAM. Kokon makes smaller images to fit, but it may still run out of memory
-          or be slow. A 4-bit or 8-bit version (GGUF Q4_K or Q8_0, or INT8) works better on this card.
+          {t("ownModels.tooLarge", { size: formatBytes(dit!.size), vram: Math.round((props.vramMib ?? 0) / 1024) })}
         </div>
       )}
 
       {dit?.role === "diffusion" && dit.compatible && dit.warning && <div className="setup-note">{dit.warning}</div>}
 
       {editing && slowFp8 && (
-        <div className="setup-note">FP8 files run much slower on AMD and Intel cards with Vulkan than the GGUF (Q4_K) file Kokon downloads. For speed, download the official file or choose a GGUF.</div>
+        <div className="setup-note">{t("ownModels.slowFp8")}</div>
       )}
 
       {editing && (
         <div className="own-actions">
           <button className="btn primary" disabled={!canSave || saving} onClick={save}>
-            {saving ? <Loader2 className="spin" size={14} /> : <Check size={14} />} {saving ? "Checking the files…" : "Use these files"}
+            {saving ? <Loader2 className="spin" size={14} /> : <Check size={14} />} {saving ? t("ownModels.checkingFiles") : t("ownModels.useTheseFiles")}
           </button>
           {inUse && models.missing.length === 0 && (
             <button className="btn ghost" onClick={() => setEditing(false)}>
-              Cancel
+              {t("common.cancel")}
             </button>
           )}
-          {!tooLarge && <span className="muted">Your own files are not tested by Kokon: quality and speed may differ.</span>}
+          {!tooLarge && <span className="muted">{t("ownModels.notTestedWarning")}</span>}
         </div>
       )}
     </div>
