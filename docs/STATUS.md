@@ -1,14 +1,14 @@
 # Status
 
-**Updated 2026-11-11.** What is in progress, what comes next, and where help is welcome. Kept current at the end
+**Updated 2026-11-27.** What is in progress, what comes next, and where help is welcome. Kept current at the end
 of every task (see [AGENTS.md](../AGENTS.md#keeping-docsstatusmd-current)); GitHub is the source of truth.
 
-## Current version: [0.12.1](https://github.com/GabrieleLozupone/kokon/releases/tag/v0.12.1) (2026-11-11)
+## Current version: [0.13.0](https://github.com/GabrieleLozupone/kokon/releases/tag/v0.13.0) (2026-11-27)
 
-More like this (Subtle / Strong, [#55](https://github.com/GabrieleLozupone/kokon/issues/55)), Redraw at this size in the
-Layers lab, the GPU freed after 10 idle minutes even with a window open
-([#52](https://github.com/GabrieleLozupone/kokon/discussions/52)), an optional folder for each project, local time in
-image metadata, a clear message when the service cannot start ([#53](https://github.com/GabrieleLozupone/kokon/issues/53)).
+The app in English, Italian, Spanish and French (Settings → General → Language, following the system language by
+default; [#60](https://github.com/GabrieleLozupone/kokon/issues/60), [#34](https://github.com/GabrieleLozupone/kokon/issues/34)),
+and on PCs with two graphics cards the chosen card is kept by name, so it no longer moves when the engine lists the
+cards in another order ([#61](https://github.com/GabrieleLozupone/kokon/issues/61)).
 
 Windows, macOS (Apple Silicon, 15+) and Linux (`.deb`, `.rpm`). Installed copies update from the app.
 
@@ -22,7 +22,8 @@ Windows, macOS (Apple Silicon, 15+) and Linux (`.deb`, `.rpm`). Installed copies
 - Next: the desktop app as a client of a Kokon server elsewhere, and a Docker image for AMD and Intel
   (Vulkan) once it can be tested.
 - On the list, no dates yet: a custom upscaler picker
-  ([#34](https://github.com/GabrieleLozupone/kokon/issues/34)), translations (only with contributor help).
+  ([#34](https://github.com/GabrieleLozupone/kokon/issues/34)); the error messages of the local service in the UI
+  languages (they are English today); more languages (Arabic needs a right-to-left layout first).
 - Not planned: a portable build ([#26](https://github.com/GabrieleLozupone/kokon/issues/26)). Kokon removes cleanly
   instead: [kokon.app/uninstall](https://kokon.app/uninstall/).
 
@@ -43,6 +44,8 @@ Windows, macOS (Apple Silicon, 15+) and Linux (`.deb`, `.rpm`). Installed copies
 
 ## Help wanted
 
+- Native speakers of Italian, Spanish or French: corrections to `src/locales/<lang>.json` (glossary in
+  `src/locales/<lang>.notes.md`). Every text change must be made in all languages (see AGENTS.md).
 - Good first issues: [#2](https://github.com/GabrieleLozupone/kokon/issues/2) gallery keyboard,
   [#3](https://github.com/GabrieleLozupone/kokon/issues/3) site slider keyboard,
   [#4](https://github.com/GabrieleLozupone/kokon/issues/4) reduced-motion video.
@@ -59,6 +62,10 @@ Windows, macOS (Apple Silicon, 15+) and Linux (`.deb`, `.rpm`). Installed copies
 
 ## Recently shipped
 
+- **0.12.1** (2026-11-11): More like this (Subtle / Strong, [#55](https://github.com/GabrieleLozupone/kokon/issues/55)),
+  Redraw at this size in the Layers lab, the GPU freed after 10 idle minutes even with a window open
+  ([#52](https://github.com/GabrieleLozupone/kokon/discussions/52)), an optional folder for each project, local time
+  in image metadata, a clear message when the service cannot start ([#53](https://github.com/GabrieleLozupone/kokon/issues/53)).
 - **0.12.0** (2026-11-04): the Layers lab (experimental: click the objects, each on its own layer with the
   background filled behind them, move/hide/edit/expand any layer, Blend into scene, Export PSD), paint with colours
   and one-click Select (its model downloaded on first use), Prompt+ for brushed areas and Expand with a Detail level,

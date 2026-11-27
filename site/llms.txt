@@ -2,11 +2,12 @@
 
 > Kokon is a free, open-source desktop app for editing and creating photos with AI on your own computer, a free, local alternative to Nano Banana and ChatGPT image editing: photos stay on the user's computer and there is no daily limit. Kokon picks and sets up the model for you. You describe the change in plain words ("remove the scooter", "make it a snowy night") and Qwen-Image 2.1 does it locally on your GPU. There is nothing to set up: one installer detects the hardware, downloads and verifies the right model, and picks the resolution and the VRAM/RAM split for every job. Nothing is uploaded.
 
-Key facts (version 0.12.1, November 2026):
+Key facts (version 0.13.0, November 2026):
 
 - Model: Qwen-Image 2.1 Turbo (official 8-step version, 4-bit GGUF) with Qwen3-VL 8B as the text encoder, run through stable-diffusion.cpp. About 12 GB of models, downloaded once and checked with SHA-256.
 - Platforms: Windows 10/11 with an NVIDIA GPU (12 GB VRAM or more, CUDA; 8 GB in beta, about 1-megapixel images). AMD and Intel Arc (12 GB+) through Vulkan, beta. Apple Silicon Macs on macOS 15 or newer (Metal), beta: 16 GB works slowly, 32 GB recommended. Linux x86-64 (.deb for Ubuntu/Debian/Mint, .rpm for Fedora; CUDA or Vulkan), beta.
 - Speed: RTX 5070 Ti about 24 s per edit at 1.5K and 36 s for a new image at native 2K; RTX 5070 12 GB about 12 s per 1-megapixel image; M2 Pro 16 GB about 65 s per new 1-megapixel image with Kokon's own Mac engine (about 106 s per edit).
+- Languages: the app is in English, Italian, Spanish and French (it follows the system language; Settings → General → Language).
 - Features: Prompt+ (a few words in any language become a detailed prompt, written by the Qwen3-VL text encoder already loaded, inside Kokon's own build of stable-diffusion.cpp, so no second model), your own Qwen-Image 2.1 LoRAs (beta, tested on Windows), create from text, new images from reference photos (a person, a product, a style), edit with a sentence, paint an area and Change/Remove/Replace/Add only there, combine several images ("image 1", "image 2"), expand beyond the borders (outpainting), AI upscaling, versions with undo and before/after compare, private mode, works offline after setup.
 - For AI agents: built-in MCP server (generate_image, edit_image, inpaint_image, outpaint_image, upscale_image, ...) and a local HTTP API. `npx -y kokon-mcp`; listed in the official MCP Registry as io.github.GabrieleLozupone/kokon.
 - License: the app is AGPL-3.0. The Qwen-Image 2.1 weights are under the Qwen Research License, which does not allow commercial use.

@@ -149,7 +149,8 @@ of the model's license.
       <h3>✍️ Just describe it</h3>
       “Remove all the people from the beach.” “Make it golden hour.” Kokon picks the mode, the
       resolution and the memory settings for you. There are no sliders to learn. Only have a short
-      idea? Prompt+ writes the detailed prompt for you, in any language.
+      idea? Prompt+ writes the detailed prompt for you, in any language. The app itself is in
+      English, Italian, Spanish and French.
     </td>
     <td width="33%" valign="top">
       <h3>🔒 Private by design</h3>
