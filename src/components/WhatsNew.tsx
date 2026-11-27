@@ -1,25 +1,21 @@
-import { CircleAlert, CirclePlay, Cpu, FolderTree, Images, Layers } from "lucide-react";
+import { CircleAlert, CirclePlay, Cpu, Languages, Layers } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { formatBytes, installProgress, installStep, installTimeLeft, modelChoiceUi, modelOfferDue, whatsNewDue as due } from "../lib/logic";
 import { afterStartScreens, refreshStatus, setState, toastError, useStore } from "../lib/store";
 import type { GpuBackend, InstallItem, InstallStatus, ModelsStatus } from "../lib/types";
 import { native } from "../lib/native";
-import { VIDEOS } from "../lib/videos";
 import { KokonMark } from "./Welcome";
 import { t } from "../lib/i18n";
 
 /** The release these notes describe. Shown once to people updating from an earlier version. */
-export const WHATS_NEW_VERSION = "0.12.1";
+export const WHATS_NEW_VERSION = "0.13.0";
 
 /** The notes, built at render time so they follow the UI language. */
 function news(): { icon: typeof Layers; title: string; text: string; video?: string }[] {
   return [
-    { icon: Images, title: t("whatsNew.v0_12_1_moreLikeThisTitle"), text: t("whatsNew.v0_12_1_moreLikeThisText") },
-    { icon: Layers, title: t("whatsNew.v0_12_1_redrawTitle"), text: t("whatsNew.v0_12_1_redrawText"), video: VIDEOS.update012.url },
-    { icon: Cpu, title: t("whatsNew.v0_12_1_gpuFreedTitle"), text: t("whatsNew.v0_12_1_gpuFreedText") },
-    { icon: FolderTree, title: t("whatsNew.v0_12_1_projectFolderTitle"), text: t("whatsNew.v0_12_1_projectFolderText") },
-    { icon: CircleAlert, title: t("whatsNew.v0_12_1_fixesTitle"), text: t("whatsNew.v0_12_1_fixesText") },
+    { icon: Languages, title: t("whatsNew.v0_13_0_languagesTitle"), text: t("whatsNew.v0_13_0_languagesText") },
+    { icon: Cpu, title: t("whatsNew.v0_13_0_gpuTitle"), text: t("whatsNew.v0_13_0_gpuText") },
   ];
 }
 
