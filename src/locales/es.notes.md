@@ -40,24 +40,31 @@ Neutral international Spanish: "tú", no "vosotros", no voseo. Buttons in the in
 | prompt | prompt (masculine: "el prompt") |
 | LoRA | LoRA (masculine: "el LoRA", plural "los LoRA") |
 | Remove (from list/project) / Delete (from disk) | Quitar / Eliminar |
-| Add | Añadir |
+| Add | Agregar |
+| press (a button or key) / press and hold | presiona / mantén presionado |
+| hair | cabello |
+| trigger words (LoRA) | palabras de activación |
 | Slider / Flicker / Changes (compare) | Deslizador / Parpadeo / Cambios |
-| Enter key | Intro |
+| Enter key | Enter |
 | Space key | Espacio / barra espaciadora |
 
-## Spain vs Latin America (for the native reviewer)
+## Spain vs Latin America
 
-- **Configuración** for Settings (Windows and most Latin American apps); Spain also uses "Ajustes" (Android/iOS in Spain). Chose the one used everywhere on Windows.
-- **Añadir** vs **Agregar**: chose "Añadir" (standard in Spain, understood everywhere); Latin American apps often say "Agregar".
-- **Intro** for the Enter key (Spanish keyboards, Google/Microsoft Spain); Latin American keyboards usually print "Enter".
-- **video** without accent (Latin America, also accepted by the RAE); Spain writes "vídeo" (remote.video, remote.videoTitle, whatsNew.watchVideo, topBar.videoGuides "Videotutoriales").
-- **Compartir → Añadir a pantalla de inicio** (remote.openOnDevice): iOS Spanish wording; Android in Latin America may show "Agregar a la pantalla principal".
-- **stickers**: used in both regions (WhatsApp); Spain also says "pegatinas", Latin America "calcomanías".
-- **portátil** (promptTips.negative*): Spain; Latin America says "laptop". Kept because the example point (a "no X" prompt) still works.
-- **moto** for the scooter in the examples (welcome.slideRemoveText, tour.versionsText, promptTips.severalPrompt1): neutral; "patinete/escúter" (Spain) and "motoneta" (Latin America) differ.
-- **baloncesto** / **cancha**: "baloncesto" is Spain, Latin America says "básquetbol" but understands it; "cancha" is the Latin American word (Spain says "pista"), understood in Spain.
-- **pelo** for hair (both), **suelo** for ground/floor (Spain; Latin America also says "piso" for floor).
-- **Mantén pulsado** for "press and hold": Spain; Latin America often says "Mantén presionado".
+Reviewed by a native Latin American speaker (issue #60): where the two differ, the Latin American word is used, as long as it is understood in Spain too.
+
+- **Configuración** for Settings (Windows and most Latin American apps); Spain also uses "Ajustes".
+- **Agregar** for Add (Latin American apps), including the Add action button and remote.openOnDevice ("Compartir → Agregar a pantalla de inicio").
+- **Enter** for the Enter key (printed on Latin American keyboards); Spain says "Intro".
+- **presiona / Mantén presionado** for press / press and hold; Spain says "pulsa / Mantén pulsado".
+- **video** without accent (Latin America, also accepted by the RAE); Spain writes "vídeo".
+- **stickers**: used in both regions (WhatsApp).
+- **laptop** (promptTips.negative*, feminine "la laptop"); Spain says "portátil".
+- **moto** for the scooter in the examples: neutral.
+- **básquetbol** / **cancha** / **driblando** in the monkey example; Spain says "baloncesto" / "pista" / "botando".
+- **malecón**, **manubrio**, **canasta** (promptTips.detailsPrompt2); Spain says "paseo marítimo", "manillar", "cesta".
+- **gato naranja**, **cafetería** (promptTips.severalPrompt1): "café" alone can read as the drink.
+- **cabello** for hair; **suelo** for ground (both regions), **piso** for a tiled floor.
+- **lugar** rather than "sitio", **manualmente** rather than "a mano", **conectado a la corriente** rather than "enchufado".
 - **wifi** lowercase (RAE); some regions write "Wi-Fi".
 
 ## Non-literal choices / doubtful keys
@@ -65,17 +72,17 @@ Neutral international Spanish: "tú", no "vosotros", no voseo. Buttons in the in
 - layerDoc.colourRed etc. and inpaint.colour*: masculine singular "rojo/azul/verde/amarillo" so they fit "en las marcas de color {colour}", "Objeto nuevo ({colour})" and the capitalised "{colour}: un objeto".
 - layerDoc.wantPlaceholder, lab.nothingAtMarks: "las marcas de color {colour}" to avoid gender agreement with "marcas".
 - layerDoc.helpObject: "Completa el objeto {name}, …" ({name} is a lowercased layer name, gender unknown).
-- layerDoc.fillReady / fillHolesTitle: "se pintan con la acción Añadir" (the English "as an Add" refers to the Add action button).
+- layerDoc.fillReady / fillHolesTitle: "se pintan con la acción Agregar" (the English "as an Add" refers to the Add action button).
 - composer.advancedOverridesLabel_*: "{count} cambio(s) respecto al perfil" rather than a literal "overrides".
 - composer.thisResult / thisImage: "este resultado" / "esta imagen", inserted into "Editando {name}" etc.
 - stage.doingGenerateFrom: "Creando a partir de {name}" (the English "Creating image 2" would read as making image 2).
 - stage.layersFrameTooltip: "Stage" translated as "el área de trabajo".
-- settings.promptPlusIntro: "el propio modelo de lenguaje del modelo" mirrors the English; could be smoothed to "el modelo de lenguaje integrado".
+- settings.promptPlusIntro: "el modelo de lenguaje integrado en el modelo de imagen" (the English "the model's own language model").
 - whatsNew.v0_12_1_fixesText: "an hour early" → "iba una hora atrasada" (the saved time was behind the real time).
 - welcome.title / setup.titleWelcome: "Te damos la bienvenida a Kokon" (gender-neutral, as Microsoft/Google do) instead of "Bienvenido/a".
 - welcome.lead: "Como un capullo de seda" (cocoon); bare "capullo" is a mild insult in Spain, "de seda" removes the ambiguity. Alternative: "Como una crisálida".
 - promptTips example prompts: translated (the model understands Spanish), text meant to be drawn ("NIGHT JAZZ", "24 OCTOBER", "Friday 24 October · Teatro Verdi · 21:00") left in English as the images were made from it.
 - logic.minutesAgo/hoursAgo/daysAgo: "hace {count} min / h / d".
 - advanced.vaeTiling: "VAE por mosaicos"; settings.flashAttention and advanced.sampler kept in English (technical terms).
-- ownModels.wrongRole*: piece names kept in English lowercase as the notes ask ("diffusion", "vae", "text encoder", "vision projector").
+- ownModels.wrongRole*: "es un archivo de tipo …", piece names kept in English lowercase as the notes ask ("diffusion", "vae", "text encoder", "vision projector").
 - aiCheck.contentCredentials: kept "Content Credentials" (standard name).
